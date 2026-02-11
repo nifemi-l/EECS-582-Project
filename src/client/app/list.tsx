@@ -308,7 +308,11 @@ function AddSectionRow({
 
   return (
     <View style={styles.addSectionRow}>
-      <MaterialCommunityIcons name="plus-box-outline" size={22} color="#5c6bc0" />
+      <MaterialCommunityIcons 
+        name="plus-box-outline"
+        size={22}
+        color="#5c6bc0" 
+      />
       <TextInput
         style={styles.addSectionInput}
         placeholder="New section name…"
@@ -690,7 +694,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#333",
     marginLeft: 10,
-    paddingVertical: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
   },
   addSectionBtn: {
     backgroundColor: ACCENT,
