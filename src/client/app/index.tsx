@@ -91,8 +91,8 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   glRef = gl;
   shaderProgram = null;
   lastFrameTime = 0;
-  box.modelMatrices = [GLM.mat4.create(), GLM.mat4.create(), GLM.mat4.create(), GLM.mat4.create()];
-  box.modelLoc = null;
+  house.modelMatrices = [GLM.mat4.create(), GLM.mat4.create(), GLM.mat4.create(), GLM.mat4.create()];
+  house.modelLoc = null;
 
   // See expo documentation here: https://docs.expo.dev/versions/latest/sdk/gl-view/#usage
   // See also: https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Tutorial/Adding_2D_content_to_a_WebGL_context 
