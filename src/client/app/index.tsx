@@ -22,14 +22,14 @@ let glRef: ExpoWebGLRenderingContext | null = null;
 let shaderProgram: WebGLProgram | null = null;
 let lastFrameTime = 0;
 
-class Cube {
-   vertices: Float32Array;
+class Household {
+   blockVertices: Float32Array;
    modelMatrices: GLM.mat4[];
    modelLoc: WebGLUniformLocation | null;
 
    constructor() {
     // Vertices + normal vectors o a cube
-    this.vertices = new Float32Array([
+    this.blockVertices = new Float32Array([
         -0.5, -0.5, -0.5,  0.0,  0.0, -1.0,
         0.5, -0.5, -0.5,  0.0,  0.0, -1.0, 
         0.5,  0.5, -0.5,  0.0,  0.0, -1.0, 
@@ -77,7 +77,7 @@ class Cube {
     this.modelLoc = null;
    }
 }
-const box = new Cube();
+const house = new Household();
 
 async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   const [vertData, fragData] = await readShaderData();
@@ -161,12 +161,12 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
       specular: gl.getUniformLocation(program, "uLight.specular"),
     }
   }
-  box.modelLoc = matrixUniformLocs.modelMatrix;
+  house.modelLoc = matrixUniformLocs.modelMatrix;
 
   // Setup our vertex buffer and attribute informations. This is how we know what information is stored where
-  const boxBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, boxBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, box.vertices, gl.STATIC_DRAW);
+  const houseBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, houseBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, house.blockVertices, gl.STATIC_DRAW);
   gl.vertexAttribPointer(attribLocs.vertLoc, 3, gl.FLOAT, false, 6 * 4, 0); // using VAO 0 by default
   gl.enableVertexAttribArray(attribLocs.vertLoc);
   gl.vertexAttribPointer(attribLocs.normalLoc, 3, gl.FLOAT, false, 6 * 4, 4 * 3); // 4 bytes per float * 6 floats stored per vertex = 24 bytes per vertex
@@ -177,13 +177,13 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   const projectionMatrix = GLM.mat4.create();
   const viewMatrix = GLM.mat4.create();
   GLM.mat4.perspective(projectionMatrix, (45 * Math.PI / 180), gl.drawingBufferWidth / gl.drawingBufferHeight, 0.1, 100.0);
-  GLM.mat4.translate(box.modelMatrices[0], box.modelMatrices[0], [1.0, -1.0, -5.0]);
-  GLM.mat4.rotateY(box.modelMatrices[0], box.modelMatrices[0], 15);
-  GLM.mat4.translate(box.modelMatrices[1], box.modelMatrices[1], [-1.0, -1.0, -5.0]);
-  GLM.mat4.translate(box.modelMatrices[2], box.modelMatrices[2], [1.0, 1.0, -5.0]);
-  GLM.mat4.translate(box.modelMatrices[3], box.modelMatrices[3], [-1.0, 1.0, -5.0]);
+  GLM.mat4.translate(house.modelMatrices[0], house.modelMatrices[0], [1.0, -1.0, -5.0]);
+  GLM.mat4.rotateY(house.modelMatrices[0], house.modelMatrices[0], 15);
+  GLM.mat4.translate(house.modelMatrices[1], house.modelMatrices[1], [-1.0, -1.0, -5.0]);
+  GLM.mat4.translate(house.modelMatrices[2], house.modelMatrices[2], [1.0, 1.0, -5.0]);
+  GLM.mat4.translate(house.modelMatrices[3], house.modelMatrices[3], [-1.0, 1.0, -5.0]);
   gl.uniformMatrix4fv(matrixUniformLocs.projectionMatrix, false, projectionMatrix as Float32Array);
-  gl.uniformMatrix4fv(matrixUniformLocs.modelMatrix, false, box.modelMatrices[0] as Float32Array);
+  gl.uniformMatrix4fv(matrixUniformLocs.modelMatrix, false, house.modelMatrices[0] as Float32Array);
   gl.uniformMatrix4fv(matrixUniformLocs.viewMatrix, false, viewMatrix as Float32Array);
 
   // Setup lighting
@@ -220,7 +220,7 @@ function drawFrame(time: number) {
     const program = shaderProgram;
 
     // Ensure we have a valid location for the model matrix uniform
-    if (!box.modelLoc) {
+    if (!house.modelLoc) {
       console.error("No model matrix location");
       return;
     }
@@ -232,24 +232,24 @@ function drawFrame(time: number) {
     // Prepare draw
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // Box 1
-    GLM.mat4.rotateY(box.modelMatrices[0], box.modelMatrices[0], delta);
-    gl.uniformMatrix4fv(box.modelLoc, false, box.modelMatrices[0] as Float32Array);
+    // Cube 1
+    GLM.mat4.rotateY(house.modelMatrices[0], house.modelMatrices[0], delta);
+    gl.uniformMatrix4fv(house.modelLoc, false, house.modelMatrices[0] as Float32Array);
     gl.drawArrays(gl.TRIANGLES, 0, 36);
 
-    // Box 2
-    GLM.mat4.rotateX(box.modelMatrices[1], box.modelMatrices[1], delta * 2);
-    gl.uniformMatrix4fv(box.modelLoc, false, box.modelMatrices[1] as Float32Array);
+    // Cube 2
+    GLM.mat4.rotateX(house.modelMatrices[1], house.modelMatrices[1], delta * 2);
+    gl.uniformMatrix4fv(house.modelLoc, false, house.modelMatrices[1] as Float32Array);
     gl.drawArrays(gl.TRIANGLES, 0, 36);
 
-    // Box 3
-    GLM.mat4.rotateZ(box.modelMatrices[2], box.modelMatrices[2], delta * 3);
-    gl.uniformMatrix4fv(box.modelLoc, false, box.modelMatrices[2] as Float32Array);
+    // Cube 3
+    GLM.mat4.rotateZ(house.modelMatrices[2], house.modelMatrices[2], delta * 3);
+    gl.uniformMatrix4fv(house.modelLoc, false, house.modelMatrices[2] as Float32Array);
     gl.drawArrays(gl.TRIANGLES, 0, 36);
 
-    // Box 4
-    GLM.mat4.rotateY(box.modelMatrices[3], box.modelMatrices[3], delta * -1);
-    gl.uniformMatrix4fv(box.modelLoc, false, box.modelMatrices[3] as Float32Array);
+    // Cube 4
+    GLM.mat4.rotateY(house.modelMatrices[3], house.modelMatrices[3], delta * -1);
+    gl.uniformMatrix4fv(house.modelLoc, false, house.modelMatrices[3] as Float32Array);
     gl.drawArrays(gl.TRIANGLES, 0, 36);
 
     // End frame
