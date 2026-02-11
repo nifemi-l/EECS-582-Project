@@ -3,18 +3,23 @@ import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
 import * as GLM from 'gl-matrix';
 import { Platform, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import ViewToggle from "./components/ViewToggle";
 
 export default function Index() {
   return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <GLView style={{width: 300, height: 300}} onContextCreate={onContextCreate} />
-    </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#f0f2f5" }} edges={["top"]}>
+      <ViewToggle active="3d" />
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <GLView style={{width: 300, height: 300}} onContextCreate={onContextCreate} />
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -82,10 +87,12 @@ const box = new Cube();
 async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   const [vertData, fragData] = await readShaderData();
 
-  // Set our reference
-  if (!glRef) {
-    glRef = gl;
-  }
+  // Reset everything so it works when navigating back to this page
+  glRef = gl;
+  shaderProgram = null;
+  lastFrameTime = 0;
+  box.modelMatrices = [GLM.mat4.create(), GLM.mat4.create(), GLM.mat4.create(), GLM.mat4.create()];
+  box.modelLoc = null;
 
   // See expo documentation here: https://docs.expo.dev/versions/latest/sdk/gl-view/#usage
   // See also: https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Tutorial/Adding_2D_content_to_a_WebGL_context 
