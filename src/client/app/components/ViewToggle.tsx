@@ -18,7 +18,7 @@ export default function ViewToggle({ active }: ViewToggleProps) {
   const navigate = (mode: ViewMode) => {
     if (mode === active) return;
     if (mode === "3d") {
-      router.replace("/");
+      router.replace("/home");
     } else {
       router.replace("/list");
     }
