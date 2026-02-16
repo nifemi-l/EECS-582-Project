@@ -21,24 +21,36 @@ import * as GLM from 'gl-matrix';
 import { Platform, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ViewToggle from "./components/ViewToggle";
+import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
+
+// See https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture for gesture handler details
+// Define gesture handler functions for panning
+const handlePan = Gesture.Pan()
+  .onUpdate((event) => {
+    console.log("PAN UPDATED:", event.translationX);
+  });
 
 // Outline the layout of the main page. The GLView component will provide our WebGL context for graphics, the ViewToggle
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
-// the page. 
+// the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning)
 export default function Index() {
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#f0f2f5" }} edges={["top"]}>
-      <ViewToggle active="3d" />
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <GLView style={{width: 300, height: 300}} onContextCreate={onContextCreate} />
-      </View>
-    </SafeAreaView>
+    <GestureHandlerRootView>
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#f0f2f5" }} edges={["top"]}>
+          <ViewToggle active="3d" />
+            <GestureDetector gesture={handlePan}>
+              <View
+                style={{
+                  flex: 1,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <GLView style={{width: 300, height: 300}} onContextCreate={onContextCreate} />
+              </View>
+          </GestureDetector>
+        </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 
