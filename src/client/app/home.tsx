@@ -24,17 +24,34 @@ import ViewToggle from "./components/ViewToggle";
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 
 // See https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture for gesture handler details
-// Define gesture handler functions for panning
-// Also define a global variable to store this update each frame. 
-let rotX = 0;
+// Also define global variables to store this data and update each frame
+let panVelocityX = 0;
+let panLastX = 0 
+
+// A helper function to update the velocity of the pan. We multiply the x delta by a constant speed value
+function updateVelocityPanX(dx: number) {
+  panVelocityX = dx * 0.5;
+}
+
+// Define gesture handler function for panning and rotating the model
 const handlePan = Gesture.Pan()
-  // Multiply the amount we have dragged on the screen by a constant to lessen the speed of rotation
-  .onUpdate((event) => {
-    rotX = event.translationX * 0.05;
+  .runOnJS(true) // Run all gesture handling on the main JS thread. Note: for performance reasons we could change this so it runs on the UI thread in the future
+  
+  // Reset values on the start of a gesture
+  .onStart(() => {
+    panLastX = 0;
   })
+
+  // Handle gesture updates and calculate the difference between frames, then update the velocity
+  .onUpdate((event) => {
+    const deltaX = event.translationX - panLastX;
+    panLastX = event.translationX;
+    updateVelocityPanX(deltaX);
+  })
+
   // When we let go of the drag, we no longer want to rotate so we set the rotation value to 0
   .onEnd(() => {
-    rotX = 0;
+    updateVelocityPanX(0);
   });
 
 // Outline the layout of the main page. The GLView component will provide our WebGL context for graphics, the ViewToggle
@@ -379,7 +396,7 @@ function drawFrame(time: number) {
 
     // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration 
     bindVAO(house.vao);
-    GLM.mat4.rotateY(house.modelMatrices[0], house.modelMatrices[0], rotX * delta); // Rotate the cube according to the frame delta for smooth movement
+    GLM.mat4.rotateY(house.modelMatrices[0], house.modelMatrices[0], panVelocityX * delta); // Rotate the cube according to the frame delta for smooth movement
     gl.uniformMatrix4fv(house.modelLoc, false, house.modelMatrices[0] as Float32Array); // Upload this new model matrix for drawing
     gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yiels 6 faces * 6 vertices for 36 vertices to draw.
 
