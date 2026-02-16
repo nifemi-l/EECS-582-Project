@@ -1,3 +1,19 @@
+/* PROLOGUE
+File name: home.tsx
+Description: Provide a home page with a WebGL context for graphical rendering
+Programmer: Jack Bauer
+Creation date: 2/15/26
+Revision date: 
+  - 2/15/26: Move graphical context and related code from index.tsx to here. Add comments. 
+Preconditions: A React application asking for the home page
+Postconditions: A home page component ready for rendering
+Errors: The home page will always be delivered successfully. 
+Side effects: None
+Invariants: None
+Known faults: None
+*/
+
+// Import required components
 import { Asset } from 'expo-asset';
 import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
@@ -6,7 +22,9 @@ import { Platform, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ViewToggle from "./components/ViewToggle";
 
-// Outline the layout of the main page. The GLView component will provide our WebGL context for graphics.
+// Outline the layout of the main page. The GLView component will provide our WebGL context for graphics, the ViewToggle
+// will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
+// the page. 
 export default function Index() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#f0f2f5" }} edges={["top"]}>
