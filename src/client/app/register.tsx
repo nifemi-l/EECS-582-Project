@@ -1,3 +1,18 @@
+/* PROLOGUE
+File name: register.tsx
+Description: Provide a registration screen UI that collects username, email, and password verification for account creation
+Programmer: Logan Smith
+Creation date: 2/14/26
+Revision date: N/A
+Preconditions: A React application requesting the register screen route ("/register")
+Postconditions: A registration screen component is ready for rendering; successful registration flow can route back to login (temporary)
+Errors: None
+Side effects: None
+Invariants: None
+Known faults: Backend persistence is not implemented yet; registration does not store user data.
+*/
+
+
 import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-native";
 import { router } from "expo-router";
 import { useState } from "react";

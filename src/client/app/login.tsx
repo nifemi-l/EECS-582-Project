@@ -1,3 +1,18 @@
+/* PROLOGUE
+File name: login.tsx
+Description: Provide a login screen UI that accepts user credentials and navigates to the home page
+Programmer: Logan Smith
+Creation date: 2/14/26
+Revision date: N/A
+Preconditions: A React application requesting the login screen route ("/login")
+Postconditions: A login screen component is ready for rendering; on sign-in, user is navigated to /home
+Errors: None
+Side effects: Navigation occurs when the user presses Sign In; local component state updates as user types
+Invariants: None
+Known faults: Login not storing data until backend database is established.
+*/
+
+
 import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-native";
 import { router } from "expo-router";
 import { useState } from "react";
