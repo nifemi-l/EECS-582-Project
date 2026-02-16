@@ -25,9 +25,16 @@ import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-g
 
 // See https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture for gesture handler details
 // Define gesture handler functions for panning
+// Also define a global variable to store this update each frame. 
+let rotX = 0;
 const handlePan = Gesture.Pan()
+  // Multiply the amount we have dragged on the screen by a constant to lessen the speed of rotation
   .onUpdate((event) => {
-    console.log("PAN UPDATED:", event.translationX);
+    rotX = event.translationX * 0.05;
+  })
+  // When we let go of the drag, we no longer want to rotate so we set the rotation value to 0
+  .onEnd(() => {
+    rotX = 0;
   });
 
 // Outline the layout of the main page. The GLView component will provide our WebGL context for graphics, the ViewToggle
@@ -372,7 +379,7 @@ function drawFrame(time: number) {
 
     // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration 
     bindVAO(house.vao);
-    GLM.mat4.rotateY(house.modelMatrices[0], house.modelMatrices[0], delta); // Rotate the cube according to the frame delta for smooth movement
+    GLM.mat4.rotateY(house.modelMatrices[0], house.modelMatrices[0], rotX * delta); // Rotate the cube according to the frame delta for smooth movement
     gl.uniformMatrix4fv(house.modelLoc, false, house.modelMatrices[0] as Float32Array); // Upload this new model matrix for drawing
     gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yiels 6 faces * 6 vertices for 36 vertices to draw.
 
