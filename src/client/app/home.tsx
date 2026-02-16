@@ -102,7 +102,7 @@ class Camera {
     this.viewLoc = null;
   }
 }
-const cam = new Camera(); // Our global camera value
+let cam = new Camera(); // Our global camera value
 
 // This is the household class. It is meant to be the primary way to store and access the currently rendered house model
 class Household {
@@ -166,7 +166,7 @@ class Household {
     this.vao = null;
    }
 }
-const house = new Household(); // Create a global household object
+let house = new Household(); // Create a global household object
 
 // This is the grid class, used to draw a grid on the screen
 class Grid {
@@ -188,7 +188,7 @@ class Grid {
     this.vao = null;
   }
 }
-const grid = new Grid(); // Store a global grid object
+let grid = new Grid(); // Store a global grid object
 
 // This is the function called to create the WebGL context, setup extensions if needed, read and compile shaders, and do all
 // other prep work which is neccessary to initialize our renderer. 
@@ -211,6 +211,9 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   lastFrameTime = 0;
   house.modelMatrices = [GLM.mat4.create(), GLM.mat4.create(), GLM.mat4.create(), GLM.mat4.create()];
   house.modelLoc = null;
+  grid = new Grid();
+  house = new Household();
+  cam = new Camera();
 
   // See expo documentation here: https://docs.expo.dev/versions/latest/sdk/gl-view/#usage
   // See also: https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Tutorial/Adding_2D_content_to_a_WebGL_context 
