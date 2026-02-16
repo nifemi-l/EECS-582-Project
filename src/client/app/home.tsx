@@ -27,10 +27,13 @@ import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-g
 // Also define global variables to store this data and update each frame
 let panVelocityX = 0;
 let panLastX = 0 
+let panVelocityY = 0;
+let panLastY = 0 
 
-// A helper function to update the velocity of the pan. We multiply the x delta by a constant speed value
-function updateVelocityPanX(dx: number) {
+// A helper function to update the velocity of the pan. We multiply the delta by a constant speed value
+function updateVelocityPan(dx: number, dy: number) {
   panVelocityX = dx * 0.5;
+  panVelocityY = dy * 0.5;
 }
 
 // Define gesture handler function for panning and rotating the model
@@ -40,18 +43,23 @@ const handlePan = Gesture.Pan()
   // Reset values on the start of a gesture
   .onStart(() => {
     panLastX = 0;
+    panLastY = 0;
   })
 
   // Handle gesture updates and calculate the difference between frames, then update the velocity
   .onUpdate((event) => {
     const deltaX = event.translationX - panLastX;
     panLastX = event.translationX;
-    updateVelocityPanX(deltaX);
+
+    const deltaY = event.translationY - panLastY;
+    panLastY = event.translationY;
+
+    updateVelocityPan(deltaX, deltaY);
   })
 
   // When we let go of the drag, we no longer want to rotate so we set the rotation value to 0
   .onEnd(() => {
-    updateVelocityPanX(0);
+    updateVelocityPan(0, 0);
   });
 
 // Outline the layout of the main page. The GLView component will provide our WebGL context for graphics, the ViewToggle
@@ -82,6 +90,19 @@ let glRef: ExpoWebGLRenderingContext | null = null; // A global way to access th
 let shaderProgram: WebGLProgram | null = null; // The currently used GPU shader program
 let lastFrameTime = 0; // The time since the last frame
 let oesExt: OES_vertex_array_object | null = null; // A global way to access the OES extension for WebGL 1.0 support
+
+// A class to represent the camera object. This manages the world view matrix
+class Camera {
+  viewMatrix: GLM.mat4; // The view matrix used to setup the projection
+  viewLoc: WebGLUniformLocation | null; // The location to access and provide the view matrix data for the shaders to use
+
+  // Constructor. Initialize the viewLocation to null since we have no gl context yet, and create an identity view matrix
+  constructor() {
+    this.viewMatrix = GLM.mat4.create();
+    this.viewLoc = null;
+  }
+}
+const cam = new Camera(); // Our global camera value
 
 // This is the household class. It is meant to be the primary way to store and access the currently rendered house model
 class Household {
@@ -280,6 +301,9 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   // Save the location information for the model matrix (that details transform information for each cube)
   house.modelLoc = matrixUniformLocs.modelMatrix; // We'll change this pretty frequently since we'll likely update it each frame.
 
+  // Save camera locations
+  cam.viewLoc = matrixUniformLocs.viewMatrix;
+
   // Setup our vertex buffer and attribute informations. This is how we know what information is stored where. 
   // Attributes are explained above. Basically, we send our vertex data to the GPU by storing it in a buffer. We also have to tell
   // the GPU how to interpret this data, as each vertex might contain different sets of data. For our cube, we store, for each vertex, 
@@ -321,12 +345,15 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   // our projection and view matrix. We create our perspective matrix with a FOV of 45, aspect ratio of the WebGL context, a near clip of 0.1 and far of 100. 
   // Then, we upload this matrix data as uniform data for use in our vertex shader as an array of values. 
   const projectionMatrix = GLM.mat4.create();
-  const viewMatrix = GLM.mat4.create();
   GLM.mat4.perspective(projectionMatrix, (45 * Math.PI / 180), gl.drawingBufferWidth / gl.drawingBufferHeight, 0.1, 100.0);
   GLM.mat4.translate(house.modelMatrices[0], house.modelMatrices[0], [0.0, 0.0, -5.0]); // Move the house model back 5 units
   gl.uniformMatrix4fv(matrixUniformLocs.projectionMatrix, false, projectionMatrix as Float32Array);
   gl.uniformMatrix4fv(matrixUniformLocs.modelMatrix, false, house.modelMatrices[0] as Float32Array);
-  gl.uniformMatrix4fv(matrixUniformLocs.viewMatrix, false, viewMatrix as Float32Array);
+
+  // Move the camera up a little
+  GLM.mat4.rotateX(cam.viewMatrix, cam.viewMatrix, 15 * Math.PI / 180);
+  GLM.mat4.translate(cam.viewMatrix, cam.viewMatrix, [0.0, -2.0, 0.0]);
+  gl.uniformMatrix4fv(matrixUniformLocs.viewMatrix, false, cam.viewMatrix as Float32Array);
 
   // Move the grid lines back
   GLM.mat4.translate(grid.modelMatrx, grid.modelMatrx, [0.0, 0.0, -5.0]);
@@ -384,6 +411,12 @@ function drawFrame(time: number) {
     // Ensure we have proper house and grid vertex array objects (VAOs), if not error and return
     if (!house.vao || !grid.vao) {
       console.error("Invalid VAOs.");
+      return;
+    }
+
+    // Ensure we have a proper camera view matrix location
+    if (!cam.viewLoc) {
+      console.error("Invalid camera view uniform.");
       return;
     }
 
