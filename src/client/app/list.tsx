@@ -106,7 +106,7 @@ function TaskRow({
         <MaterialCommunityIcons
           name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"}
           size={22}
-          color={isSelected ? "#5c6bc0" : "#ccc"}
+          color={isSelected ? "#4169E1" : "#ccc"}
         />
       </Pressable>
 
@@ -116,7 +116,7 @@ function TaskRow({
         <MaterialCommunityIcons
           name={task.icon as any}
           size={20}
-          color="#5c6bc0"
+          color="#4169E1"
         />
       </View>
 
@@ -245,7 +245,7 @@ function LocationGroup({
         <MaterialCommunityIcons
           name={location.icon as any}
           size={24}
-          color="#5c6bc0"
+          color="#4169E1"
         />
 
         {/* Show an editable input or the location name depending on mode */}
@@ -343,7 +343,7 @@ function LocationGroup({
             <MaterialCommunityIcons
               name="plus"
               size={18}
-              color="#5c6bc0"
+              color="#4169E1"
               style={{ marginRight: 8 }}
             />
             {/* Text input for the new task name */}
@@ -393,7 +393,7 @@ function AddSectionRow({
       <MaterialCommunityIcons 
         name="plus-box-outline"
         size={22}
-        color="#5c6bc0" 
+        color="#4169E1" 
       />
       {/* Text input for the new section name */}
       <TextInput
@@ -574,7 +574,7 @@ export default function ListScreen() {
 }
 
 // Accent color and background color constants
-const ACCENT = "#5c6bc0";
+const ACCENT = "#4169E1";
 const BG = "#f0f2f5";
 
 // All styles for the list screen
