@@ -452,7 +452,7 @@ function drawFrame(time: number) {
     if (grid !== null && grid.vao !== null && grid.buffer !== null && grid.gridVertices !== null) {
       bindVAO(grid.vao);
       gl.uniformMatrix4fv(house.modelLoc, false, grid.modelMatrx as Float32Array);
-      gl.drawArrays(gl.LINES, 0, 2 * (grid.width + grid.height)); // Lines are 1 pixel thick by default. Two vertices per line.
+      gl.drawArrays(gl.LINES, 0, 2 * (grid.width + grid.height + 2)); // Lines are 1 pixel thick by default. Two vertices per line. Two more lines to close the grid.
     }
 
     // End frame. Flush WebGL's GPU, call an expo handler method, and then request a new animation frame with this same method (recursive)
@@ -478,7 +478,7 @@ function genGrid(width: number, height: number) {
 
   // Each vertex has 3 position elements. Each line has two vertices, so 6 elements per line.
   // We start at -(width / 2), increasing by 1, until (width / 2) in the x direction, and then again in the z direction.
-  const numLines = width + height;
+  const numLines = width + height + 2; // add two lines to close in the grid
   const numVertices = numLines * 6;
 
   // Store our vertices as a flat array
@@ -486,7 +486,7 @@ function genGrid(width: number, height: number) {
 
   // First half of verts is width lines
   // Draw all the lines in a z direction moving across the x axis
-  for (let i = 0; i < width; i++) {
+  for (let i = 0; i <= width; i++) {
     // x position goes from 0 - width / 2 to 0 + width / 2. z position is from 0 - height / 2 to 0 + height / 2
     
     // line 1 - x, y, z
@@ -502,18 +502,18 @@ function genGrid(width: number, height: number) {
 
   // Second half of verts is height lines
   // Draw all the lines in the x direction moving across the z axis
-  for (let i = width; i < numLines; i++) {
+  for (let i = width + 1; i < numLines; i++) {
     // x position goes from 0 - width / 2 to 0 + width / 2. z position is from 0 - height / 2 to 0 + height / 2
     
     // line 1 - x, y, z
     verts[i * 6 + 0] = 0 - width / 2;
     verts[i * 6 + 1] = 0.0;
-    verts[i * 6 + 2] = i - height / 2 - width;
+    verts[i * 6 + 2] = i - 1 - height / 2 - width;
 
     // line 2 - x, y, z
     verts[i * 6 + 3] = 0 + width / 2;
     verts[i * 6 + 4] = 0.0;
-    verts[i * 6 + 5] = i - height / 2 - width;
+    verts[i * 6 + 5] = i - 1 - height / 2 - width;
   }
 
   console.log("Generated:", verts);
