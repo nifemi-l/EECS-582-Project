@@ -209,8 +209,6 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   glRef = gl;
   shaderProgram = null;
   lastFrameTime = 0;
-  house.modelMatrices = [GLM.mat4.create(), GLM.mat4.create(), GLM.mat4.create(), GLM.mat4.create()];
-  house.modelLoc = null;
   grid = new Grid();
   house = new Household();
   cam = new Camera();
@@ -354,7 +352,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   gl.uniformMatrix4fv(matrixUniformLocs.modelMatrix, false, house.modelMatrices[0] as Float32Array);
 
   // Move the camera up a little
-  GLM.mat4.rotateX(cam.viewMatrix, cam.viewMatrix, 15 * Math.PI / 180);
+  GLM.mat4.rotateX(cam.viewMatrix, cam.viewMatrix, 10 * Math.PI / 180);
   GLM.mat4.translate(cam.viewMatrix, cam.viewMatrix, [0.0, -2.0, 0.0]);
   gl.uniformMatrix4fv(matrixUniformLocs.viewMatrix, false, cam.viewMatrix as Float32Array);
 
@@ -445,6 +443,13 @@ function drawFrame(time: number) {
     gl.flush(); 
     gl.endFrameEXP();
     window.requestAnimationFrame(drawFrame);
+}
+
+// A function to add a block to the household at a certain position
+function addBlock(cellX: number, cellY: number, cellZ: number) {
+  const newModelMatrix = GLM.mat4.create();
+  GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX, cellY, cellZ]);
+  house.modelMatrices.push(newModelMatrix);
 }
 
 // Since WebGL 1.0 and 2.0 create vertex array objects (explained above) differently, we need a wrapper function. 
