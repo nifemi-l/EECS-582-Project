@@ -440,9 +440,7 @@ function drawFrame(time: number) {
 
     // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration 
     bindVAO(house.vao);
-    // GLM.mat4.rotateY(house.modelMatrices[0], house.modelMatrices[0], panVelocityX * delta); // Rotate the cube according to the frame delta for smooth movement
     GLM.mat4.rotateY(cam.viewMatrix, cam.viewMatrix, panVelocityX * delta); // Rotate the cube according to the frame delta for smooth movement
-    // gl.uniformMatrix4fv(house.modelLoc, false, house.modelMatrices[0] as Float32Array); // Upload this new model matrix for drawing
     gl.uniformMatrix4fv(cam.viewLoc, false, cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
     gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yiels 6 faces * 6 vertices for 36 vertices to draw.
 
