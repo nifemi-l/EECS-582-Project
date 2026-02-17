@@ -19,7 +19,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 // Main accent color used across the app
-const ACCENT = "#5c6bc0";
+const ACCENT = "#4169E1";
 
 // Define the props this component expects
 export interface SensorBadgeProps {
