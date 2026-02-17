@@ -22,7 +22,6 @@ import { Platform, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ViewToggle from "./components/ViewToggle";
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
-import { useEffect } from 'react';
 
 // See https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture for gesture handler details
 // Also define global variables to store this data and update each frame
@@ -190,10 +189,7 @@ class Grid {
     this.vao = null;
   }
 }
-let grid: Grid | null = null; // Store a global grid object
-useEffect(() => {
-  grid = new Grid(); // Only create the grid once
-});
+const grid = new Grid(); // Store a global grid object
 
 // This is the function called to create the WebGL context, setup extensions if needed, read and compile shaders, and do all
 // other prep work which is neccessary to initialize our renderer. 
@@ -494,14 +490,14 @@ function genGrid(width: number, height: number) {
     // x position goes from 0 - width / 2 to 0 + width / 2. z position is from 0 - height / 2 to 0 + height / 2
     
     // line 1 - x, y, z
-    verts[i * 6 + 0] = i;
+    verts[i * 6 + 0] = i - width / 2;
     verts[i * 6 + 1] = 0.0;
-    verts[i * 6 + 2] = -(width / 2);
+    verts[i * 6 + 2] = 0 - height / 2;
 
     // line 2 - x, y, z
-    verts[i * 6 + 3] = i;
+    verts[i * 6 + 3] = i - width / 2;
     verts[i * 6 + 4] = 0.0;
-    verts[i * 6 + 5] = (width / 2);
+    verts[i * 6 + 5] = 0 + height / 2;
   }
 
   // Second half of verts is height lines
@@ -510,14 +506,14 @@ function genGrid(width: number, height: number) {
     // x position goes from 0 - width / 2 to 0 + width / 2. z position is from 0 - height / 2 to 0 + height / 2
     
     // line 1 - x, y, z
-    verts[i * 6 + 0] = -(height / 2);
+    verts[i * 6 + 0] = 0 - width / 2;
     verts[i * 6 + 1] = 0.0;
-    verts[i * 6 + 2] = i - width;
+    verts[i * 6 + 2] = i - height / 2 - width;
 
     // line 2 - x, y, z
-    verts[i * 6 + 3] = (height / 2);
+    verts[i * 6 + 3] = 0 + width / 2;
     verts[i * 6 + 4] = 0.0;
-    verts[i * 6 + 5] = i - width;
+    verts[i * 6 + 5] = i - height / 2 - width;
   }
 
   console.log("Generated:", verts);
