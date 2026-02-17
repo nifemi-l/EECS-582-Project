@@ -78,7 +78,12 @@ export default function Index() {
                   alignItems: "center",
                 }}
               >
-                <GLView style={{width: 300, height: 300}} onContextCreate={onContextCreate} />
+                <GLView style={{
+                  width: "100%",
+                  height: "100%"
+                }} 
+                onContextCreate={onContextCreate} 
+                />
               </View>
           </GestureDetector>
         </SafeAreaView>
