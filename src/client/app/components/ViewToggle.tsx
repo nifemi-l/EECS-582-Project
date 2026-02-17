@@ -27,7 +27,7 @@ import { SensorBadge, SensorBadgeProps } from "./SensorBadge";
 type ViewMode = "3d" | "list";
 
 // Color constants used throughout this component
-const ACCENT = "#5c6bc0";
+const ACCENT = "#4169E1";
 const ACCENT_LIGHT = "#e8eaf6";
 
 // Placeholder sensor data until we hook up the actual hardware readings
