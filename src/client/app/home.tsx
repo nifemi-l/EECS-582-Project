@@ -224,7 +224,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 
   // Setup initial parameters
   gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight); // The size of the rendered context on the screen
-  gl.clearColor(0.4, 0, 0.4, 1); // The background color 
+  gl.clearColor(0.0, 0.0, 0.0, 1); // The background color 
   gl.enable(gl.DEPTH_TEST); // Allow objects with further depth to be obscured by other objects
   gl.depthFunc(gl.LEQUAL); // Specify which method to use to compare depth (less than or equal)
 
@@ -361,13 +361,12 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   // Then, we upload this matrix data as uniform data for use in our vertex shader as an array of values. 
   const projectionMatrix = GLM.mat4.create();
   GLM.mat4.perspective(projectionMatrix, (45 * Math.PI / 180), gl.drawingBufferWidth / gl.drawingBufferHeight, 0.1, 100.0);
-  GLM.mat4.translate(house.modelMatrices[0], house.modelMatrices[0], [0.0, 0.0, -5.0]); // Move the house model back 5 units
   gl.uniformMatrix4fv(matrixUniformLocs.projectionMatrix, false, projectionMatrix as Float32Array);
   gl.uniformMatrix4fv(matrixUniformLocs.modelMatrix, false, house.modelMatrices[0] as Float32Array);
 
   // Move the camera up, back, and turn it a little to the origin
-  GLM.mat4.rotateX(cam.viewMatrix, cam.viewMatrix, 10 * Math.PI / 180);
-  GLM.mat4.translate(cam.viewMatrix, cam.viewMatrix, [0.0, -2.0, -5.0]);
+  GLM.mat4.rotateX(cam.viewMatrix, cam.viewMatrix, 30 * Math.PI / 180);
+  GLM.mat4.translate(cam.viewMatrix, cam.viewMatrix, [0.0, -4.0, -7.0]);
   gl.uniformMatrix4fv(matrixUniformLocs.viewMatrix, false, cam.viewMatrix as Float32Array);
 
   // Setup lighting data. We'll just use placeholder values for now. Ambient simulates the basic lighting that just "exists", 
@@ -375,11 +374,11 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   // shiny reflection of very pointed light. It's the "bright spots" that appear when light is reflected strongly in one direction 
   // towards you. Diffuse is scattered light, specular is not. Shiniess is just a material value. See https://learnopengl.com/Lighting/Basic-Lighting. 
   gl.uniform3fv(lightUniformLocs.viewPosition, [0, 0, 0]);
-  gl.uniform3fv(lightUniformLocs.material.ambient, [1.0, 0.5, 0.31]);
-  gl.uniform3fv(lightUniformLocs.material.diffuse, [1.0, 0.5, 0.31]);
+  gl.uniform3fv(lightUniformLocs.material.ambient, [0.31, 0.31, 0.31]);
+  gl.uniform3fv(lightUniformLocs.material.diffuse, [1.0, 1.0, 1.0]);
   gl.uniform3fv(lightUniformLocs.material.specular, [0.5, 0.5, 0.5]);
   gl.uniform1f(lightUniformLocs.material.shininess, 32.0);
-  gl.uniform3fv(lightUniformLocs.light.position, [0.0, 0.0, 0.6]);
+  gl.uniform3fv(lightUniformLocs.light.position, [0.0, 3.0, 3.0]);
   gl.uniform3fv(lightUniformLocs.light.ambient, [1.0, 0.5, 0.31]);
   gl.uniform3fv(lightUniformLocs.light.diffuse, [1.0, 0.5, 0.31]);
   gl.uniform3fv(lightUniformLocs.light.specular, [1.0, 1.0, 1.0]);
