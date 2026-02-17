@@ -22,6 +22,7 @@ import { Platform, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ViewToggle from "./components/ViewToggle";
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { useEffect } from 'react';
 
 // See https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture for gesture handler details
 // Also define global variables to store this data and update each frame
@@ -170,17 +171,18 @@ let house = new Household(); // Create a global household object
 
 // This is the grid class, used to draw a grid on the screen
 class Grid {
-  gridVertices: Float32Array; // Store the vertices that make up the grid
+  gridVertices: Float32Array | null; // Store the vertices that make up the grid
   modelMatrx: GLM.mat4; // Store the transform data of the grid
   buffer: WebGLBuffer | null; // Access the GPU buffer where the grid vertex data is uploaded
   vao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null; // Store a descriptor of the proper vertex attribute format and related buffer
+  width: number;
+  height: number;
 
   constructor() {
     // As above, but no need for normal data
-    this.gridVertices = new Float32Array([
-      -100.0, 0.0, 0.0,
-      100.0, 0.0, 0.0,
-    ]);
+    this.width = 10;
+    this.height = 10;
+    this.gridVertices = genGrid(this.width, this.height);
     
     // As in Household, we initialize what we can but set to null whatever needs a WebGL context first
     this.modelMatrx = GLM.mat4.create();
@@ -188,7 +190,10 @@ class Grid {
     this.vao = null;
   }
 }
-let grid = new Grid(); // Store a global grid object
+let grid: Grid | null = null; // Store a global grid object
+useEffect(() => {
+  grid = new Grid(); // Only create the grid once
+});
 
 // This is the function called to create the WebGL context, setup extensions if needed, read and compile shaders, and do all
 // other prep work which is neccessary to initialize our renderer. 
@@ -209,9 +214,13 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   glRef = gl;
   shaderProgram = null;
   lastFrameTime = 0;
-  grid = new Grid();
   house = new Household();
   cam = new Camera();
+
+  // Rebuild the grid if we're missing it
+  if (!grid) {
+    console.error("No grid!");
+  }
 
   // See expo documentation here: https://docs.expo.dev/versions/latest/sdk/gl-view/#usage
   // See also: https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Tutorial/Adding_2D_content_to_a_WebGL_context 
@@ -323,17 +332,26 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   bindVAO(null);
 
   // Do the same as above, but for the grid vertices. Note that we disable the normal attribute and default it to (0, 1, 0) always since we don't 
-  // store normal data with our vertices. We'll wrap this up in another VAO for ease of use. 
-  grid.buffer = gl.createBuffer();
-  grid.vao = createVAO();
-  bindVAO(grid.vao);
-  gl.bindBuffer(gl.ARRAY_BUFFER, grid.buffer);
-  gl.bufferData(gl.ARRAY_BUFFER, grid.gridVertices, gl.STATIC_DRAW); 
-  gl.vertexAttribPointer(attribLocs.vertLoc, 3, gl.FLOAT, false, 3 * 4, 0);
-  gl.enableVertexAttribArray(attribLocs.vertLoc);
-  gl.disableVertexAttribArray(attribLocs.normalLoc);
-  gl.vertexAttrib3f(attribLocs.normalLoc, 0, 1, 0);
-  bindVAO(null);
+  // store normal data with our vertices. We'll wrap this up in another VAO for ease of use. Skip this is we have no grid vertices
+  if (grid !== null && grid.gridVertices !== null) {
+    console.log("Decided to configure grid.");
+    const gridBuffer = gl.createBuffer();
+    const gridVao = createVAO();
+    bindVAO(gridVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gridBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, grid.gridVertices, gl.STATIC_DRAW); 
+    gl.vertexAttribPointer(attribLocs.vertLoc, 3, gl.FLOAT, false, 3 * 4, 0);
+    gl.enableVertexAttribArray(attribLocs.vertLoc);
+    gl.disableVertexAttribArray(attribLocs.normalLoc);
+    gl.vertexAttrib3f(attribLocs.normalLoc, 0, 1, 0);
+
+    // Set these afterwards for safety in case there's anything funky going on with the grid object
+    grid.vao = gridVao;
+    grid.buffer = gridBuffer;
+    bindVAO(null);
+  } else {
+    console.log("Skipping grid configuration.");
+  }
 
   // Select our shader program to use. We must always have an active shader program.
   gl.useProgram(program);
@@ -351,13 +369,10 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   gl.uniformMatrix4fv(matrixUniformLocs.projectionMatrix, false, projectionMatrix as Float32Array);
   gl.uniformMatrix4fv(matrixUniformLocs.modelMatrix, false, house.modelMatrices[0] as Float32Array);
 
-  // Move the camera up a little
+  // Move the camera up, back, and turn it a little to the origin
   GLM.mat4.rotateX(cam.viewMatrix, cam.viewMatrix, 10 * Math.PI / 180);
-  GLM.mat4.translate(cam.viewMatrix, cam.viewMatrix, [0.0, -2.0, 0.0]);
+  GLM.mat4.translate(cam.viewMatrix, cam.viewMatrix, [0.0, -2.0, -5.0]);
   gl.uniformMatrix4fv(matrixUniformLocs.viewMatrix, false, cam.viewMatrix as Float32Array);
-
-  // Move the grid lines back
-  GLM.mat4.translate(grid.modelMatrx, grid.modelMatrx, [0.0, 0.0, -5.0]);
 
   // Setup lighting data. We'll just use placeholder values for now. Ambient simulates the basic lighting that just "exists", 
   // diffuse simulates lighting the bounces around and hits items and originates at a point, and specular I think of as just the 
@@ -403,14 +418,14 @@ function drawFrame(time: number) {
       return;
     }
 
-    // Ensure we have proper house and grid buffers, if not error and return
-    if (!house.buffer || !grid.buffer) {
+    // Ensure we have a proper house buffer, if not error and return
+    if (!house.buffer) {
       console.error("Invalid buffers.");
       return;
     }
 
-    // Ensure we have proper house and grid vertex array objects (VAOs), if not error and return
-    if (!house.vao || !grid.vao) {
+    // Ensure we have a proper house vertex array object (VAO), if not error and return
+    if (!house.vao) {
       console.error("Invalid VAOs.");
       return;
     }
@@ -430,14 +445,19 @@ function drawFrame(time: number) {
 
     // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration 
     bindVAO(house.vao);
-    GLM.mat4.rotateY(house.modelMatrices[0], house.modelMatrices[0], panVelocityX * delta); // Rotate the cube according to the frame delta for smooth movement
-    gl.uniformMatrix4fv(house.modelLoc, false, house.modelMatrices[0] as Float32Array); // Upload this new model matrix for drawing
+    // GLM.mat4.rotateY(house.modelMatrices[0], house.modelMatrices[0], panVelocityX * delta); // Rotate the cube according to the frame delta for smooth movement
+    GLM.mat4.rotateY(cam.viewMatrix, cam.viewMatrix, panVelocityX * delta); // Rotate the cube according to the frame delta for smooth movement
+    // gl.uniformMatrix4fv(house.modelLoc, false, house.modelMatrices[0] as Float32Array); // Upload this new model matrix for drawing
+    gl.uniformMatrix4fv(cam.viewLoc, false, cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
     gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yiels 6 faces * 6 vertices for 36 vertices to draw.
 
     // Draw the grid. Use our grid vertex configuration, upload the grid's model matrix to the vertex shader, and then draw a line. Each line has two vertices. 
-    bindVAO(grid.vao);
-    gl.uniformMatrix4fv(house.modelLoc, false, grid.modelMatrx as Float32Array);
-    gl.drawArrays(gl.LINES, 0, 2); // Lines are 1 pixel thick by default
+    // Only draw if we have a proper grid setup
+    if (grid !== null && grid.vao !== null && grid.buffer !== null && grid.gridVertices !== null) {
+      bindVAO(grid.vao);
+      gl.uniformMatrix4fv(house.modelLoc, false, grid.modelMatrx as Float32Array);
+      gl.drawArrays(gl.LINES, 0, 2 * (grid.width + grid.height)); // Lines are 1 pixel thick by default. Two vertices per line.
+    }
 
     // End frame. Flush WebGL's GPU, call an expo handler method, and then request a new animation frame with this same method (recursive)
     gl.flush(); 
@@ -450,6 +470,58 @@ function addBlock(cellX: number, cellY: number, cellZ: number) {
   const newModelMatrix = GLM.mat4.create();
   GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX, cellY, cellZ]);
   house.modelMatrices.push(newModelMatrix);
+}
+
+// Generate the vertices that would comrpise a grid based on a width and height value centered at 0 on the xz axis. 
+function genGrid(width: number, height: number) {
+  // Ensure valid width & height
+  if (width <= 0 || height <= 0) {
+    console.error("Invalid grid parameters.");
+    return null;
+  }
+
+  // Each vertex has 3 position elements. Each line has two vertices, so 6 elements per line.
+  // We start at -(width / 2), increasing by 1, until (width / 2) in the x direction, and then again in the z direction.
+  const numLines = width + height;
+  const numVertices = numLines * 6;
+
+  // Store our vertices as a flat array
+  let verts = new Float32Array(numVertices);
+
+  // First half of verts is width lines
+  // Draw all the lines in a z direction moving across the x axis
+  for (let i = 0; i < width; i++) {
+    // x position goes from 0 - width / 2 to 0 + width / 2. z position is from 0 - height / 2 to 0 + height / 2
+    
+    // line 1 - x, y, z
+    verts[i * 6 + 0] = i;
+    verts[i * 6 + 1] = 0.0;
+    verts[i * 6 + 2] = -(width / 2);
+
+    // line 2 - x, y, z
+    verts[i * 6 + 3] = i;
+    verts[i * 6 + 4] = 0.0;
+    verts[i * 6 + 5] = (width / 2);
+  }
+
+  // Second half of verts is height lines
+  // Draw all the lines in the x direction moving across the z axis
+  for (let i = width; i < numLines; i++) {
+    // x position goes from 0 - width / 2 to 0 + width / 2. z position is from 0 - height / 2 to 0 + height / 2
+    
+    // line 1 - x, y, z
+    verts[i * 6 + 0] = -(height / 2);
+    verts[i * 6 + 1] = 0.0;
+    verts[i * 6 + 2] = i - width;
+
+    // line 2 - x, y, z
+    verts[i * 6 + 3] = (height / 2);
+    verts[i * 6 + 4] = 0.0;
+    verts[i * 6 + 5] = i - width;
+  }
+
+  console.log("Generated:", verts);
+  return verts as Float32Array;
 }
 
 // Since WebGL 1.0 and 2.0 create vertex array objects (explained above) differently, we need a wrapper function. 
