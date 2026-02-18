@@ -62,15 +62,31 @@ const handlePan = Gesture.Pan()
     updateVelocityPan(0, 0);
   });
 
+// Handle screen taps (on web, clicks)
+let tapPosX = 0; // save the tap position in screen coordinates (not world coordinates)
+let tapPosY = 0;
+const handleTap = Gesture.Tap() // Handle the tap gesture
+  .runOnJS(true) // Run on the main JS thread that the renderer runs on, not the UI thread
+  .maxDuration(250) // Limit the amount of time of taps so we can recognize more pans
+  .onFinalize((event, success) => { // When the tap event is done...
+    if (success) { 
+      // If it was actually a tap and didn't end up something else (e.g. pan), then log it
+      console.log("Tapped:", event.absoluteX, event.absoluteY);
+    }
+  })
+
+// Use a composed gesture to allow for both pan and tap gestures. It is exclusive in that we can't use them both
+const composedGesture = Gesture.Exclusive(handlePan, handleTap);
+
 // Outline the layout of the main page. The GLView component will provide our WebGL context for graphics, the ViewToggle
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
-// the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning)
+// the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
 export default function Index() {
   return (
     <GestureHandlerRootView>
         <SafeAreaView style={{ flex: 1, backgroundColor: "#f0f2f5" }} edges={["top"]}>
           <ViewToggle active="3d" />
-            <GestureDetector gesture={handlePan}>
+            <GestureDetector gesture={composedGesture}>
               <View
                 style={{
                   flex: 1,
