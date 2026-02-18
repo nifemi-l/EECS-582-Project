@@ -1,10 +1,10 @@
 /* PROLOGUE
-File name: register+api.ts
-Description: Route contining behavior for /api/auth/register endpoint
+File name: login+api.ts
+Description: Route contining behavior for /api/auth/login endpoint
 Programmer: Delroy Wright
 Creation date: 2/19/26
 Revision date: 
-Preconditions: A client is running and has requested to register
+Preconditions: A client is running and has requested to login
 Postconditions: A response is returned to the client.
 Errors: Invalid requests may be sent to this endpoint.
 Side effects: None

@@ -1,3 +1,17 @@
+/* PROLOGUE
+File name: delete+api.ts
+Description: Route contining behavior for /api/chore/delete endpoint
+Programmer: Delroy Wright
+Creation date: 2/9/26
+Revision date: 
+Preconditions: A client is running and has requested to delete a chore
+Postconditions: A response is returned to the client.
+Errors: Invalid requests may be sent to this endpoint.
+Side effects: None
+Invariants: None
+Known faults: None
+*/
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
@@ -8,13 +22,12 @@ export async function POST(req: Request) {
 
     if (!body.title || !body.details) {
       return Response.json(
-        { ok: false, error: "Task could not be added. Task is not complete!" },
+        { ok: false, error: "Task could not be deleted. Task is not complete!" },
         { status: 400 }
       );
     }
 
     // TODO: call your server logic here (create user, hash password, etc.)
-    // const user = await registerUser(body);
 
     return Response.json(
       { ok: true, task: { task: body.title, details: body.details ?? null } },
