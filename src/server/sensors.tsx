@@ -11,6 +11,7 @@ Side effects: None
 Invariants: None
 Known faults: None
 */
+
 export default class Sensors {
     temperature : number;
     humidity : number;

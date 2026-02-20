@@ -14,7 +14,9 @@ Side effects: None
 Invariants: None
 Known faults: None
 */
+
 import Feature from "./feature"
+import User from "./user"
 import { Frequency, DayAmount, SetInterval, Interval } from "./frequency"
 
 export default class Chore {
@@ -27,8 +29,10 @@ export default class Chore {
     frequency: Frequency; 
     decayRate: number;
     healthPercent : number;
+    choreOwner : User;
+    privateChore : boolean;
 
-    constructor(title : string, details : string, feature : Feature) {
+    constructor(title : string, details : string, feature : Feature, choreOwner : User, privateChore : boolean) {
         this.title = title;
         this.details = details;
         this.feature = feature;
@@ -65,7 +69,7 @@ export default class Chore {
         return this.createdAt.toUTCString()
     }
 
-    decayChore() {
+    public decayChore() {
         this.healthPercent -= this.frequency.getDecay(this.dueDate) 
     }
 
@@ -75,6 +79,4 @@ export default class Chore {
         this.dueDate = this.frequency.updateDueDate(this.dueDate, now)
 
     }
-
-
 }

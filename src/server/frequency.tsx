@@ -18,7 +18,7 @@ export abstract class Frequency {
         public skipIntervals: number,
     ) { }
 
-    abstract getDecay(Date): number;
+    abstract getDecay(dueDate : Date): number;
     abstract updateDueDate(dueDate: Date, now: Date): Date;
 
     protected getMsSinceDue(dueDate: Date): number {

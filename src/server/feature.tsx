@@ -15,15 +15,44 @@ Known faults: None
 */
 
 import User from "./user"
+import Chore from "./chore"
 
 export default class Feature {
     title : string;
     createdBy : User;
     accessList : User[];
+    healthPercent : number;
+    chores : Chore[];
     // location : Location ?? 
     constructor(title : string, createdBy : User) {
         this.title = title;
         this.createdBy = createdBy;
         this.accessList = [createdBy];
+    }
+
+    addChore(chore : Chore) {
+        this.chores.push(chore)
+    }
+
+    calculateHealthPercent() : number {
+        // average of all chore's health percentages
+
+        let numChores = this.chores.length
+        if (numChores == 0)
+            return 0
+
+        let totalPercent = 0
+
+        for (let chore of this.chores) { 
+            totalPercent += chore.healthPercent    
+        }
+
+        return totalPercent / numChores
+    }
+
+    decay() {
+        for (let chore of this.chores) {
+            chore.decayChore()
+        }
     }
 }
