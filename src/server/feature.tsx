@@ -20,6 +20,7 @@ export default class Feature {
     title : string;
     createdBy : User;
     accessList : User[];
+    // location : Location ?? 
     constructor(title : string, createdBy : User) {
         this.title = title;
         this.createdBy = createdBy;
