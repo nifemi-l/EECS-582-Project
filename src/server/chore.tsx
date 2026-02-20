@@ -23,9 +23,10 @@ export default class Chore {
     feature : Feature;
     createdAt : Date;
     lastFinishedChoreTime : Date;
-    nextDueDate : Date;
+    dueDate : Date;
     frequency: Frequency; 
     decayRate: number;
+    healthPercent : number;
 
     constructor(title : string, details : string, feature : Feature) {
         this.title = title;
@@ -44,7 +45,10 @@ export default class Chore {
         return this.createdAt.toUTCString()
     }
 
-    //TODO: decay() { }
+    decay() {
+        this.healthPercent -= this.frequency.getDecay(this.dueDate) 
+    }
+
     //TODO: complete() { }
 
 
