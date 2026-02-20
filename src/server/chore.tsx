@@ -15,7 +15,7 @@ Invariants: None
 Known faults: None
 */
 import Feature from "./feature"
-import { Frequency } from "./frequency"
+import { Frequency, DayAmount, SetInterval, Interval } from "./frequency"
 
 export default class Chore {
     title : string;
@@ -37,6 +37,26 @@ export default class Chore {
         this.decayRate = 1 // 1% for every time missed on their set interval?
     }
 
+    setFrequency(timesPerInterval : number, skipIntervals : number, resetOnCompletion : boolean, interval : string, dayAmount : number  ) {
+        if (interval == null && dayAmount == null || interval != null && dayAmount != null) {
+            throw Error("Cannot create a frequency that is both a variable interval (EX: monthly) and a set amount of days (EX: weekly)")
+        }
+
+        if (dayAmount != null) {
+            this.frequency = new DayAmount(timesPerInterval, skipIntervals, resetOnCompletion, dayAmount)
+        }
+
+        if (interval != null) {
+            let tgtInterval : any = null
+            if (interval == "monthly")
+                tgtInterval = Interval.Monthly
+            else if (interval == "yearly")
+                tgtInterval = Interval.Yearly
+
+            this.frequency = new SetInterval(timesPerInterval, skipIntervals, tgtInterval)
+        }
+    }
+
     updateDetails(newDetails : string) {
         this.details = newDetails
     }
@@ -45,11 +65,16 @@ export default class Chore {
         return this.createdAt.toUTCString()
     }
 
-    decay() {
+    decayChore() {
         this.healthPercent -= this.frequency.getDecay(this.dueDate) 
     }
 
-    //TODO: complete() { }
+    finishChore() { 
+        let now = new Date()
+        this.lastFinishedChoreTime = now
+        this.dueDate = this.frequency.updateDueDate(this.dueDate, now)
+
+    }
 
 
 }
