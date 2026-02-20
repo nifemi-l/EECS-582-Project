@@ -1,3 +1,17 @@
+/* PROLOGUE
+File name: frequency.tsx
+Description: Class for a chore's requency, allowing for dynamic behavior scheduling repeated chores
+Programmer: Delroy Wright
+Creation date: 2/19/26
+Revision date: 
+Preconditions: A client is running and has access to the Chore class and any inherited members.
+Postconditions: An instantiated Frequency class along with any functions that are required.
+Errors: Freequencies may be attempted to be created with invalid data or fields.
+Side effects: None
+Invariants: None
+Known faults: None
+*/
+
 export abstract class Frequency {
     constructor(
         public timesPerInterval: number,
