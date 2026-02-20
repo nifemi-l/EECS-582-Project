@@ -23,6 +23,7 @@ export default class Household {
     adminUsers: User[]
     sensors : Sensors
     features : Feature[]
+    // location : Location ?? 
 
     constructor(title, users) {
         this.title = title;
