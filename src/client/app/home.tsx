@@ -18,7 +18,7 @@ import { Asset } from 'expo-asset';
 import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
 import * as GLM from 'gl-matrix';
-import { Platform, View } from "react-native";
+import { LayoutChangeEvent, Platform, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ViewToggle from "./components/ViewToggle";
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -63,8 +63,8 @@ const handlePan = Gesture.Pan()
   });
 
 // Handle screen taps (on web, clicks)
-let tapPosX = 0; // save the tap position in screen coordinates (not world coordinates)
-let tapPosY = 0;
+type tapPair = [number, number] // simplify a type of x and y for taps
+let tapList: tapPair[] = []; // every tap we'll store as a tuple of (x, y)
 const handleTap = Gesture.Tap() // Handle the tap gesture
   .runOnJS(true) // Run on the main JS thread that the renderer runs on, not the UI thread
   .maxDuration(250) // Limit the amount of time of taps so we can recognize more pans
@@ -72,8 +72,66 @@ const handleTap = Gesture.Tap() // Handle the tap gesture
     if (success) { 
       // If it was actually a tap and didn't end up something else (e.g. pan), then log it
       console.log("Tapped:", event.absoluteX, event.absoluteY);
+      tapList.push([event.absoluteX, event.absoluteY]);
+      console.log("In world tapped:", screenToWorldCoords(event.absoluteX, event.absoluteY));
     }
   })
+
+function screenToWorldCoords(screenX: number, screenY: number) {
+  if (!glRef || !cam.projectionMatrix || !cam.viewMatrix) {
+    console.error("Unable to convert coordinates without WebGL context.");
+    return null;
+  }
+
+  if (viewWidth == 0 || viewHeight === 0 || windowWidth === 0 || windowHeight === 0) {
+    console.error("No width or height defined.");
+    return null;
+  }
+  console.log("Dims:", viewWidth, viewHeight, windowWidth, windowHeight);
+
+  // normalize screen coordinates to normalized device coordinates [-1, 1]
+  // convert screen coords to clip space. Centered at 0,0,0. 
+  // Top left: (-1, 1, ~). Bottom right: (1, -1, ~) in NDC
+  // Top left: (0, 0), bottom right (max, max) in Screen Coordinates.
+  // After dividing screen by max, we get [0, 1] as our screen coord range
+  const normX = 2.0 * (screenX / viewWidth) - 1.0;
+  const normY = 2.0 * ((screenY - (windowHeight - viewHeight)) / viewHeight) - 1.0; // top left is 0,0 in screen coords
+  const normZ = 0; // a click "on the screen"
+  console.log("Norms:", normX, normY, normZ);
+
+  // Unproject from screen to world 
+  // we multiply matrices as Projection * View * Model, or P*V*M. 
+  // Here, we'll assume model is the identity. 
+  const pvMat4 = GLM.mat4.create();
+  GLM.mat4.multiply(pvMat4, cam.projectionMatrix, cam.viewMatrix);
+
+  // we then invert this multiplication
+  const invertedMat4 = GLM.mat4.create();
+  GLM.mat4.invert(invertedMat4, pvMat4);
+
+  // Now, we get the world position
+  const ndcPos = GLM.vec4.fromValues(normX, normY, normZ, 1.0);
+  const worldPos = GLM.vec4.transformMat4(GLM.vec4.create(), ndcPos, invertedMat4);
+  console.log("WorldPos w/out perspective adjustment:", worldPos);
+
+  // Finally, we get our actual world components by undoing the projection with the w component of the vector
+  const worldFinalPos = GLM.vec3.create();
+  GLM.vec3.scale(worldPos, worldPos, 1.0 / worldPos[3]);
+
+  return worldFinalPos;
+}
+
+// store screen dimensios
+let viewWidth = 0;
+let viewHeight = 0;
+let windowHeight = 0;
+let windowWidth = 0;
+
+// Set width and height of view on layout change
+function handleLayout(event: LayoutChangeEvent) {
+  viewWidth = event.nativeEvent.layout.width;
+  viewHeight = event.nativeEvent.layout.height;
+}
 
 // Use a composed gesture to allow for both pan and tap gestures. It is exclusive in that we can't use them both
 const composedGesture = Gesture.Exclusive(handlePan, handleTap);
@@ -82,12 +140,16 @@ const composedGesture = Gesture.Exclusive(handlePan, handleTap);
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
 // the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
 export default function Index() {
+  // Get dims of entire screen
+  windowWidth = useWindowDimensions().width; 
+  windowHeight = useWindowDimensions().height;
   return (
     <GestureHandlerRootView>
         <SafeAreaView style={{ flex: 1, backgroundColor: "#f0f2f5" }} edges={["top"]}>
           <ViewToggle active="3d" />
             <GestureDetector gesture={composedGesture}>
               <View
+                onLayout={handleLayout}
                 style={{
                   flex: 1,
                   justifyContent: "center",
@@ -116,11 +178,24 @@ let oesExt: OES_vertex_array_object | null = null; // A global way to access the
 class Camera {
   viewMatrix: GLM.mat4; // The view matrix used to setup the projection
   viewLoc: WebGLUniformLocation | null; // The location to access and provide the view matrix data for the shaders to use
+  projectionMatrix: GLM.mat4;
+  projectionLoc: WebGLUniformLocation | null; // same as above but for the projection matrix
 
   // Constructor. Initialize the viewLocation to null since we have no gl context yet, and create an identity view matrix
   constructor() {
     this.viewMatrix = GLM.mat4.create();
     this.viewLoc = null;
+    this.projectionLoc = null;
+
+    // We'll use a 3 matrix system. All model data is originally input with respect for its own space as the transform. That is, all model data
+    // assumes its position origin is at 0. Obviously, when rendering multiple objects in different locations this isn't the case. 
+    // We then define a "model matrix" to store the transform data for each object relevant to its world. Then, we use a "view matrix" to shift all 
+    // world data around depending on how the camera is looking at the world (e.g. if the camera should move left, the world actually moves right).
+    // Finally, we store a projection matrix to transform this view space coordinate data into a perspective view for the screen. Here, we create 
+    // our projection and view matrix. We create our perspective matrix with a FOV of 45, aspect ratio of the WebGL context, a near clip of 0.1 and far of 100. 
+    // Then, we upload this matrix data as uniform data for use in our vertex shader as an array of values. 
+    // we'll actually set this projection matrix up during initialization
+    this.projectionMatrix = GLM.mat4.create();
   }
 }
 let cam = new Camera(); // Our global camera value
@@ -330,6 +405,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 
   // Save camera locations
   cam.viewLoc = matrixUniformLocs.viewMatrix;
+  cam.projectionLoc = matrixUniformLocs.projectionMatrix;
 
   // Setup our vertex buffer and attribute informations. This is how we know what information is stored where. 
   // Attributes are explained above. Basically, we send our vertex data to the GPU by storing it in a buffer. We also have to tell
@@ -373,16 +449,9 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   // Select our shader program to use. We must always have an active shader program.
   gl.useProgram(program);
 
-  // We'll use a 3 matrix system. All model data is originally input with respect for its own space as the transform. That is, all model data
-  // assumes its position origin is at 0. Obviously, when rendering multiple objects in different locations this isn't the case. 
-  // We then define a "model matrix" to store the transform data for each object relevant to its world. Then, we use a "view matrix" to shift all 
-  // world data around depending on how the camera is looking at the world (e.g. if the camera should move left, the world actually moves right).
-  // Finally, we store a projection matrix to transform this view space coordinate data into a perspective view for the screen. Here, we create 
-  // our projection and view matrix. We create our perspective matrix with a FOV of 45, aspect ratio of the WebGL context, a near clip of 0.1 and far of 100. 
-  // Then, we upload this matrix data as uniform data for use in our vertex shader as an array of values. 
-  const projectionMatrix = GLM.mat4.create();
-  GLM.mat4.perspective(projectionMatrix, (45 * Math.PI / 180), gl.drawingBufferWidth / gl.drawingBufferHeight, 0.1, 100.0);
-  gl.uniformMatrix4fv(matrixUniformLocs.projectionMatrix, false, projectionMatrix as Float32Array);
+  // Set up our perspective matrix
+  GLM.mat4.perspective(cam.projectionMatrix, (45 * Math.PI / 180), gl.drawingBufferWidth / gl.drawingBufferHeight, 0.1, 100.0);
+  gl.uniformMatrix4fv(matrixUniformLocs.projectionMatrix, false, cam.projectionMatrix as Float32Array);
   gl.uniformMatrix4fv(matrixUniformLocs.modelMatrix, false, house.modelMatrices[0] as Float32Array);
 
   // Move the camera up, back, and turn it a little to the origin
@@ -534,7 +603,6 @@ function genGrid(width: number, height: number) {
     verts[i * 6 + 5] = i - 1 - height / 2 - width;
   }
 
-  console.log("Generated:", verts);
   return verts as Float32Array;
 }
 
