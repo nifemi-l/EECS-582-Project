@@ -26,7 +26,6 @@ export abstract class Frequency {
         if (now <= dueDate) return 0;
         return Math.abs(dueDate.getTime() - now.getTime());
     }
-
 }
 
 // Type of frequency - A certain amount of days in between 
@@ -92,6 +91,16 @@ export class SetInterval extends Frequency {
 export enum Interval {
     Monthly,
     Yearly
+}
+
+export enum Weekday {
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday, 
+    Saturday,
+    Sunday
 }
 
 function getMillisUntilNextMonth(): number {

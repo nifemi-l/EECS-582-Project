@@ -17,7 +17,7 @@ Known faults: None
 
 import Feature from "./feature"
 import User from "./user"
-import { Frequency, DayAmount, SetInterval, Interval } from "./frequency"
+import { Frequency, DayAmountFrequency, SetIntervalFrequency, Interval } from "./frequency"
 
 export default class Chore {
     title : string;
@@ -47,7 +47,7 @@ export default class Chore {
         }
 
         if (dayAmount != null) {
-            this.frequency = new DayAmount(timesPerInterval, skipIntervals, resetOnCompletion, dayAmount)
+            this.frequency = new DayAmountFrequency(timesPerInterval, skipIntervals, resetOnCompletion, dayAmount)
         }
 
         if (interval != null) {
@@ -57,7 +57,7 @@ export default class Chore {
             else if (interval == "yearly")
                 tgtInterval = Interval.Yearly
 
-            this.frequency = new SetInterval(timesPerInterval, skipIntervals, tgtInterval)
+            this.frequency = new SetIntervalFrequency(timesPerInterval, skipIntervals, tgtInterval)
         }
     }
 
@@ -65,9 +65,26 @@ export default class Chore {
         this.details = newDetails
     }
 
-    getDateString() {
-        return this.createdAt.toUTCString()
+    getTzTimestamp(date : Date) {
+      const pad = (n) => String(n).padStart(2, "0");
+
+      const year = date.getFullYear();
+      const month = pad(date.getMonth() + 1);
+      const day = pad(date.getDate());
+      const hours = pad(date.getHours());
+      const minutes = pad(date.getMinutes());
+      const seconds = pad(date.getSeconds());
+      const millis = String(date.getMilliseconds()).padStart(3, "0");
+
+      const offsetMinutes = -date.getTimezoneOffset();
+      const sign = offsetMinutes >= 0 ? "+" : "-";
+      const absOffset = Math.abs(offsetMinutes);
+      const offsetHours = pad(Math.floor(absOffset / 60));
+      const offsetMins = pad(absOffset % 60);
+
+      return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${millis}${sign}${offsetHours}:${offsetMins}`;
     }
+
 
     public decayChore() {
         this.healthPercent -= this.frequency.getDecay(this.dueDate) 

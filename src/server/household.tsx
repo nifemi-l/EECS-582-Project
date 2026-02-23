@@ -25,9 +25,9 @@ export default class Household {
     sensors : Sensors
     features : Set<Feature>
 
-    constructor(title, users) {
+    constructor(title : string, adminUsers : Set<User>) {
         this.title = title;
-        this.users = users;
+        this.adminUsers = adminUsers;
     }
 
     addUser(user : User){
