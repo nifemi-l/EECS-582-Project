@@ -5,6 +5,7 @@ Programmer: Jack Bauer
 Creation date: 2/15/26
 Revision date: 
   - 2/15/26: Move graphical context and related code from index.tsx to here. Add comments. 
+  - 2/23/26: Add a grid on the xz-axis, the ability to pan and tap, and convert taps from screen to world coordinates
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -23,6 +24,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import ViewToggle from "./components/ViewToggle";
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 
+// Define the near and far clips for the projection matrix
 const NEAR_CLIP = 0.1;
 const FAR_CLIP = 100.0;
 
@@ -79,12 +81,17 @@ const handleTap = Gesture.Tap() // Handle the tap gesture
     }
   })
 
+// A function to convert screen clicks / taps from screen coordinates to world coordinates in the renderer
 function screenToWorldCoords(screenX: number, screenY: number) {
+  // Ensure we have a valid context
   if (!glRef || !cam.projectionMatrix || !cam.viewMatrix) {
     console.error("Unable to convert coordinates without WebGL context.");
     return null;
   }
 
+  // Ensure we have valid dimensions. Window size is the size of the entire window, 
+  // view size is the specific size of the React view wrapping the GLView. In other words, this is 
+  // the size of the drawing canvas.
   if (viewWidth == 0 || viewHeight === 0 || windowWidth === 0 || windowHeight === 0) {
     console.error("No width or height defined.");
     return null;
@@ -96,12 +103,13 @@ function screenToWorldCoords(screenX: number, screenY: number) {
   // Top left: (0, 0), bottom right (max, max) in Screen Coordinates.
   // After dividing screen by max, we get [0, 1] as our screen coord range
   const normX = 2.0 * (screenX / viewWidth) - 1.0;
-  const normY = 1.0 - 2.0 * ((screenY - (windowHeight - viewHeight)) / viewHeight); // top left is 0,0 in screen coords
+  const normY = 1.0 - 2.0 * ((screenY - (windowHeight - viewHeight)) / viewHeight); // top left is 0,0 in screen coords. WebGL uses a +Y up convention, whereas screenX and Y increase as Y decreases
 
-  // get our projection * view matrix. We will then invert this to get our unprojection matrix
+  // get our projection * view matrix. We will then invert this to get our unprojection matrix.
+  // The unprojection matrix is what we can use to "undo" the projection * view process done in our shaders to convert the world to screen position.
+  // We just invert that "view-projection" matrix. Here, we want to go screen to world, hence "unproject".
   const viewProjMatrix = GLM.mat4.create();
   GLM.mat4.multiply(viewProjMatrix, cam.projectionMatrix, cam.viewMatrix);
-  // Since to get screen coordinates we do projection * view, we need to do view * projection here
   const unprojectionMatrix = GLM.mat4.create();
   const unprojectionMatrixResult = GLM.mat4.invert(unprojectionMatrix, viewProjMatrix);
   if (!unprojectionMatrixResult) {
@@ -110,8 +118,9 @@ function screenToWorldCoords(screenX: number, screenY: number) {
   }
 
   // Since we clicked a point in 2D space, our result in 3D space is a line. We need to perform a raycast and see what this line intersects with.
-  // We'll define the z bounds of this line as the near and far planes of the camera matrix. 
-  // In NDC, the Z coordinates is between -1 and 1, with -1 being the direction that the camera is looking. 
+  // We'll define the z bounds of this line as the near and far planes of the NDC space (which is actually defined in 3D). 
+  // See: https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_model_view_projection 
+  // In NDC, the Z coordinate is between -1 and 1, with -1 being the direction that the camera is looking. 
   const front = GLM.vec4.fromValues(normX, normY, -1, 1);
   const back = GLM.vec4.fromValues(normX, normY, 1, 1); 
 
@@ -151,7 +160,7 @@ function screenToWorldCoords(screenX: number, screenY: number) {
   return finalPos;
 }
 
-// store screen dimensios
+// store screen dimensios. Window is the entire window, view is the view component that wraps the GL context
 let viewWidth = 0;
 let viewHeight = 0;
 let windowHeight = 0;
