@@ -119,7 +119,7 @@ function screenToWorldCoords(screenX: number, screenY: number) {
   GLM.vec4.transformMat4(front, front, unprojectionMatrix);
   GLM.vec4.transformMat4(back, back, unprojectionMatrix);
 
-  // Now, we divide by the perspective (w) component
+  // Now, we divide by the perspective (w) component to convert from homgenous coordinates (which use a w component to simulate depth) to cartesian coordinates
   front[0] /= front[3];
   front[1] /= front[3];
   front[2] /= front[3];
