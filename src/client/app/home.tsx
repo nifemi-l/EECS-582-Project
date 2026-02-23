@@ -23,6 +23,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import ViewToggle from "./components/ViewToggle";
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 
+const NEAR_CLIP = 0.1;
+const FAR_CLIP = 100.0;
+
 // See https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture for gesture handler details
 // Also define global variables to store this data and update each frame
 let panVelocityX = 0;
@@ -71,7 +74,6 @@ const handleTap = Gesture.Tap() // Handle the tap gesture
   .onFinalize((event, success) => { // When the tap event is done...
     if (success) { 
       // If it was actually a tap and didn't end up something else (e.g. pan), then log it
-      console.log("Tapped:", event.absoluteX, event.absoluteY);
       tapList.push([event.absoluteX, event.absoluteY]);
       console.log("In world tapped:", screenToWorldCoords(event.absoluteX, event.absoluteY));
     }
@@ -87,7 +89,6 @@ function screenToWorldCoords(screenX: number, screenY: number) {
     console.error("No width or height defined.");
     return null;
   }
-  console.log("Dims:", viewWidth, viewHeight, windowWidth, windowHeight);
 
   // normalize screen coordinates to normalized device coordinates [-1, 1]
   // convert screen coords to clip space. Centered at 0,0,0. 
@@ -95,30 +96,59 @@ function screenToWorldCoords(screenX: number, screenY: number) {
   // Top left: (0, 0), bottom right (max, max) in Screen Coordinates.
   // After dividing screen by max, we get [0, 1] as our screen coord range
   const normX = 2.0 * (screenX / viewWidth) - 1.0;
-  const normY = 2.0 * ((screenY - (windowHeight - viewHeight)) / viewHeight) - 1.0; // top left is 0,0 in screen coords
-  const normZ = 0; // a click "on the screen"
-  console.log("Norms:", normX, normY, normZ);
+  const normY = 1.0 - 2.0 * ((screenY - (windowHeight - viewHeight)) / viewHeight); // top left is 0,0 in screen coords
 
-  // Unproject from screen to world 
-  // we multiply matrices as Projection * View * Model, or P*V*M. 
-  // Here, we'll assume model is the identity. 
-  const pvMat4 = GLM.mat4.create();
-  GLM.mat4.multiply(pvMat4, cam.projectionMatrix, cam.viewMatrix);
+  // get our projection * view matrix. We will then invert this to get our unprojection matrix
+  const viewProjMatrix = GLM.mat4.create();
+  GLM.mat4.multiply(viewProjMatrix, cam.projectionMatrix, cam.viewMatrix);
+  // Since to get screen coordinates we do projection * view, we need to do view * projection here
+  const unprojectionMatrix = GLM.mat4.create();
+  const unprojectionMatrixResult = GLM.mat4.invert(unprojectionMatrix, viewProjMatrix);
+  if (!unprojectionMatrixResult) {
+    console.error("Unable to calculate the inverse of the view projection matrix.");
+    return null;
+  }
 
-  // we then invert this multiplication
-  const invertedMat4 = GLM.mat4.create();
-  GLM.mat4.invert(invertedMat4, pvMat4);
+  // Since we clicked a point in 2D space, our result in 3D space is a line. We need to perform a raycast and see what this line intersects with.
+  // We'll define the z bounds of this line as the near and far planes of the camera matrix. 
+  // In NDC, the Z coordinates is between -1 and 1, with -1 being the direction that the camera is looking. 
+  const front = GLM.vec4.fromValues(normX, normY, -1, 1);
+  const back = GLM.vec4.fromValues(normX, normY, 1, 1); 
 
-  // Now, we get the world position
-  const ndcPos = GLM.vec4.fromValues(normX, normY, normZ, 1.0);
-  const worldPos = GLM.vec4.transformMat4(GLM.vec4.create(), ndcPos, invertedMat4);
-  console.log("WorldPos w/out perspective adjustment:", worldPos);
+  // We now multiply the screen position by the unprojection matrix to get world coordinates for both the front and back points.
+  GLM.vec4.transformMat4(front, front, unprojectionMatrix);
+  GLM.vec4.transformMat4(back, back, unprojectionMatrix);
 
-  // Finally, we get our actual world components by undoing the projection with the w component of the vector
-  const worldFinalPos = GLM.vec3.create();
-  GLM.vec3.scale(worldPos, worldPos, 1.0 / worldPos[3]);
+  // Now, we divide by the perspective (w) component
+  front[0] /= front[3];
+  front[1] /= front[3];
+  front[2] /= front[3];
+  back[0] /= back[3];
+  back[1] /= back[3];
+  back[2] /= back[3];
 
-  return worldFinalPos;
+  // Next, find where the ray intersects with the y=0 plane
+  // parametric equation of a 3D line:
+  // x = x0 + at
+  // y = y0 + bt
+  // z = z0 + ct
+  // <a, b, c> is the direction vector calculated from <x1 - x0, y1 - y0, z1 - z0>. 
+  // Since we want to find the intersection with the xz plane (y=0) we can calculate as follows:
+  // 0 = y0 + bt --> -y0/b = t
+  // z = z0 + c * (-y0 / b)
+  // x = x0 + a * (-y0 / b)
+  // This will give us our intersection point (x, 0, z) in world space. 
+  // Additionally, if b is 0 we cannot calculate a solution and must fail.
+  // We'll treat front as position 0 and back as position 1 since front is usually smaller
+  const dir = GLM.vec3.fromValues(back[0] - front[0], back[1] - front[1], back[2] - front[2]);
+  if (Math.abs(dir[1]) <= 0.000001) { // check against a very small value to handle floating point error
+    console.log("Failing, unable to calculate a ray.")
+    return null;
+  }  
+  const t = -1.0 * front[1] / dir[1];
+  const finalPos = GLM.vec3.fromValues(front[0] + dir[0] * t, 0, front[2] + dir[2] * t);
+
+  return finalPos;
 }
 
 // store screen dimensios
@@ -450,7 +480,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   gl.useProgram(program);
 
   // Set up our perspective matrix
-  GLM.mat4.perspective(cam.projectionMatrix, (45 * Math.PI / 180), gl.drawingBufferWidth / gl.drawingBufferHeight, 0.1, 100.0);
+  GLM.mat4.perspective(cam.projectionMatrix, (45 * Math.PI / 180), gl.drawingBufferWidth / gl.drawingBufferHeight, NEAR_CLIP, FAR_CLIP);
   gl.uniformMatrix4fv(matrixUniformLocs.projectionMatrix, false, cam.projectionMatrix as Float32Array);
   gl.uniformMatrix4fv(matrixUniformLocs.modelMatrix, false, house.modelMatrices[0] as Float32Array);
 
