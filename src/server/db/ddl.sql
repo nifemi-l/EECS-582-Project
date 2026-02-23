@@ -37,11 +37,15 @@ Create a table for Accounts
     Attributes:
         Number (Primary Key)
         Name
-            (Should first and last name be done separately?)
+        Linked to a household by household_id
 */
 CREATE TABLE IF NOT EXISTS Account (
     /* Account id is the primary key */
-    account_id SERIAL PRIMARY KEY CHECK (account_num > 0),
+    account_id SERIAL PRIMARY KEY CHECK (account_id > 0),
+    /* Household id should link the account to a specific household 
+        Is cascade needed here?
+    */
+    household_id INTEGER REFERENCES Household(household_id) ON DELETE CASCADE,
     /* The name of the account */
     account_name VARCHAR(50) NOT NULL
 );
@@ -103,3 +107,14 @@ CREATE TABLE IF NOT EXISTS Task (
     */
     visibility VARCHAR(20) CHECK (visibility IN ('private', 'household')) NOT NULL
 );
+
+
+/*
+Functions for adding data to the database
+*/
+
+
+
+/*
+Functions for retrieving specific data from the database
+*/
