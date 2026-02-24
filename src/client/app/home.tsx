@@ -295,7 +295,7 @@ class Household {
     ]);
 
     // These are as mentioned above. We initialize the WebGL specific ones to null because they need a proper WebGL context first
-    this.modelMatrices = [GLM.mat4.create(), GLM.mat4.create(), GLM.mat4.create(), GLM.mat4.create()]; // We'll prepare for 4 cubes at the moment, but eventually this will be variable
+    this.modelMatrices = [GLM.mat4.create(), GLM.mat4.create()]; // We'll prepare for 4 cubes at the moment, but eventually this will be variable
     this.modelLoc = null;
     this.buffer = null;
     this.vao = null;
@@ -498,6 +498,9 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   GLM.mat4.translate(cam.viewMatrix, cam.viewMatrix, [0.0, -4.0, -7.0]);
   gl.uniformMatrix4fv(matrixUniformLocs.viewMatrix, false, cam.viewMatrix as Float32Array);
 
+  // Test some cubes
+  GLM.mat4.translate(house.modelMatrices[1], house.modelMatrices[1], [2.5, -0.5, 0.5]);
+
   // Setup lighting data. We'll just use placeholder values for now. Ambient simulates the basic lighting that just "exists", 
   // diffuse simulates lighting the bounces around and hits items and originates at a point, and specular I think of as just the 
   // shiny reflection of very pointed light. It's the "bright spots" that appear when light is reflected strongly in one direction 
@@ -550,7 +553,7 @@ function drawFrame(time: number) {
 
     // Ensure we have a proper house vertex array object (VAO), if not error and return
     if (!house.vao) {
-      console.error("Invalid VAOs.");
+      console.error("Invalid VAO.");
       return;
     }
 
@@ -567,11 +570,17 @@ function drawFrame(time: number) {
     // Prepare draw by clearing the screen and depth buffer
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration 
+    // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration. 
+    // This also updates our view matrix so we can rotate the world around
     bindVAO(house.vao);
-    GLM.mat4.rotateY(cam.viewMatrix, cam.viewMatrix, panVelocityX * delta); // Rotate the cube according to the frame delta for smooth movement
+    GLM.mat4.rotateY(cam.viewMatrix, cam.viewMatrix, panVelocityX * delta); // Rotate the world according to the frame delta for smooth movement
     gl.uniformMatrix4fv(cam.viewLoc, false, cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
-    gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yiels 6 faces * 6 vertices for 36 vertices to draw.
+    
+    // Iterate through all cubes making up our model and draw them each
+    for (let i = 0; i < house.modelMatrices.length; i++) {
+      gl.uniformMatrix4fv(house.modelLoc, false, house.modelMatrices[i] as Float32Array); // upload the correct model matrix for drawing
+      gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yiels 6 faces * 6 vertices for 36 vertices to draw.
+    }
 
     // Draw the grid. Use our grid vertex configuration, upload the grid's model matrix to the vertex shader, and then draw a line. Each line has two vertices. 
     // Only draw if we have a proper grid setup
