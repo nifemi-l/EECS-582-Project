@@ -75,26 +75,11 @@ const handleTap = Gesture.Tap() // Handle the tap gesture
   .maxDuration(250) // Limit the amount of time of taps so we can recognize more pans
   .onFinalize((event, success) => { // When the tap event is done...
     if (success) { 
-      // Convert our tap's position on the screen to world coordinates on the xz plane
-      const worldPos: GLM.vec3 | null = screenToWorldCoords(event.absoluteX, event.absoluteY);
-      if (!worldPos) {
-        console.error("Unable to convert tap to world coordinates.");
-      } else {
-        // We have successfully found a world position from our tap, so figure out what cell we're in
-        console.log("Tapped cell:", cellFromCoords(worldPos[0], worldPos[2]));
-      }
+      // If it was actually a tap and didn't end up something else (e.g. pan), then log it
+      tapList.push([event.absoluteX, event.absoluteY]);
+      console.log("In world tapped:", screenToWorldCoords(event.absoluteX, event.absoluteY));
     }
   })
-
-// A helper function to retrieve the cell that was clicked from a given position on the xz plane
-function cellFromCoords(x: number, z: number) {
-  // The grid is designed so that each line marks the end of one cell from the origin. 
-  // In other words, 0 is at 0, one is after 1 unit, 2 is after 2 units, etc. So, to find the cell we're in we perform a floor.
-  // It's worth mentioning though that this creates an imbalance between the number of negative and positive cells. Positive
-  // will index at 0, negative at -1. This means that the origin cell (at 0,0) is the cell from 0 to 1 on both the x and z axes
-  // which might not be ideal. 
-  return [Math.floor(x), Math.floor(z)];
-}
 
 // A function to convert screen clicks / taps from screen coordinates to world coordinates in the renderer
 function screenToWorldCoords(screenX: number, screenY: number) {
