@@ -68,8 +68,6 @@ const handlePan = Gesture.Pan()
   });
 
 // Handle screen taps (on web, clicks)
-type tapPair = [number, number] // simplify a type of x and y for taps
-let tapList: tapPair[] = []; // every tap we'll store as a tuple of (x, y)
 const handleTap = Gesture.Tap() // Handle the tap gesture
   .runOnJS(true) // Run on the main JS thread that the renderer runs on, not the UI thread
   .maxDuration(250) // Limit the amount of time of taps so we can recognize more pans
@@ -81,10 +79,19 @@ const handleTap = Gesture.Tap() // Handle the tap gesture
         console.error("Unable to convert tap to world coordinates.");
       } else {
         // We have successfully found a world position from our tap, so figure out what cell we're in
-        console.log("Tapped cell:", cellFromCoords(worldPos[0], worldPos[2]));
+        const tappedCell = cellFromCoords(worldPos[0], worldPos[2]);
+        // Add the matrix to House
+        addBlock(tappedCell[0], 0, tappedCell[1]);
       }
     }
   })
+
+// A function to add a block to the household at a certain position
+function addBlock(cellX: number, cellY: number, cellZ: number) {
+  const newModelMatrix = GLM.mat4.create(); // create a new transform 
+  GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
+  house.modelMatrices.push(newModelMatrix); // add the transform to the house
+}
 
 // A helper function to retrieve the cell that was clicked from a given position on the xz plane
 function cellFromCoords(x: number, z: number) {
@@ -310,7 +317,7 @@ class Household {
     ]);
 
     // These are as mentioned above. We initialize the WebGL specific ones to null because they need a proper WebGL context first
-    this.modelMatrices = [GLM.mat4.create(), GLM.mat4.create()]; // We'll prepare for 4 cubes at the moment, but eventually this will be variable
+    this.modelMatrices = []; // This is variable, start with none
     this.modelLoc = null;
     this.buffer = null;
     this.vao = null;
@@ -506,15 +513,11 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   // Set up our perspective matrix
   GLM.mat4.perspective(cam.projectionMatrix, (45 * Math.PI / 180), gl.drawingBufferWidth / gl.drawingBufferHeight, NEAR_CLIP, FAR_CLIP);
   gl.uniformMatrix4fv(matrixUniformLocs.projectionMatrix, false, cam.projectionMatrix as Float32Array);
-  gl.uniformMatrix4fv(matrixUniformLocs.modelMatrix, false, house.modelMatrices[0] as Float32Array);
 
   // Move the camera up, back, and turn it a little to the origin
   GLM.mat4.rotateX(cam.viewMatrix, cam.viewMatrix, 30 * Math.PI / 180);
   GLM.mat4.translate(cam.viewMatrix, cam.viewMatrix, [0.0, -4.0, -7.0]);
   gl.uniformMatrix4fv(matrixUniformLocs.viewMatrix, false, cam.viewMatrix as Float32Array);
-
-  // Test some cubes
-  GLM.mat4.translate(house.modelMatrices[1], house.modelMatrices[1], [2.5, -0.5, 0.5]);
 
   // Setup lighting data. We'll just use placeholder values for now. Ambient simulates the basic lighting that just "exists", 
   // diffuse simulates lighting the bounces around and hits items and originates at a point, and specular I think of as just the 
@@ -609,13 +612,6 @@ function drawFrame(time: number) {
     gl.flush(); 
     gl.endFrameEXP();
     window.requestAnimationFrame(drawFrame);
-}
-
-// A function to add a block to the household at a certain position
-function addBlock(cellX: number, cellY: number, cellZ: number) {
-  const newModelMatrix = GLM.mat4.create();
-  GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX, cellY, cellZ]);
-  house.modelMatrices.push(newModelMatrix);
 }
 
 // Generate the vertices that would comrpise a grid based on a width and height value centered at 0 on the xz axis. 
