@@ -20,9 +20,7 @@ import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
 import * as GLM from 'gl-matrix';
 import { LayoutChangeEvent, Platform, View, useWindowDimensions } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import ViewToggle from "./components/ViewToggle";
-import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 
 // Define the near and far clips for the projection matrix
 const NEAR_CLIP = 0.1;
@@ -205,28 +203,23 @@ export default function Index() {
   windowWidth = useWindowDimensions().width; 
   windowHeight = useWindowDimensions().height;
   return (
-    <GestureHandlerRootView>
-        <SafeAreaView style={{ flex: 1, backgroundColor: "#f0f2f5" }} edges={["top"]}>
-          <ViewToggle active="3d" />
-            <GestureDetector gesture={composedGesture}>
-              <View
-                onLayout={handleLayout}
-                style={{
-                  flex: 1,
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
-              >
-                <GLView style={{
-                  width: "100%",
-                  height: "100%"
-                }} 
-                onContextCreate={onContextCreate} 
-                />
-              </View>
-          </GestureDetector>
-        </SafeAreaView>
-    </GestureHandlerRootView>
+    <GestureDetector gesture={composedGesture}>
+      <View
+        onLayout={handleLayout}
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <GLView style={{
+          width: "100%",
+          height: "100%"
+        }} 
+        onContextCreate={onContextCreate} 
+        />
+      </View>
+    </GestureDetector>
   );
 }
 
