@@ -3,7 +3,7 @@ File name: _layout.tsx
 Description: Define the basic root layout of the application using the expo router.
              Hoists GestureHandlerRootView, SafeAreaView, and ViewToggle so they persist
              across route changes. Avoids async re-measurement and layout jumps.
-Programmer: Jack Bauer, Nifemi Lawal
+Programmers: Jack Bauer, Nifemi Lawal
 Creation date: 2/6/26
 Revision date: 
   - 2/9/26: Disable header for new list view
