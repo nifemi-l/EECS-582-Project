@@ -84,11 +84,19 @@ const handleTap = Gesture.Tap() // Handle the tap gesture
     }
   })
 
+// Select a random material from the materials list
+function selectRandomMaterial() {
+  const index = Math.floor(Math.random() * FEATURE_COLORS.length)
+  return FEATURE_COLORS[index];
+}
+
 // A function to add a block to the household at a certain position
 function addBlock(cellX: number, cellY: number, cellZ: number) {
   const newModelMatrix = GLM.mat4.create(); // create a new transform 
   GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
-  house.modelMatrices.push(newModelMatrix); // add the transform to the house
+  const newMaterial: Material = selectRandomMaterial();
+  const newFeature = new Feature(newModelMatrix, newMaterial); // this is the new feature object we're adding
+  house.features.push(newFeature); // add the feature to the house
 }
 
 // A helper function to retrieve the cell that was clicked from a given position on the xz plane
@@ -254,14 +262,81 @@ class Camera {
 }
 let cam = new Camera(); // Our global camera value
 
+// Define the structure of what a material should have. We follow the phong lighting model. 
+// Values for all numbers but shininess should be in [0, 1]
+interface Material {
+  ambient: [number, number, number];
+  diffuse: [number, number, number];
+  specular: [number, number, number];
+  shininess: number;
+}
+
+// Define a series of colors
+const FEATURE_RED: Material = {
+  ambient: [0.3, 0.0, 0.0],
+  diffuse: [1.0, 0.0, 0.0],
+  specular: [0.5, 0.5, 0.5],
+  shininess: 32.0,
+}
+
+const FEATURE_BLUE: Material = {
+  ambient: [0.0, 0.0, 0.3],
+  diffuse: [0.0, 0.0, 1.0],
+  specular: [0.5, 0.5, 0.5],
+  shininess: 32.0,
+}
+
+const FEATURE_GREEN: Material = {
+  ambient: [0.0, 0.3, 0.0],
+  diffuse: [0.0, 1.0, 0.0],
+  specular: [0.5, 0.5, 0.5],
+  shininess: 32.0,
+}
+
+const FEATURE_ORANGE: Material = {
+  ambient: [0.31, 0.31, 0.31],
+  diffuse: [1.0, 1.0, 1.0],
+  specular: [0.5, 0.5, 0.5],
+  shininess: 32.0,
+}
+
+// We will pick from this array of colors
+const FEATURE_COLORS = [FEATURE_RED, FEATURE_BLUE, FEATURE_GREEN, FEATURE_ORANGE]
+
+// Define what one of our cleanable features should have
+class Feature {
+   modelMatrix: GLM.mat4;
+   material: Material;
+
+   constructor(mm: GLM.mat4 | null, mat: Material | null) {
+    // Assign model matrix to either a provided value or a default
+    if (!mm) {
+      this.modelMatrix = GLM.mat4.create();
+    } else {
+      this.modelMatrix = mm;
+    }
+
+    // Do the same for the material (basically what should the object look like color-wise).
+    if (!mat) {
+      this.material = FEATURE_ORANGE;
+    } else {
+      this.material = mat;
+    }
+   }
+}
+
 // This is the household class. It is meant to be the primary way to store and access the currently rendered house model
 class Household {
    // A series of relevant variables to render the household on the screen.
    blockVertices: Float32Array; // The vertices that make up a cube (including the normals of each face)
-   modelMatrices: GLM.mat4[]; // The list of matrices that represent the transform of each drawn cube
-   modelLoc: WebGLUniformLocation | null; // The location to access and provide the model matrix data for the shaders to use
+   features: Feature[]; // The list of feature objects in our household
    buffer: WebGLBuffer | null; // A way to access the buffer storing cube vertex data on the GPU
    vao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null; // A single object to store the vertex attribute data and which buffer to bind for the household
+   modelLoc: WebGLUniformLocation | null; // The location to access and provide the model matrix data for the shaders to use
+   ambientLoc: WebGLUniformLocation | null; // The location to access and provide the color material data for the shaders to use
+   diffuseLoc: WebGLUniformLocation | null; // The location to access and provide the color material data for the shaders to use
+   specularLoc: WebGLUniformLocation | null; // The location to access and provide the color material data for the shaders to use
+   shininessLoc: WebGLUniformLocation | null; // The location to access and provide the color material data for the shaders to use
 
    constructor() {
     // Vertices + normal vectors of a cube. Each cube has 6 faces, and each face is made up of two triangles. Each triangle has 3 vertices. 
@@ -310,10 +385,15 @@ class Household {
     ]);
 
     // These are as mentioned above. We initialize the WebGL specific ones to null because they need a proper WebGL context first
-    this.modelMatrices = []; // This is variable, start with none
-    this.modelLoc = null;
+    this.features = []; // This is variable, start with none
     this.buffer = null;
     this.vao = null;
+    // We cannot determine the following entries without a gl context
+    this.modelLoc = null;
+    this.ambientLoc = null;
+    this.diffuseLoc = null;
+    this.specularLoc = null;
+    this.shininessLoc = null;
    }
 }
 let house = new Household(); // Create a global household object
@@ -326,6 +406,7 @@ class Grid {
   vao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null; // Store a descriptor of the proper vertex attribute format and related buffer
   width: number;
   height: number;
+  material: Material;
 
   constructor() {
     // As above, but no need for normal data
@@ -337,6 +418,9 @@ class Grid {
     this.modelMatrx = GLM.mat4.create();
     this.buffer = null;
     this.vao = null;
+
+    // Select the grid's color / material settings
+    this.material = FEATURE_ORANGE;
   }
 }
 const grid = new Grid(); // Store a global grid object
@@ -456,6 +540,11 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 
   // Save the location information for the model matrix (that details transform information for each cube)
   house.modelLoc = matrixUniformLocs.modelMatrix; // We'll change this pretty frequently since we'll likely update it each frame.
+  house.ambientLoc = lightUniformLocs.material.ambient;
+  house.diffuseLoc = lightUniformLocs.material.diffuse;
+  house.specularLoc = lightUniformLocs.material.specular;
+  house.shininessLoc = lightUniformLocs.material.shininess;
+  // It might be an improvement to save all the lightUniformLocs in one place, but doing it modlar like this ensures we don't give too much access all around
 
   // Save camera locations
   cam.viewLoc = matrixUniformLocs.viewMatrix;
@@ -481,7 +570,6 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   // Do the same as above, but for the grid vertices. Note that we disable the normal attribute and default it to (0, 1, 0) always since we don't 
   // store normal data with our vertices. We'll wrap this up in another VAO for ease of use. Skip this is we have no grid vertices
   if (grid !== null && grid.gridVertices !== null) {
-    console.log("Decided to configure grid.");
     const gridBuffer = gl.createBuffer();
     const gridVao = createVAO();
     bindVAO(gridVao);
@@ -516,11 +604,8 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   // diffuse simulates lighting the bounces around and hits items and originates at a point, and specular I think of as just the 
   // shiny reflection of very pointed light. It's the "bright spots" that appear when light is reflected strongly in one direction 
   // towards you. Diffuse is scattered light, specular is not. Shiniess is just a material value. See https://learnopengl.com/Lighting/Basic-Lighting. 
+  // We have no need to set the materials here though since they are determined on a per-object basis
   gl.uniform3fv(lightUniformLocs.viewPosition, [0, 0, 0]);
-  gl.uniform3fv(lightUniformLocs.material.ambient, [0.31, 0.31, 0.31]);
-  gl.uniform3fv(lightUniformLocs.material.diffuse, [1.0, 1.0, 1.0]);
-  gl.uniform3fv(lightUniformLocs.material.specular, [0.5, 0.5, 0.5]);
-  gl.uniform1f(lightUniformLocs.material.shininess, 32.0);
   gl.uniform3fv(lightUniformLocs.light.position, [0.0, 3.0, 3.0]);
   gl.uniform3fv(lightUniformLocs.light.ambient, [1.0, 0.5, 0.31]);
   gl.uniform3fv(lightUniformLocs.light.diffuse, [1.0, 0.5, 0.31]);
@@ -556,6 +641,12 @@ function drawFrame(time: number) {
       return;
     }
 
+    // Ensure valid material uniform locations
+    if (!house.ambientLoc || !house.diffuseLoc || !house.specularLoc || !house.shininessLoc) {
+      console.error("No material uniform locations.");
+      return;
+    }
+
     // Ensure we have a proper house buffer, if not error and return
     if (!house.buffer) {
       console.error("Invalid buffers.");
@@ -588,8 +679,12 @@ function drawFrame(time: number) {
     gl.uniformMatrix4fv(cam.viewLoc, false, cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
     
     // Iterate through all cubes making up our model and draw them each
-    for (let i = 0; i < house.modelMatrices.length; i++) {
-      gl.uniformMatrix4fv(house.modelLoc, false, house.modelMatrices[i] as Float32Array); // upload the correct model matrix for drawing
+    for (let i = 0; i < house.features.length; i++) {
+      gl.uniformMatrix4fv(house.modelLoc, false, house.features[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
+      gl.uniform3fv(house.ambientLoc, house.features[i].material.ambient); // update lighting uniform values for the material of the object
+      gl.uniform3fv(house.diffuseLoc, house.features[i].material.diffuse);
+      gl.uniform3fv(house.specularLoc, house.features[i].material.specular);
+      gl.uniform1f(house.shininessLoc, house.features[i].material.shininess);
       gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yiels 6 faces * 6 vertices for 36 vertices to draw.
     }
 
@@ -598,6 +693,10 @@ function drawFrame(time: number) {
     if (grid !== null && grid.vao !== null && grid.buffer !== null && grid.gridVertices !== null) {
       bindVAO(grid.vao);
       gl.uniformMatrix4fv(house.modelLoc, false, grid.modelMatrx as Float32Array);
+      gl.uniform3fv(house.ambientLoc, grid.material.ambient); // update lighting uniform values for the material of the object
+      gl.uniform3fv(house.diffuseLoc, grid.material.diffuse);
+      gl.uniform3fv(house.specularLoc, grid.material.specular);
+      gl.uniform1f(house.shininessLoc, grid.material.shininess);
       gl.drawArrays(gl.LINES, 0, 2 * (grid.width + grid.height + 2)); // Lines are 1 pixel thick by default. Two vertices per line. Two more lines to close the grid.
     }
 
