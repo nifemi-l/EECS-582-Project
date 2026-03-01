@@ -222,6 +222,11 @@ function ColorButtons() {
   // Store the current color so we can show it in the UI
   const [drawingColor, setDrawingColor] = useState(FEATURE_ORANGE);
 
+  // Ensure sync between gl and react
+  if (drawingColor !== currentDrawingColor) {
+    setDrawingColor(currentDrawingColor);
+  }
+
   /* Buttons for selecting type */
   return (
     <View 
