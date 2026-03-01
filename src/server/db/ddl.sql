@@ -42,14 +42,36 @@ Create a table for Accounts
 CREATE TABLE IF NOT EXISTS Account (
     /* Account id is the primary key */
     account_id SERIAL PRIMARY KEY CHECK (account_id > 0),
-    /* Household id should link the account to a specific household 
-        Is cascade needed here?
+    /* A single account can be a part of multiple households
+        Add a many to many relationship table
     */
-    household_id INTEGER REFERENCES Household(household_id) ON DELETE CASCADE,
     /* The name of the account */
-    account_name VARCHAR(50) NOT NULL
+    account_name VARCHAR(50) NOT NULL,
+    /* Store a hashed version of the user's password for security */
+    hashed_password VARCHAR(255) NOT NULL,
+    /* Each account should have a unique email for login */
+    email VARCHAR(255) NOT NULL UNIQUE,
+    /* Email verification? */
+    email_verified BOOLEAN DEFAULT FALSE,
+    /* Store time the account is created */
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    /* Last login time */
+    last_login TIMESTAMPTZ
 );
 
+/* Create a table for account roles
+    Each account could have a different role in each household
+    The roles are either "admin" and "member"
+*/
+CREATE TABLE IF NOT EXISTS AccountRole (
+    account_id INTEGER NOT NULL
+        REFERENCES Account(account_id) ON DELETE CASCADE,
+    household_id INTEGER NOT NULL
+        REFERENCES Household(household_id) ON DELETE CASCADE,
+    role VARCHAR(10) NOT NULL
+        CHECK (role IN ('admin', 'member')),
+    PRIMARY KEY (account_id, household_id)
+);
 
 /*
 Create a table for cleanable features
@@ -74,10 +96,10 @@ CREATE TABLE IF NOT EXISTS Feature (
     feature_name VARCHAR(50) NOT NULL,
     feature_type VARCHAR(50),
     /* Do I have x, y, and z as separate or one position with all 3?
-        Separate ints for now */
-    x_pos INTEGER NOT NULL,
-    y_pos INTEGER NOT NULL,
-    z_pos INTEGER NOT NULL
+        Make floats */
+    x_pos FLOAT NOT NULL,
+    y_pos FLOAT NOT NULL,
+    z_pos FLOAT NOT NULL
 );
 
 
@@ -105,7 +127,8 @@ CREATE TABLE IF NOT EXISTS Task (
         The visibility options will be "private" and "household" or something to that effect
             Ex: doing my personal laundry shouldn't be public to everyone in the house
     */
-    visibility VARCHAR(20) CHECK (visibility IN ('private', 'household')) NOT NULL
+    visibility VARCHAR(20) CHECK (visibility IN ('private', 'household')) NOT NULL,
+    created_by_account_id INTEGER REFERENCES Account(account_id) ON DELETE SET NULL
 );
 
 

@@ -4,12 +4,16 @@ This file is used to connect to the database and define functions for adding / r
 
 import psycopg2
 from datetime import datetime, timezone
-import db_config
+from dotenv import load_dotenv
+import os
 
-DB_HOST = db_config.DB_HOST
-DB_NAME = db_config.DB_NAME
-DB_USER = db_config.DB_USER
-DB_PASSWORD = db_config.DB_PASSWORD
+load_dotenv()
+
+DB_HOST = os.environ["DB_HOST"]
+DB_NAME = os.environ["DB_NAME"]
+DB_USER = os.environ["DB_USER"]
+DB_PASSWORD = os.environ["DB_PASSWORD"]
+DB_PORT = int(os.environ.get("DB_PORT", "5432"))
 
 def connect_to_db():
     """Establish a connection to the PostgreSQL database."""
@@ -49,13 +53,13 @@ def add_household(household_name):
     # Return the id, can be used or not
     return household_id
 
-def add_account(account_name, household_id):
+def add_account(account_name, household_id, hashed_password, email, last_login=None):
     with conn.cursor() as cursor:
         cursor.execute("""
-            INSERT INTO Account (account_name, household_id)
-            VALUES (%s, %s)
+            INSERT INTO Account (account_name, household_id, hashed_password, email, last_login)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING account_id
-        """, (account_name, household_id,))
+        """, (account_name, household_id, hashed_password, email, last_login,))
         account_id = cursor.fetchone()[0]
     conn.commit()
     # Return the account id
@@ -107,13 +111,14 @@ Functions for retrieving specific data from the database
 
 """
 household_id = add_household("SampleHousehold")
-account_id = add_account("TestFirst TestLast", household_id)
+account_id = add_account("John Doe", household_id, "hashed_password_123", "john.doe@example.com")
 feature_id = add_feature(household_id, "Kitchen Sink", "Test Kitchen Type", 1.0, 4.0, 5.0)
 task_id = add_task(feature_id, "Wash Dishes", 1, datetime.now(timezone.utc), "private")
-
-print("Added data successfully!")
-
 """
+"""
+print("Added data successfully!")
+"""
+
 
 # Functions to retrieve data from the database
 
