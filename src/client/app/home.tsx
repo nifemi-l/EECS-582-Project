@@ -289,11 +289,21 @@ class Camera {
   projectionMatrix: GLM.mat4;
   projectionLoc: WebGLUniformLocation | null; // same as above but for the projection matrix
 
+  // Billboard values
+  bbViewLoc: WebGLUniformLocation | null; // The location to access and provide the view matrix data for the shaders to use
+  bbProjectionLoc: WebGLUniformLocation | null; // same as above but for the projection matrix
+  bbInverseViewLoc: WebGLUniformLocation | null; // for the inverse of the view
+
   // Constructor. Initialize the viewLocation to null since we have no gl context yet, and create an identity view matrix
   constructor() {
     this.viewMatrix = GLM.mat4.create();
+
+    // We cannot determine these without a GL context
     this.viewLoc = null;
     this.projectionLoc = null;
+    this.bbViewLoc = null;
+    this.bbProjectionLoc = null;
+    this.bbInverseViewLoc = null;
 
     // We'll use a 3 matrix system. All model data is originally input with respect for its own space as the transform. That is, all model data
     // assumes its position origin is at 0. Obviously, when rendering multiple objects in different locations this isn't the case. 
@@ -398,6 +408,13 @@ class Household {
    specularLoc: WebGLUniformLocation | null; // The location to access and provide the color material data for the shaders to use
    shininessLoc: WebGLUniformLocation | null; // The location to access and provide the color material data for the shaders to use
 
+   // Billboard related values
+   bbBuffer: WebGLBuffer | null; // A way to access the buffer storing cube vertex data on the GPU
+   bbVertices: Float32Array; // The vertices of the billboard quad
+   bbVao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null; // A single object to store the vertex attribute data and which buffer to bind for the household
+   bbModelLoc: WebGLUniformLocation | null; // The location to access and provide the model matrix data for the shaders to use
+   bbHeightOffsetLoc: WebGLUniformLocation | null; // etc
+
    constructor() {
     // Vertices + normal vectors of a cube. Each cube has 6 faces, and each face is made up of two triangles. Each triangle has 3 vertices. 
     this.blockVertices = new Float32Array([
@@ -444,16 +461,30 @@ class Household {
         -0.5,  0.5, -0.5,  0.0,  1.0,  0.0
     ]);
 
+    this.bbVertices = new Float32Array([ // two triangles
+      -1.0, -0.15, 0.0,
+      1.0, -0.15, 0.0,
+      1.0, 0.15, 0.0,
+      -1.0, -0.15, 0.0,
+      -1.0, 0.15, 0.0,
+      1.0, 0.15, 0.0,
+    ]);
+
     // These are as mentioned above. We initialize the WebGL specific ones to null because they need a proper WebGL context first
     this.features = []; // This is variable, start with none
+
+    // We cannot determine the following entries without a gl context
     this.buffer = null;
     this.vao = null;
-    // We cannot determine the following entries without a gl context
+    this.bbBuffer = null;
+    this.bbVao = null;
     this.modelLoc = null;
     this.ambientLoc = null;
     this.diffuseLoc = null;
     this.specularLoc = null;
     this.shininessLoc = null;
+    this.bbModelLoc = null;
+    this.bbHeightOffsetLoc = null;
    }
 }
 let house = new Household(); // Create a global household object
@@ -502,8 +533,9 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 
   // Reset everything so it works when navigating back to this page. Descriptions are above.
   glRef = gl;
-  shaderProgram = null;
   lastFrameTime = 0;
+  shaderProgram = null; // NOTE: doing this causes memory leaks. We need to fix this
+  bbShaderProgram = null;
   house = new Household();
   cam = new Camera();
 
@@ -556,7 +588,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   gl.compileShader(bbVert); // Compile the GLSL shader
 
   // Create billboard fragment shader (healthbars). On error, clear resources, output an error, and quit
-  const bbFrag: WebGLShader | null = gl.createShader(gl.VERTEX_SHADER);
+  const bbFrag: WebGLShader | null = gl.createShader(gl.FRAGMENT_SHADER);
   if (bbFrag === null) {
     console.error("Error creating billboard fragment shader.");
     gl.deleteShader(vert);
@@ -595,6 +627,12 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   gl.linkProgram(bbProgram);
   bbShaderProgram = bbProgram;
 
+  // Clean up resources
+  gl.deleteShader(vert);
+  gl.deleteShader(frag);
+  gl.deleteShader(bbVert);
+  gl.deleteShader(bbFrag);
+
   // Get attribute and uniform location information for the shader program. Essentially, this is get references to location information
   // so we can upload data to the GPU for shaders to use. Here, we deal with both attributes and uniforms. Uniforms are variables that are the same
   // for all instances of the shader being run (as shaders are run in parallel) although they may change frame to frame. Attributes are pieces
@@ -602,33 +640,33 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   // be one attribute, normals would be another. 
   const attribLocs = {
     // We need to figure out where these attributes are being stored on the GPU.
-    vertLoc: gl.getAttribLocation(program, "aVertPos"),
-    normalLoc: gl.getAttribLocation(program, "aNormal")
+    vertLoc: gl.getAttribLocation(shaderProgram, "aVertPos"),
+    normalLoc: gl.getAttribLocation(shaderProgram, "aNormal")
   }
   const matrixUniformLocs = {
     // We use three matrices to transform a model's unique position in the world into a 
     // projected value on the screen. 
-    modelMatrix: gl.getUniformLocation(program, "uModel"),
-    viewMatrix: gl.getUniformLocation(program, "uView"),
-    projectionMatrix: gl.getUniformLocation(program, "uProjection")
+    modelMatrix: gl.getUniformLocation(shaderProgram, "uModel"),
+    viewMatrix: gl.getUniformLocation(shaderProgram, "uView"),
+    projectionMatrix: gl.getUniformLocation(shaderProgram, "uProjection")
   }
   const lightUniformLocs = {
     // These are used in lighting calculations. We'll use a slightly modified phong lighting model 
     // where we cut out the specular for performance (although we may add it back in later. We'll keep
     // support for it even though it's unused). This is meant to emulate a "material" as you often see in 
     // different game engines. 
-    viewPosition: gl.getUniformLocation(program, "uViewPos"),
+    viewPosition: gl.getUniformLocation(shaderProgram, "uViewPos"),
     material: {
-      ambient: gl.getUniformLocation(program, "uMaterial.ambient"),
-      diffuse: gl.getUniformLocation(program, "uMaterial.diffuse"), 
-      specular: gl.getUniformLocation(program, "uMaterial.specular"),
-      shininess: gl.getUniformLocation(program, "uMaterial.shininess")
+      ambient: gl.getUniformLocation(shaderProgram, "uMaterial.ambient"),
+      diffuse: gl.getUniformLocation(shaderProgram, "uMaterial.diffuse"), 
+      specular: gl.getUniformLocation(shaderProgram, "uMaterial.specular"),
+      shininess: gl.getUniformLocation(shaderProgram, "uMaterial.shininess")
     },
     light: {
-      position: gl.getUniformLocation(program, "uLight.position"),
-      ambient: gl.getUniformLocation(program, "uLight.ambient"),
-      diffuse: gl.getUniformLocation(program, "uLight.diffuse"),
-      specular: gl.getUniformLocation(program, "uLight.specular"),
+      position: gl.getUniformLocation(shaderProgram, "uLight.position"),
+      ambient: gl.getUniformLocation(shaderProgram, "uLight.ambient"),
+      diffuse: gl.getUniformLocation(shaderProgram, "uLight.diffuse"),
+      specular: gl.getUniformLocation(shaderProgram, "uLight.specular"),
     }
   }
 
@@ -638,11 +676,26 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   house.diffuseLoc = lightUniformLocs.material.diffuse;
   house.specularLoc = lightUniformLocs.material.specular;
   house.shininessLoc = lightUniformLocs.material.shininess;
-  // It might be an improvement to save all the lightUniformLocs in one place, but doing it modular like this ensures we don't give too much access all around
 
   // Save camera locations
   cam.viewLoc = matrixUniformLocs.viewMatrix;
   cam.projectionLoc = matrixUniformLocs.projectionMatrix;
+
+  // Now for the billboard program
+  const bbLocs = {
+    pos: gl.getAttribLocation(bbShaderProgram, "aVertPos"),
+    model: gl.getUniformLocation(bbShaderProgram, "uModel"),
+    view: gl.getUniformLocation(bbShaderProgram, "uView"),
+    inverseView: gl.getUniformLocation(bbShaderProgram, "uInverseView"),
+    projection: gl.getUniformLocation(bbShaderProgram, "uProjection"),
+    heightOffset: gl.getUniformLocation(bbShaderProgram, "uHeightOffset"),
+  }
+  // Now save billboard values
+  house.bbModelLoc = bbLocs.model;
+  cam.bbViewLoc = bbLocs.view;
+  cam.bbProjectionLoc = bbLocs.projection;
+  cam.bbInverseViewLoc = bbLocs.inverseView;
+  house.bbHeightOffsetLoc = bbLocs.heightOffset;
 
   // Setup our vertex buffer and attribute informations. This is how we know what information is stored where. 
   // Attributes are explained above. Basically, we send our vertex data to the GPU by storing it in a buffer. We also have to tell
@@ -659,6 +712,16 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   gl.enableVertexAttribArray(attribLocs.vertLoc);
   gl.vertexAttribPointer(attribLocs.normalLoc, 3, gl.FLOAT, false, 6 * 4, 4 * 3); // 4 bytes per float * 3 floats before we get to our first set of normal data
   gl.enableVertexAttribArray(attribLocs.normalLoc);  
+  bindVAO(null);
+
+  // Do the same for billboards
+  house.bbBuffer = gl.createBuffer();
+  house.bbVao = createVAO();
+  bindVAO(house.bbVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, house.bbBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, house.bbVertices, gl.STATIC_DRAW);
+  gl.vertexAttribPointer(bbLocs.pos, 3, gl.FLOAT, false, 3 * 4, 0);
+  gl.enableVertexAttribArray(bbLocs.pos);
   bindVAO(null);
 
   // Do the same as above, but for the grid vertices. Note that we disable the normal attribute and default it to (0, 1, 0) always since we don't 
@@ -683,7 +746,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   }
 
   // Select our shader program to use. We must always have an active shader program.
-  gl.useProgram(program);
+  gl.useProgram(shaderProgram);
 
   // Set up our perspective matrix
   GLM.mat4.perspective(cam.projectionMatrix, (45 * Math.PI / 180), gl.drawingBufferWidth / gl.drawingBufferHeight, NEAR_CLIP, FAR_CLIP);
@@ -707,10 +770,6 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 
   // Start drawing frames. This is a recursive animation function
   drawFrame(lastFrameTime);
-
-  // Clean up resources, although this probably never gets called. 
-  gl.deleteShader(vert); // not needed anymore
-  gl.deleteShader(frag); // same here
 }
 
 // This is the function that will be called every frame to draw a frame on in the WebGL context
@@ -764,6 +823,12 @@ function drawFrame(time: number) {
       return;
     }
 
+    // Ensure billboard locations
+    if (!house.bbBuffer || !house.bbModelLoc || !house.bbVao || !cam.bbInverseViewLoc || !cam.bbProjectionLoc || !cam.bbViewLoc || !house.bbHeightOffsetLoc) {
+      console.error("Invalid billboard data.");
+      return;
+    }
+
     // Check time and update frame time to get a delta for animation
     const delta = (time - lastFrameTime) / 1000;
     lastFrameTime = time;
@@ -802,11 +867,25 @@ function drawFrame(time: number) {
 
     // Now, draw all the healthbars
     gl.useProgram(bbShaderProgram);
+    gl.disable(gl.DEPTH_TEST); // so the healthbars get drawn on top of everything else
+    bindVAO(house.bbVao);
+    // Set camera uniforms. We need the inverse view matrix to easily get camera vectors for the billboards. We can calculate this once per frame since it stays the same
+    // instead of calculating a ton of times in the vertex shader
+    const inverseView = GLM.mat4.create();
+    GLM.mat4.invert(inverseView, cam.viewMatrix);
+    gl.uniformMatrix4fv(cam.bbProjectionLoc, false, cam.projectionMatrix as Float32Array);
+    gl.uniformMatrix4fv(cam.bbViewLoc, false, cam.viewMatrix as Float32Array);
+    gl.uniformMatrix4fv(cam.bbInverseViewLoc, false, inverseView as Float32Array);
+    // Now iterate through
     for (let i = 0; i < house.features.length; i++) {
+      // Get the feature position
+      gl.uniformMatrix4fv(house.bbModelLoc, false, house.features[i].modelMatrix as Float32Array);
       for (let j = 0; j < house.features[i].chores.length; j++) {
-
+        gl.uniform1f(house.bbHeightOffsetLoc, 0.8 + (j + 1) * 0.3); // Add an offset per chore bar
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
       }
     }
+    gl.enable(gl.DEPTH_TEST); // return to normal
 
     // End frame. Flush WebGL's GPU, call an expo handler method, and then request a new animation frame with this same method (recursive)
     gl.flush(); 
