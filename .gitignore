@@ -1,3 +1,4 @@
 /artifacts
 # database files
 /src/server/db/db_config.py
+src/server/.env
