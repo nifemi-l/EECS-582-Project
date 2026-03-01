@@ -413,7 +413,8 @@ class Household {
    bbVertices: Float32Array; // The vertices of the billboard quad
    bbVao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null; // A single object to store the vertex attribute data and which buffer to bind for the household
    bbModelLoc: WebGLUniformLocation | null; // The location to access and provide the model matrix data for the shaders to use
-   bbHeightOffsetLoc: WebGLUniformLocation | null; // etc
+   bbHeightOffsetLoc: WebGLUniformLocation | null; // access to the height offset uniform
+   bbHealthPercentLoc: WebGLUniformLocation | null; // access to the healthbar's health percent uniform
 
    constructor() {
     // Vertices + normal vectors of a cube. Each cube has 6 faces, and each face is made up of two triangles. Each triangle has 3 vertices. 
@@ -485,6 +486,7 @@ class Household {
     this.shininessLoc = null;
     this.bbModelLoc = null;
     this.bbHeightOffsetLoc = null;
+    this.bbHealthPercentLoc = null;
    }
 }
 let house = new Household(); // Create a global household object
@@ -689,6 +691,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
     inverseView: gl.getUniformLocation(bbShaderProgram, "uInverseView"),
     projection: gl.getUniformLocation(bbShaderProgram, "uProjection"),
     heightOffset: gl.getUniformLocation(bbShaderProgram, "uHeightOffset"),
+    healthPercent: gl.getUniformLocation(bbShaderProgram, "uHealthPercent"),
   }
   // Now save billboard values
   house.bbModelLoc = bbLocs.model;
@@ -696,6 +699,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   cam.bbProjectionLoc = bbLocs.projection;
   cam.bbInverseViewLoc = bbLocs.inverseView;
   house.bbHeightOffsetLoc = bbLocs.heightOffset;
+  house.bbHealthPercentLoc = bbLocs.healthPercent;
 
   // Setup our vertex buffer and attribute informations. This is how we know what information is stored where. 
   // Attributes are explained above. Basically, we send our vertex data to the GPU by storing it in a buffer. We also have to tell
@@ -824,7 +828,7 @@ function drawFrame(time: number) {
     }
 
     // Ensure billboard locations
-    if (!house.bbBuffer || !house.bbModelLoc || !house.bbVao || !cam.bbInverseViewLoc || !cam.bbProjectionLoc || !cam.bbViewLoc || !house.bbHeightOffsetLoc) {
+    if (!house.bbBuffer || !house.bbModelLoc || !house.bbVao || !cam.bbInverseViewLoc || !cam.bbProjectionLoc || !cam.bbViewLoc || !house.bbHeightOffsetLoc || !house.bbHealthPercentLoc) {
       console.error("Invalid billboard data.");
       return;
     }
@@ -882,7 +886,9 @@ function drawFrame(time: number) {
       gl.uniformMatrix4fv(house.bbModelLoc, false, house.features[i].modelMatrix as Float32Array);
       for (let j = 0; j < house.features[i].chores.length; j++) {
         gl.uniform1f(house.bbHeightOffsetLoc, 0.8 + (j + 1) * 0.3); // Add an offset per chore bar
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        house.features[i].chores[j].decayValue -= delta * 0.1; // add a decay per frame for demonstration purposes
+        gl.uniform1f(house.bbHealthPercentLoc, house.features[i].chores[j].decayValue); // Set chore decay / health percent
+        gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
       }
     }
     gl.enable(gl.DEPTH_TEST); // return to normal

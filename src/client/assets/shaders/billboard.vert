@@ -23,12 +23,14 @@ uniform mat4 uInverseView; // the inverse view matrix (view is world->camera spa
 uniform mat4 uProjection; // Using a perspective projection
 uniform float uHeightOffset; // for cases where there are multiple stacked healthbars
 
+varying vec2 vLocalQuadCoords; // Pass the local coords of the 2D box to the fragment shader
+
 void main() {
     vec3 bbCenter = uModel[3].xyz; // get the world translation of the billboard to find the center
     vec3 camRight = uInverseView[0].xyz; // camera right is in first column of the inverse view matrix
     vec3 camUp = uInverseView[1].xyz; // up is in the second column
     vec3 worldPos = bbCenter + camRight * aVertPos.x + camUp * aVertPos.y; // get the world position of the vertex after offsets
     worldPos.y += uHeightOffset; // adjust height 
-
     gl_Position = uProjection * uView * vec4(worldPos, 1.0); // Output the position of the vertex after being transformed
+    vLocalQuadCoords = aVertPos.xy; // Since the billboard will always face the camera, we just pass along the local 2D coordinates
 }
