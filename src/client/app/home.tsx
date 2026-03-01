@@ -278,6 +278,7 @@ export default function Index() {
 
 let glRef: ExpoWebGLRenderingContext | null = null; // A global way to access the single WebGL context created on launch
 let shaderProgram: WebGLProgram | null = null; // The currently used GPU shader program
+let bbShaderProgram: WebGLProgram | null = null; // The shader program for billboards
 let lastFrameTime = 0; // The time since the last frame
 let oesExt: OES_vertex_array_object | null = null; // A global way to access the OES extension for WebGL 1.0 support
 
@@ -542,11 +543,38 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   gl.shaderSource(frag, fragData); // Set shader source code to the text read earlier
   gl.compileShader(frag); // Compile the GLSL shader
 
-  // Ensure shaders are compiled correctly. Output an error if they aren't with relevant shader info, clear resources, and return. 
-  if (!gl.getShaderParameter(vert, gl.COMPILE_STATUS)) {
-    console.error("Shaders failed to compile - ", gl.getShaderInfoLog(vert), " - AND - ", gl.getShaderInfoLog(frag));
+  // Create billboard vertex shader (healthbars). On error, clear resources, output an error, and quit
+  const bbVert: WebGLShader | null = gl.createShader(gl.VERTEX_SHADER);
+  if (bbVert === null) {
+    console.error("Error creating billboard vertex shader.");
     gl.deleteShader(vert);
     gl.deleteShader(frag);
+    gl.deleteShader(bbVert);
+    return;
+  } 
+  gl.shaderSource(bbVert, bbVertData); // Set shader source code to the text read earlier
+  gl.compileShader(bbVert); // Compile the GLSL shader
+
+  // Create billboard fragment shader (healthbars). On error, clear resources, output an error, and quit
+  const bbFrag: WebGLShader | null = gl.createShader(gl.VERTEX_SHADER);
+  if (bbFrag === null) {
+    console.error("Error creating billboard fragment shader.");
+    gl.deleteShader(vert);
+    gl.deleteShader(frag);
+    gl.deleteShader(bbVert);
+    gl.deleteShader(bbFrag);
+    return;
+  } 
+  gl.shaderSource(bbFrag, bbFragData); // Set shader source code to the text read earlier
+  gl.compileShader(bbFrag); // Compile the GLSL shader
+
+  // Ensure shaders are compiled correctly. Output an error if they aren't with relevant shader info, clear resources, and return. 
+  if (!gl.getShaderParameter(vert, gl.COMPILE_STATUS)) {
+    console.error("Shaders failed to compile - ", gl.getShaderInfoLog(vert), " - AND - ", gl.getShaderInfoLog(frag), " - AND - ", gl.getShaderInfoLog(bbVert), " - AND - ", gl.getShaderInfoLog(bbFrag));
+    gl.deleteShader(vert);
+    gl.deleteShader(frag);
+    gl.deleteShader(bbVert);
+    gl.deleteShader(bbFrag);
     return;
   }
 
@@ -559,6 +587,13 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   gl.attachShader(program, frag);
   gl.linkProgram(program);
   shaderProgram = program;
+
+  // Now, we create a shader program for the healthbars (bb is short for billboard)
+  const bbProgram = gl.createProgram();
+  gl.attachShader(bbProgram, bbVert);
+  gl.attachShader(bbProgram, bbFrag);
+  gl.linkProgram(bbProgram);
+  bbShaderProgram = bbProgram;
 
   // Get attribute and uniform location information for the shader program. Essentially, this is get references to location information
   // so we can upload data to the GPU for shaders to use. Here, we deal with both attributes and uniforms. Uniforms are variables that are the same
@@ -603,7 +638,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   house.diffuseLoc = lightUniformLocs.material.diffuse;
   house.specularLoc = lightUniformLocs.material.specular;
   house.shininessLoc = lightUniformLocs.material.shininess;
-  // It might be an improvement to save all the lightUniformLocs in one place, but doing it modlar like this ensures we don't give too much access all around
+  // It might be an improvement to save all the lightUniformLocs in one place, but doing it modular like this ensures we don't give too much access all around
 
   // Save camera locations
   cam.viewLoc = matrixUniformLocs.viewMatrix;
@@ -692,7 +727,12 @@ function drawFrame(time: number) {
       console.error("Frame drawn without a shader program");
       return;
     }
-    const program = shaderProgram; // Get a clearer reference to our shader program
+
+    // Ensure we have a billboard shader program
+    if (!bbShaderProgram) {
+      console.error("Frame drawn without a billboard shader program");
+      return;
+    }
 
     // Ensure we have a valid location for the model matrix uniform, if not error and return
     if (!house.modelLoc) {
@@ -730,6 +770,7 @@ function drawFrame(time: number) {
 
     // Prepare draw by clearing the screen and depth buffer
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.useProgram(shaderProgram); // use the household shader program
 
     // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration. 
     // This also updates our view matrix so we can rotate the world around
@@ -757,6 +798,14 @@ function drawFrame(time: number) {
       gl.uniform3fv(house.specularLoc, grid.material.specular);
       gl.uniform1f(house.shininessLoc, grid.material.shininess);
       gl.drawArrays(gl.LINES, 0, 2 * (grid.width + grid.height + 2)); // Lines are 1 pixel thick by default. Two vertices per line. Two more lines to close the grid.
+    }
+
+    // Now, draw all the healthbars
+    gl.useProgram(bbShaderProgram);
+    for (let i = 0; i < house.features.length; i++) {
+      for (let j = 0; j < house.features[i].chores.length; j++) {
+
+      }
     }
 
     // End frame. Flush WebGL's GPU, call an expo handler method, and then request a new animation frame with this same method (recursive)
