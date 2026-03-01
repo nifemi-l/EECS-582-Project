@@ -11,7 +11,7 @@ import db_commands
 conn = db_commands.connect_to_db()
 
 def apply_ddl():
-    with open("ddl.sql", "r") as f:
+    with open("src/server/db/ddl.sql", "r") as f:
         ddl_statements = f.read()
 
     with conn.cursor() as cursor:
