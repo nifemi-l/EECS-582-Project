@@ -98,6 +98,10 @@ function addBlock(cellX: number, cellY: number, cellZ: number) {
   GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
   const newMaterial: Material = currentDrawingColor;
   const newFeature = new Feature(newModelMatrix, newMaterial); // this is the new feature object we're adding
+  // randomly add a second chore for demo purposes
+  if (Math.round(Math.random()) == 0) {
+    newFeature.chores.push(new Chore());
+  }
   house.features.push(newFeature); // add the feature to the house
 }
 
@@ -885,7 +889,7 @@ function drawFrame(time: number) {
       // Get the feature position
       gl.uniformMatrix4fv(house.bbModelLoc, false, house.features[i].modelMatrix as Float32Array);
       for (let j = 0; j < house.features[i].chores.length; j++) {
-        gl.uniform1f(house.bbHeightOffsetLoc, 0.8 + (j + 1) * 0.3); // Add an offset per chore bar
+        gl.uniform1f(house.bbHeightOffsetLoc, 0.8 + (j + 1) * 0.4); // Add an offset per chore bar
         house.features[i].chores[j].decayValue -= delta * 0.1; // add a decay per frame for demonstration purposes
         gl.uniform1f(house.bbHealthPercentLoc, house.features[i].chores[j].decayValue); // Set chore decay / health percent
         gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
