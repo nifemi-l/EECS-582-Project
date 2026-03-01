@@ -349,10 +349,20 @@ const FEATURE_ORANGE: Material = {
 const FEATURE_COLORS = [FEATURE_RED, FEATURE_BLUE, FEATURE_GREEN, FEATURE_ORANGE]
 let currentDrawingColor = FEATURE_ORANGE;
 
+// A class represneting a chore object that should be attached to a feature
+class Chore {
+  decayValue: number; // the "heatlhbar" % full. Starting at 1 ending at 0
+
+  constructor() {
+    this.decayValue = 1.0; // Default to 1 for now
+  }
+}
+
 // Define what one of our cleanable features should have
 class Feature {
-   modelMatrix: GLM.mat4;
-   material: Material;
+   modelMatrix: GLM.mat4; // The transform of the feature in the world
+   material: Material; // How the feature looks materially
+   chores: Chore[]; // The chores associated
 
    constructor(mm: GLM.mat4 | null, mat: Material | null) {
     // Assign model matrix to either a provided value or a default
@@ -368,6 +378,9 @@ class Feature {
     } else {
       this.material = mat;
     }
+
+   // Default chore list
+   this.chores = [new Chore()]
    }
 }
 
@@ -476,7 +489,7 @@ const grid = new Grid(); // Store a global grid object
 async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   // Read the text of the shader files. We later pass shader data as a string, so we need the actual shader files in a 
   // string representation for later use. We still split them into their own files though because it's easier to manage.
-  const [vertData, fragData] = await readShaderData();
+  const [vertData, fragData, bbVertData, bbFragData] = await readShaderData();
 
   // Get the OES Vertex Array Object extension
   // This is needed because these VAOs provide very useful functionality (we don't have to define vertex array attributes
@@ -843,9 +856,11 @@ function bindVAO(vao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null)
 // a string. 
 async function readShaderData() {
   // Load our vertex and fragment files. 
-  const [vertFile, fragFile] = await Asset.loadAsync([
+  const [vertFile, fragFile, bbVertFile, bbFragFile] = await Asset.loadAsync([
     require("../assets/shaders/main.vert"),
     require("../assets/shaders/main.frag"),
+    require("../assets/shaders/billboard.vert"),
+    require("../assets/shaders/billboard.frag"),
   ]);
 
   // Ensure we have a vertex shader (at least one is required), if not throw an error
@@ -858,15 +873,29 @@ async function readShaderData() {
     throw new URIError("Unable to find fragment shader.");
   }
 
+  // Ensure we have out billboard vertex shader, if not throw an error
+  if (!bbVertFile.localUri) {
+    throw new URIError("Unable to find billboard vertex shader.");
+  }
+
+  // Ensure we have out billboard fragment shader, if not throw an error
+  if (!bbFragFile.localUri) {
+    throw new URIError("Unable to find billboard fragment shader.");
+  }
+
   // Web and mobile bundle files differently. On web, we fetch it using a URL as if we were fetching an external resource.
   // On mobile, we can just read the file since it is bundled with the application. Once read, return the file data as text / string data.
   if (Platform.OS === 'web') {
     const vertSrc = await (await fetch(vertFile.localUri)).text(); // .text() is a promise, like fetch, hence the double await
     const fragSrc = await (await fetch(fragFile.localUri)).text();
-    return [vertSrc, fragSrc]
+    const bbVertSrc = await (await fetch(bbVertFile.localUri)).text();
+    const bbFragSrc = await (await fetch(bbFragFile.localUri)).text();
+    return [vertSrc, fragSrc, bbVertSrc, bbFragSrc]
   } else {
     const vertSrc = await readAsStringAsync(vertFile.localUri);
     const fragSrc = await readAsStringAsync(fragFile.localUri);
-    return [vertSrc, fragSrc];
+    const bbVertSrc = await readAsStringAsync(bbVertFile.localUri);
+    const bbFragSrc = await readAsStringAsync(bbFragFile.localUri);
+    return [vertSrc, fragSrc, bbVertSrc, bbFragSrc];
   }
 }
