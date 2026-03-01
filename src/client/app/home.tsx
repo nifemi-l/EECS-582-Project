@@ -15,12 +15,14 @@ Known faults: None
 */
 
 // Import required components
+import React from 'react';
 import { Asset } from 'expo-asset';
 import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
 import * as GLM from 'gl-matrix';
-import { LayoutChangeEvent, Platform, View, useWindowDimensions } from "react-native";
+import { LayoutChangeEvent, Platform, Pressable, View, useWindowDimensions } from "react-native";
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 // Define the near and far clips for the projection matrix
 const NEAR_CLIP = 0.1;
@@ -94,7 +96,7 @@ function selectRandomMaterial() {
 function addBlock(cellX: number, cellY: number, cellZ: number) {
   const newModelMatrix = GLM.mat4.create(); // create a new transform 
   GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
-  const newMaterial: Material = selectRandomMaterial();
+  const newMaterial: Material = currentDrawingColor;
   const newFeature = new Feature(newModelMatrix, newMaterial); // this is the new feature object we're adding
   house.features.push(newFeature); // add the feature to the house
 }
@@ -211,23 +213,70 @@ export default function Index() {
   windowWidth = useWindowDimensions().width; 
   windowHeight = useWindowDimensions().height;
   return (
-    <GestureDetector gesture={composedGesture}>
-      <View
-        onLayout={handleLayout}
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
+    <View
+      onLayout={handleLayout}
+      style={{
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+    >
+      <GestureDetector gesture={composedGesture}>
         <GLView style={{
           width: "100%",
           height: "100%"
         }} 
         onContextCreate={onContextCreate} 
         />
+      </GestureDetector>
+
+      {/* Buttons for selecting type */}
+      <View 
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          position: "absolute",
+          bottom: 40,
+          padding: 10,
+          zIndex: 10,
+          gap: 10,
+        }}
+      >
+        {/* Red Button */}
+        <Pressable
+          onPress={() => {currentDrawingColor = FEATURE_RED}}
+          disabled={currentDrawingColor === FEATURE_RED}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name='circle-outline' size={20} color="#de3737"/>
+        </Pressable>
+        {/* Green Button */}
+        <Pressable
+          onPress={() => {currentDrawingColor = FEATURE_GREEN}}
+          disabled={currentDrawingColor === FEATURE_GREEN}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name='circle-outline' size={20} color="#53de37"/>
+        </Pressable>
+        {/* Blue Button */}
+        <Pressable
+          onPress={() => {currentDrawingColor = FEATURE_BLUE}}
+          disabled={currentDrawingColor === FEATURE_BLUE}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name='circle-outline' size={20} color={currentDrawingColor === FEATURE_BLUE ? "#3764de" : "#626262"} />
+        </Pressable>
+        {/* Orange Button */}
+        <Pressable
+          onPress={() => {currentDrawingColor = FEATURE_ORANGE}}
+          disabled={currentDrawingColor === FEATURE_ORANGE}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name='circle-outline' size={20} color="#de8537"/>
+        </Pressable>
       </View>
-    </GestureDetector>
+    </View>
   );
 }
 
@@ -302,6 +351,7 @@ const FEATURE_ORANGE: Material = {
 
 // We will pick from this array of colors
 const FEATURE_COLORS = [FEATURE_RED, FEATURE_BLUE, FEATURE_GREEN, FEATURE_ORANGE]
+let currentDrawingColor = FEATURE_ORANGE;
 
 // Define what one of our cleanable features should have
 class Feature {
