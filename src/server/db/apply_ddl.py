@@ -27,5 +27,5 @@ def remove_ddl():
             CREATE SCHEMA public;
         """)
 
-#apply_ddl()
-#remove_ddl()
+remove_ddl()
+apply_ddl()
