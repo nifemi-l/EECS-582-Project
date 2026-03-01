@@ -819,6 +819,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 }
 
 // This is the function that will be called every frame to draw a frame on in the WebGL context
+const inverseView = GLM.mat4.create(); // store our inverse view matrix here to avoid re-creation every frame
 function drawFrame(time: number) {
     // Ensure we have an OpenGL context, if not error and return
     if (!glRef) {
@@ -881,10 +882,10 @@ function drawFrame(time: number) {
 
     // Prepare draw by clearing the screen and depth buffer
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.useProgram(shaderProgram); // use the household shader program
 
     // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration. 
     // This also updates our view matrix so we can rotate the world around
+    gl.useProgram(shaderProgram); // use the household shader program
     bindVAO(house.vao);
     GLM.mat4.rotateY(cam.viewMatrix, cam.viewMatrix, panVelocityX * delta); // Rotate the world according to the frame delta for smooth movement
     gl.uniformMatrix4fv(cam.viewLoc, false, cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
@@ -911,32 +912,35 @@ function drawFrame(time: number) {
       gl.drawArrays(gl.LINES, 0, 2 * (grid.width + grid.height + 2)); // Lines are 1 pixel thick by default. Two vertices per line. Two more lines to close the grid.
     }
 
-    // Now, draw all the healthbars
-    gl.useProgram(bbShaderProgram);
-    gl.disable(gl.DEPTH_TEST); // so the healthbars get drawn on top of everything else
-    bindVAO(house.bbVao);
-    // Set camera uniforms. We need the inverse view matrix to easily get camera vectors for the billboards. We can calculate this once per frame since it stays the same
-    // instead of calculating a ton of times in the vertex shader
-    const inverseView = GLM.mat4.create();
-    GLM.mat4.invert(inverseView, cam.viewMatrix);
-    gl.uniformMatrix4fv(cam.bbProjectionLoc, false, cam.projectionMatrix as Float32Array);
-    gl.uniformMatrix4fv(cam.bbViewLoc, false, cam.viewMatrix as Float32Array);
-    gl.uniformMatrix4fv(cam.bbInverseViewLoc, false, inverseView as Float32Array);
-    // Now iterate through
-    for (let i = 0; i < house.features.length; i++) {
-      // Get the feature position
-      gl.uniformMatrix4fv(house.bbModelLoc, false, house.features[i].modelMatrix as Float32Array);
-      for (let j = 0; j < house.features[i].chores.length; j++) {
-        gl.uniform1f(house.bbHeightOffsetLoc, 0.8 + (j + 1) * 0.4); // Add an offset per chore bar
-        house.features[i].chores[j].decayValue -= delta * 0.1; // add a decay per frame for demonstration purposes
-        gl.uniform1f(house.bbHealthPercentLoc, house.features[i].chores[j].decayValue); // Set chore decay / health percent
-        gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
+    // Now, draw all the healthbars if we can calculate the correct inverse view matrix to position them (I think we always can)
+    const inverseResult = GLM.mat4.invert(inverseView, cam.viewMatrix);
+    if (!inverseResult) {
+      console.log("Unable to calculate inverse view matrix.");
+    } else {
+      // Begin the new shader program specific to billboards
+      gl.useProgram(bbShaderProgram);
+      gl.disable(gl.DEPTH_TEST); // so the healthbars get drawn on top of everything else
+      bindVAO(house.bbVao);
+      // Set camera uniforms. We need the inverse view matrix to easily get camera vectors for the billboards. We can calculate this once per frame since it stays the same
+      // instead of calculating a ton of times in the vertex shader
+      gl.uniformMatrix4fv(cam.bbProjectionLoc, false, cam.projectionMatrix as Float32Array);
+      gl.uniformMatrix4fv(cam.bbViewLoc, false, cam.viewMatrix as Float32Array);
+      gl.uniformMatrix4fv(cam.bbInverseViewLoc, false, inverseView as Float32Array);
+      // Now iterate through
+      for (let i = 0; i < house.features.length; i++) {
+        // Get the feature position
+        gl.uniformMatrix4fv(house.bbModelLoc, false, house.features[i].modelMatrix as Float32Array);
+        for (let j = 0; j < house.features[i].chores.length; j++) {
+          gl.uniform1f(house.bbHeightOffsetLoc, 0.8 + (j + 1) * 0.4); // Add an offset per chore bar
+          house.features[i].chores[j].decayValue -= delta * 0.1; // add a decay per frame for demonstration purposes
+          gl.uniform1f(house.bbHealthPercentLoc, house.features[i].chores[j].decayValue); // Set chore decay / health percent
+          gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
+        }
       }
+      gl.enable(gl.DEPTH_TEST); // return to normal
     }
-    gl.enable(gl.DEPTH_TEST); // return to normal
 
-    // End frame. Flush WebGL's GPU, call an expo handler method, and then request a new animation frame with this same method (recursive)
-    gl.flush(); 
+    // End frame and then request a new animation frame with this same method (recursive)
     gl.endFrameEXP();
     frameId = window.requestAnimationFrame(drawFrame);
 }
