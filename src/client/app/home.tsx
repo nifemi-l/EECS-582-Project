@@ -94,6 +94,13 @@ function selectRandomMaterial() {
 
 // A function to add a block to the household at a certain position
 function addBlock(cellX: number, cellY: number, cellZ: number) {
+  // Disallow invalid block positions. For a grid of size 10,10 we allow range [-5, 4] in the xz directions. We lock to the xz plane (y=0)
+  const halfGridWidth = Math.floor(grid.width / 2);
+  const halfGridHeight = Math.floor(grid.height / 2);
+  if ((cellX < 0 - halfGridWidth || cellX >= halfGridWidth) || Math.abs(cellY) > 0 || (cellZ < 0 - halfGridHeight || cellZ >= halfGridHeight)) {
+    return;
+  }
+
   const newModelMatrix = GLM.mat4.create(); // create a new transform 
   GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
   const newMaterial: Material = currentDrawingColor;
@@ -333,28 +340,35 @@ interface Material {
 
 // Define a series of colors
 const FEATURE_RED: Material = {
-  ambient: [0.3, 0.0, 0.0],
+  ambient: [0.21, 0.31, 0.31],
   diffuse: [1.0, 0.0, 0.0],
   specular: [0.5, 0.5, 0.5],
   shininess: 32.0,
 }
 
 const FEATURE_BLUE: Material = {
-  ambient: [0.0, 0.0, 0.3],
+  ambient: [0.21, 0.31, 0.31],
   diffuse: [0.0, 0.0, 1.0],
   specular: [0.5, 0.5, 0.5],
   shininess: 32.0,
 }
 
 const FEATURE_GREEN: Material = {
-  ambient: [0.0, 0.3, 0.0],
+  ambient: [0.21, 0.31, 0.31],
   diffuse: [0.0, 1.0, 0.0],
   specular: [0.5, 0.5, 0.5],
   shininess: 32.0,
 }
 
 const FEATURE_ORANGE: Material = {
-  ambient: [0.31, 0.31, 0.31],
+  ambient: [0.21, 0.31, 0.31],
+  diffuse: [1.0, 0.6, 0.3],
+  specular: [0.5, 0.5, 0.5],
+  shininess: 32.0,
+}
+
+const FEATURE_GREY: Material = {
+  ambient: [0.21, 0.31, 0.31],
   diffuse: [1.0, 1.0, 1.0],
   specular: [0.5, 0.5, 0.5],
   shininess: 32.0,
@@ -477,6 +491,14 @@ class Household {
 
     // These are as mentioned above. We initialize the WebGL specific ones to null because they need a proper WebGL context first
     this.features = []; // This is variable, start with none
+
+    // Add a floor to the house
+    const floorMatrix = GLM.mat4.create();
+    GLM.mat4.scale(floorMatrix, floorMatrix, [10, 0.5, 10]);
+    GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
+    const floorFeature = new Feature(floorMatrix, FEATURE_GREY);
+    floorFeature.chores = []; // reset chores so no healthbar
+    this.features.push(floorFeature);
 
     // We cannot determine the following entries without a gl context
     this.buffer = null;
@@ -761,8 +783,8 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   gl.uniformMatrix4fv(matrixUniformLocs.projectionMatrix, false, cam.projectionMatrix as Float32Array);
 
   // Move the camera up, back, and turn it a little to the origin
-  GLM.mat4.rotateX(cam.viewMatrix, cam.viewMatrix, 30 * Math.PI / 180);
-  GLM.mat4.translate(cam.viewMatrix, cam.viewMatrix, [0.0, -4.0, -7.0]);
+  GLM.mat4.rotateX(cam.viewMatrix, cam.viewMatrix, 40 * Math.PI / 180);
+  GLM.mat4.translate(cam.viewMatrix, cam.viewMatrix, [0.0, -8.0, -11.0]);
   gl.uniformMatrix4fv(matrixUniformLocs.viewMatrix, false, cam.viewMatrix as Float32Array);
 
   // Setup lighting data. We'll just use placeholder values for now. Ambient simulates the basic lighting that just "exists", 
@@ -771,9 +793,9 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   // towards you. Diffuse is scattered light, specular is not. Shiniess is just a material value. See https://learnopengl.com/Lighting/Basic-Lighting. 
   // We have no need to set the materials here though since they are determined on a per-object basis
   gl.uniform3fv(lightUniformLocs.viewPosition, [0, 0, 0]);
-  gl.uniform3fv(lightUniformLocs.light.position, [0.0, 3.0, 3.0]);
-  gl.uniform3fv(lightUniformLocs.light.ambient, [1.0, 0.5, 0.31]);
-  gl.uniform3fv(lightUniformLocs.light.diffuse, [1.0, 0.5, 0.31]);
+  gl.uniform3fv(lightUniformLocs.light.position, [0.0, 6.0, 3.0]);
+  gl.uniform3fv(lightUniformLocs.light.ambient, [0.4, 0.4, 0.4]);
+  gl.uniform3fv(lightUniformLocs.light.diffuse, [0.9, 0.9, 0.9]);
   gl.uniform3fv(lightUniformLocs.light.specular, [1.0, 1.0, 1.0]);
 
   // Start drawing frames. This is a recursive animation function
@@ -850,7 +872,7 @@ function drawFrame(time: number) {
     bindVAO(house.vao);
     GLM.mat4.rotateY(cam.viewMatrix, cam.viewMatrix, panVelocityX * delta); // Rotate the world according to the frame delta for smooth movement
     gl.uniformMatrix4fv(cam.viewLoc, false, cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
-    
+
     // Iterate through all cubes making up our model and draw them each
     for (let i = 0; i < house.features.length; i++) {
       gl.uniformMatrix4fv(house.modelLoc, false, house.features[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
