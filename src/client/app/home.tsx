@@ -16,7 +16,7 @@ Known faults: None
 */
 
 // Import required components
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Asset } from 'expo-asset';
 import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
@@ -221,6 +221,16 @@ const composedGesture = Gesture.Exclusive(handlePan, handleTap);
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
 // the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
 export default function Index() {
+  // On component unmount, cancel our rendering loop
+  useEffect(() => {
+    return () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+        frameId = null;
+      }
+    }
+  }, []);
+
   // Get dims of entire screen
   windowWidth = useWindowDimensions().width; 
   windowHeight = useWindowDimensions().height;
@@ -293,6 +303,7 @@ let shaderProgram: WebGLProgram | null = null; // The currently used GPU shader 
 let bbShaderProgram: WebGLProgram | null = null; // The shader program for billboards
 let lastFrameTime = 0; // The time since the last frame
 let oesExt: OES_vertex_array_object | null = null; // A global way to access the OES extension for WebGL 1.0 support
+let frameId: number | null = null;
 
 // A class to represent the camera object. This manages the world view matrix
 class Camera {
@@ -558,12 +569,11 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   // as this functionality is only native in WebGL 2.0. To make things more annoying, often this functionality is NOT available in WebGL 2.0 
   // contexts. So, it's stupid, but we have to support both. This getExtension(...) call will either return an object or null.
   oesExt = gl.getExtension('OES_vertex_array_object'); 
-  console.log("OES VAO Extension available:", oesExt);
 
   // Reset everything so it works when navigating back to this page. Descriptions are above.
   glRef = gl;
   lastFrameTime = 0;
-  shaderProgram = null; // NOTE: doing this causes memory leaks. We need to fix this
+  shaderProgram = null; // I don't think this causes a memory leak as Expo should clean up resources on unmount
   bbShaderProgram = null;
   house = new Household();
   cam = new Camera();
@@ -657,6 +667,10 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   bbShaderProgram = bbProgram;
 
   // Clean up resources
+  gl.detachShader(program, vert);
+  gl.detachShader(program, frag);
+  gl.detachShader(bbProgram, bbVert);
+  gl.detachShader(bbProgram, bbFrag);
   gl.deleteShader(vert);
   gl.deleteShader(frag);
   gl.deleteShader(bbVert);
@@ -801,6 +815,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 
   // Start drawing frames. This is a recursive animation function
   drawFrame(lastFrameTime);
+  console.log("Context initialized.");
 }
 
 // This is the function that will be called every frame to draw a frame on in the WebGL context
@@ -923,7 +938,7 @@ function drawFrame(time: number) {
     // End frame. Flush WebGL's GPU, call an expo handler method, and then request a new animation frame with this same method (recursive)
     gl.flush(); 
     gl.endFrameEXP();
-    window.requestAnimationFrame(drawFrame);
+    frameId = window.requestAnimationFrame(drawFrame);
 }
 
 // Generate the vertices that would comrpise a grid based on a width and height value centered at 0 on the xz axis. 
