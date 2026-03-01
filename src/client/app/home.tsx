@@ -16,7 +16,7 @@ Known faults: None
 */
 
 // Import required components
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Asset } from 'expo-asset';
 import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
@@ -217,6 +217,57 @@ function handleLayout(event: LayoutChangeEvent) {
 // Use a composed gesture to allow for both pan and tap gestures. It is exclusive in that we can't use them both
 const composedGesture = Gesture.Exclusive(handlePan, handleTap);
 
+// The color selection buttons at the bottom of the screen
+function ColorButtons() {
+  // Store the current color so we can show it in the UI
+  const [drawingColor, setDrawingColor] = useState(FEATURE_ORANGE);
+
+  /* Buttons for selecting type */
+  return (
+    <View 
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        position: "absolute",
+        bottom: 40,
+        padding: 10,
+        zIndex: 10,
+        gap: 10,
+      }}
+    >
+      {/* Red Button */}
+      <Pressable
+        onPress={() => {currentDrawingColor = FEATURE_RED; setDrawingColor(FEATURE_RED)}}
+        hitSlop={8}
+      >
+        <MaterialCommunityIcons name={drawingColor !== FEATURE_RED ? 'circle-outline' : 'circle'} size={20} color="#de3737" />
+      </Pressable>
+      {/* Green Button */}
+      <Pressable
+        onPress={() => {currentDrawingColor = FEATURE_GREEN; setDrawingColor(FEATURE_GREEN)}}
+        hitSlop={8}
+      >
+        <MaterialCommunityIcons name={drawingColor !== FEATURE_GREEN ? 'circle-outline' : 'circle'} size={20} color="#53de37" />
+      </Pressable>
+      {/* Blue Button */}
+      <Pressable
+        onPress={() => {currentDrawingColor = FEATURE_BLUE; setDrawingColor(FEATURE_BLUE)}}
+        hitSlop={8}
+      >
+        <MaterialCommunityIcons name={drawingColor !== FEATURE_BLUE ? 'circle-outline' : 'circle'} size={20} color="#3764de" />
+      </Pressable>
+      {/* Orange Button */}
+      <Pressable
+        onPress={() => {currentDrawingColor = FEATURE_ORANGE; setDrawingColor(FEATURE_ORANGE)}}
+        hitSlop={8}
+      >
+        <MaterialCommunityIcons name={drawingColor !== FEATURE_ORANGE ? 'circle-outline' : 'circle'} size={20} color="#de8537" />
+      </Pressable>
+    </View>
+  );
+}
+
 // Outline the layout of the main page. The GLView component will provide our WebGL context for graphics, the ViewToggle
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
 // the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
@@ -252,48 +303,7 @@ export default function Index() {
         />
       </GestureDetector>
 
-      {/* Buttons for selecting type */}
-      <View 
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          position: "absolute",
-          bottom: 40,
-          padding: 10,
-          zIndex: 10,
-          gap: 10,
-        }}
-      >
-        {/* Red Button */}
-        <Pressable
-          onPress={() => {currentDrawingColor = FEATURE_RED}}
-          hitSlop={8}
-        >
-          <MaterialCommunityIcons name='circle-outline' size={20} color="#de3737"/>
-        </Pressable>
-        {/* Green Button */}
-        <Pressable
-          onPress={() => {currentDrawingColor = FEATURE_GREEN}}
-          hitSlop={8}
-        >
-          <MaterialCommunityIcons name='circle-outline' size={20} color="#53de37"/>
-        </Pressable>
-        {/* Blue Button */}
-        <Pressable
-          onPress={() => {currentDrawingColor = FEATURE_BLUE}}
-          hitSlop={8}
-        >
-          <MaterialCommunityIcons name='circle-outline' size={20} color="#3764de" />
-        </Pressable>
-        {/* Orange Button */}
-        <Pressable
-          onPress={() => {currentDrawingColor = FEATURE_ORANGE}}
-          hitSlop={8}
-        >
-          <MaterialCommunityIcons name='circle-outline' size={20} color="#de8537"/>
-        </Pressable>
-      </View>
+      <ColorButtons />
     </View>
   );
 }
@@ -303,7 +313,7 @@ let shaderProgram: WebGLProgram | null = null; // The currently used GPU shader 
 let bbShaderProgram: WebGLProgram | null = null; // The shader program for billboards
 let lastFrameTime = 0; // The time since the last frame
 let oesExt: OES_vertex_array_object | null = null; // A global way to access the OES extension for WebGL 1.0 support
-let frameId: number | null = null;
+let frameId: number | null = null; // the id of the current frame being drawn
 
 // A class to represent the camera object. This manages the world view matrix
 class Camera {
