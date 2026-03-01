@@ -246,7 +246,6 @@ export default function Index() {
         {/* Red Button */}
         <Pressable
           onPress={() => {currentDrawingColor = FEATURE_RED}}
-          disabled={currentDrawingColor === FEATURE_RED}
           hitSlop={8}
         >
           <MaterialCommunityIcons name='circle-outline' size={20} color="#de3737"/>
@@ -254,7 +253,6 @@ export default function Index() {
         {/* Green Button */}
         <Pressable
           onPress={() => {currentDrawingColor = FEATURE_GREEN}}
-          disabled={currentDrawingColor === FEATURE_GREEN}
           hitSlop={8}
         >
           <MaterialCommunityIcons name='circle-outline' size={20} color="#53de37"/>
@@ -262,15 +260,13 @@ export default function Index() {
         {/* Blue Button */}
         <Pressable
           onPress={() => {currentDrawingColor = FEATURE_BLUE}}
-          disabled={currentDrawingColor === FEATURE_BLUE}
           hitSlop={8}
         >
-          <MaterialCommunityIcons name='circle-outline' size={20} color={currentDrawingColor === FEATURE_BLUE ? "#3764de" : "#626262"} />
+          <MaterialCommunityIcons name='circle-outline' size={20} color="#3764de" />
         </Pressable>
         {/* Orange Button */}
         <Pressable
           onPress={() => {currentDrawingColor = FEATURE_ORANGE}}
-          disabled={currentDrawingColor === FEATURE_ORANGE}
           hitSlop={8}
         >
           <MaterialCommunityIcons name='circle-outline' size={20} color="#de8537"/>
