@@ -1,3 +1,4 @@
+/artifacts
 
 # Node / Expo
 node_modules/
@@ -16,6 +17,8 @@ env/
 
 # Environment Variables
 .env
+# database files
+/src/server/db/db_config.py
 src/server/.env
 
 # OS / IDE

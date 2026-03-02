@@ -129,6 +129,7 @@ export interface FrequencyPreset {
   hours: number; // value in hours
 }
 export const FREQUENCY_PRESETS: FrequencyPreset[] = [
+  { label: "Twice daily", hours: 12 },
   { label: "Daily", hours: 24 },
   { label: "Every 3 days", hours: 72 },
   { label: "Weekly", hours: 168 },
