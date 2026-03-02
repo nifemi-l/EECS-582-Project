@@ -13,8 +13,8 @@ Invariants: None
 Known faults: None
 */
 
-// Import react and the RN components for building the UI
-import React from "react";
+// Import react and useState hook for tracking which sensor card is open
+import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 // Icon library for material design icons
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -48,6 +48,8 @@ interface ViewToggleProps {
 export default function ViewToggle({ active }: ViewToggleProps) {
   // Grab the router so we can navigate between pages
   const router = useRouter();
+  // Track which sensor detail card is open, null means all are closed
+  const [openLabel, setOpenLabel] = useState<string | null>(null);
 
   // Handle switching between views
   const navigate = (mode: ViewMode) => {
@@ -62,6 +64,10 @@ export default function ViewToggle({ active }: ViewToggleProps) {
   return (
     // Wrapper with padding around everything
     <View style={styles.wrapper}>
+      {/* Invisible full-screen backdrop that closes the open card when tapped */}
+      {openLabel && (
+        <Pressable style={styles.backdrop} onPress={() => setOpenLabel(null)} />
+      )}
       {/* Row that holds the pill and the sensor badges */}
       <View style={styles.row}>
         {/* Pill-shaped toggle container */}
@@ -115,7 +121,15 @@ export default function ViewToggle({ active }: ViewToggleProps) {
         <View style={styles.sensors}>
           {/* Loop through each sensor and render a badge for it */}
           {SENSORS.map((s) => (
-            <SensorBadge key={s.label} icon={s.icon} value={s.value} />
+            <SensorBadge
+              key={s.label}
+              icon={s.icon}
+              value={s.value}
+              label={s.label}
+              isOpen={openLabel === s.label}
+              onToggle={() => setOpenLabel(openLabel === s.label ? null : s.label!)}
+              darkBg={active === "3d"}
+            />
           ))}
         </View>
       </View>
@@ -125,11 +139,22 @@ export default function ViewToggle({ active }: ViewToggleProps) {
 
 // Styles for the toggle and its layout
 const styles = StyleSheet.create({
-  // Outer wrapper with padding
+  // Outer wrapper with padding, z-index so popover cards sit above the 3D view
   wrapper: {
     paddingTop: 10, // space above the bar
     paddingBottom: 6, // space below the bar
     paddingHorizontal: 16, // side padding
+    position: "relative", // establish stacking context for absolute children
+    zIndex: 50, // float above sibling views like the WebGL canvas
+  },
+  // Invisible overlay that covers the whole screen to catch outside taps
+  backdrop: {
+    position: "absolute", // break out of normal flow
+    top: 0, // start from the top of the wrapper
+    left: -16, // extend past the horizontal padding
+    right: -16, // extend past the horizontal padding on the other side
+    height: 2000, // tall enough to cover the entire screen below
+    zIndex: 0, // sit behind the badges but inside the wrapper stacking context
   },
   // Horizontal row that holds everything
   row: {

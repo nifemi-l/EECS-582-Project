@@ -1,1 +1,28 @@
-/artifacts
+
+# Node / Expo
+node_modules/
+.expo/
+dist/
+build/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Environment Variables
+.env
+src/server/.env
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log

@@ -43,7 +43,7 @@
       [
         "expo-asset",
         {
-          "assets": ["./assets/shaders/main.vert", "./assets/shaders/main.frag"]
+          "assets": ["./assets/shaders/main.vert", "./assets/shaders/main.frag", "./assets/shaders/billboard.vert", "./assets/shaders/billboard.frag"]
         }
       ]
     ],

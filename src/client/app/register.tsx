@@ -18,28 +18,57 @@ import { router } from "expo-router";
 import { useState } from "react";
 
 export default function RegisterScreen() {
-  // Local state for the form fields
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password1, setPassword1] = useState("");
   const [password2, setPassword2] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  // Runs when the user presses the Create Account button
-  function handleRegister() {
-    // Basic check: passwords must match
+  async function handleRegister() {
     if (password1 !== password2) {
       Alert.alert("Passwords do not match", "Please re-enter your passwords.");
       return;
     }
 
-    // TODO (backend):
-    // POST /api/auth/register
-    // send username + email + password to server
-    // server stores user in database
-    // server returns auth token/session
+    if (!username || !email || !password1) {
+      Alert.alert("Missing fields", "Please fill out all fields.");
+      return;
+    }
 
-    // For now: pretend success and return to login
-    router.replace("/login");
+    setLoading(true);
+
+    try {
+      const response = await fetch("http://192.168.10.159:8000/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: username.trim(),
+          email: email.trim().toLowerCase(),
+          password: password1,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        Alert.alert("Registration Failed", data.error || "Unknown error");
+        setLoading(false);
+        return;
+      }
+
+      Alert.alert("Success", "Account created successfully!");
+      router.replace({
+        pathname: "/login",
+        params: { registered: "true" },
+      });
+
+    } catch (error: any) {
+      Alert.alert("Network Error", error.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

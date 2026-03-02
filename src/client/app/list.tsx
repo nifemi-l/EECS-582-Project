@@ -28,10 +28,6 @@ import {
 } from "react-native";
 // Material design icons
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-// Gesture handler root needed for gesture-based interactions
-import { GestureHandlerRootView } from "react-native-gesture-handler";
-// Safe area wrapper to avoid notches and status bars
-import { SafeAreaView } from "react-native-safe-area-context";
 
 // Import mock data and types from our data module
 import {
@@ -41,8 +37,6 @@ import {
   Task,
   TaskLocation,
 } from "./data/household";
-// The toggle bar component for switching views
-import ViewToggle from "./components/ViewToggle";
 
 // Counter for generating unique IDs
 let nextId = 100;
@@ -526,50 +520,43 @@ export default function ListScreen() {
   }, []);
 
   return (
-    // Gesture handler root required for gesture-based interactions
-    <GestureHandlerRootView style={styles.root}>
-      {/* Safe area to avoid device notches */}
-      <SafeAreaView style={styles.safeArea} edges={["top"]}>
-        {/* View toggle bar at the top, list is currently active */}
-        <ViewToggle active="list" />
+    <View style={styles.root}>
+      {/* Title section showing household name and stats */}
+      <View style={styles.titleBar}>
+        {/* Household name */}
+        <Text style={styles.title}>{MOCK_HOUSEHOLD.name}</Text>
+        {/* Summary line with section and task counts */}
+        <Text style={styles.subtitle}>
+          {locations.length} section{locations.length !== 1 ? "s" : ""} ·{" "}
+          {locations.reduce((n, l) => n + l.tasks.length, 0)} tasks
+        </Text>
+      </View>
 
-        {/* Title section showing household name and stats */}
-        <View style={styles.titleBar}>
-          {/* Household name */}
-          <Text style={styles.title}>{MOCK_HOUSEHOLD.name}</Text>
-          {/* Summary line with section and task counts */}
-          <Text style={styles.subtitle}>
-            {locations.length} section{locations.length !== 1 ? "s" : ""} ·{" "}
-            {locations.reduce((n, l) => n + l.tasks.length, 0)} tasks
-          </Text>
-        </View>
+      {/* Scrollable area for all location groups */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Render each location as a collapsible group */}
+        {locations.map((loc) => (
+          <LocationGroup
+            key={loc.id}
+            location={loc}
+            selectedIds={selectedIds}
+            onToggleSelect={handleToggleSelect}
+            onDeleteSelected={handleDeleteSelected}
+            onDeleteTask={handleDeleteTask}
+            onAddTask={handleAddTask}
+            onRenameLocation={handleRenameLocation}
+            onDeleteLocation={handleDeleteLocation}
+          />
+        ))}
 
-        {/* Scrollable area for all location groups */}
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Render each location as a collapsible group */}
-          {locations.map((loc) => (
-            <LocationGroup
-              key={loc.id}
-              location={loc}
-              selectedIds={selectedIds}
-              onToggleSelect={handleToggleSelect}
-              onDeleteSelected={handleDeleteSelected}
-              onDeleteTask={handleDeleteTask}
-              onAddTask={handleAddTask}
-              onRenameLocation={handleRenameLocation}
-              onDeleteLocation={handleDeleteLocation}
-            />
-          ))}
-
-          {/* Row for adding a new section at the bottom */}
-          <AddSectionRow onAdd={handleAddLocation} />
-        </ScrollView>
-      </SafeAreaView>
-    </GestureHandlerRootView>
+        {/* Row for adding a new section at the bottom */}
+        <AddSectionRow onAdd={handleAddLocation} />
+      </ScrollView>
+    </View>
   );
 }
 
@@ -583,10 +570,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1, // take up all available space
     backgroundColor: BG, // light gray background
-  },
-  // Safe area also fills available space
-  safeArea: {
-    flex: 1, // fill parent
   },
   // Scroll view fills remaining space
   scroll: {
