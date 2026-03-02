@@ -48,10 +48,10 @@ def connect_to_db():
 
 conn = connect_to_db()
 
+
 """
 Functions for adding data to the database
 """
-
 
 def add_household(household_name):
     # Ex: add_household("Johnson Family")
@@ -103,47 +103,22 @@ def add_task(new_feature_id, existing_task_name, task_frequency_days, time_last_
     conn.commit()
     return task_id
 
-"""
-Function for updating the time that a task has been completed
-"""
-
-def update_task_last_comp_time(task_id):
+# Add a role for an account in a household
+# Is a separate relation because there is a many-to-many relationship between accounts and households
+    # For example, an account could be a member of multiple households
+    # But a household also can have multiple accounts associated with it
+        # The primary key is a composite of the household and account ids
+def add_account_role(account_id, household_id, role):
     with conn.cursor() as cursor:
         cursor.execute("""
-            UPDATE Task
-            SET last_completed = %s
-            WHERE task_id = %s
-        """, (datetime.now(timezone.utc), task_id,))
-
-
-# Update the last login time for an account
-def update_account_last_login(account_id: int):
-    with conn.cursor() as cursor:
-        cursor.execute("""
-            UPDATE Account
-            SET last_login = %s
-            WHERE account_id = %s
-        """, (datetime.now(timezone.utc), account_id,))
+            INSERT INTO AccountRole (account_id, household_id, role)
+            VALUES (%s, %s, %s)
+        """, (account_id, household_id, role,))
     conn.commit()
 
 """
 Functions for retrieving specific data from the database
 """
-
-# Test adding data into the database
-
-"""
-household_id = add_household("SampleHousehold")
-account_id = add_account("John Doe", household_id, "hashed_password_123", "john.doe@example.com")
-feature_id = add_feature(household_id, "Kitchen Sink", "Test Kitchen Type", 1.0, 4.0, 5.0)
-task_id = add_task(feature_id, "Wash Dishes", 1, datetime.now(timezone.utc), "private")
-"""
-"""
-print("Added data successfully!")
-"""
-
-
-# Functions to retrieve data from the database
 
 # Retrieve data for a household by its household id
 def get_household_by_id(household_id):
@@ -196,11 +171,90 @@ def get_task_by_id(task_id):
         task = cursor.fetchone()
     return task
 
+# Get all tasks associated with a specific feature by its id.
+def get_tasks_by_feature_id(feature_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT * FROM Task
+            WHERE feature_id = %s
+        """, (feature_id,))
+        tasks = cursor.fetchall()
+    return tasks
+
+# Use the account id to get all the roles that account has (to get the households the account is associated with)
+def get_account_roles_by_account_id(account_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT household_id, role
+            FROM AccountRole
+            WHERE account_id = %s
+        """, (account_id,))
+        roles = cursor.fetchall()
+    return roles
+
+# Use the household id to get all the roles for that household (to get all the accounts in the household)
+def get_account_roles_by_household_id(household_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT account_id, role
+            FROM AccountRole
+            WHERE household_id = %s
+        """, (household_id,))
+        roles = cursor.fetchall()
+    return roles
+
+# Use the household id to get all of its features
+def get_household_features(household_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT * FROM Feature
+            WHERE household_id = %s
+        """, (household_id,))
+        features = cursor.fetchall()
+    return features
+
+# Use the household id to get all of its tasks
+    # A join between the Task and Feature relations is needed to make the connection between the Household id and the tasks
+def get_household_tasks(household_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT *
+            FROM Task
+            JOIN Feature ON Task.feature_id = Feature.feature_id
+            WHERE Feature.household_id = %s
+        """, (household_id,))
+        tasks = cursor.fetchall()
+    return tasks
+
 """
-print()
-print("Testing base data retrieval functions:")
-print("Household:", get_household_by_id(3))
-print("Account:", get_account_by_id(3))
-print("Feature:", get_feature_by_id(2))
-print("Task:", get_task_by_id(2))
+Functions for updating data
 """
+
+def update_task_last_comp_time(task_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            UPDATE Task
+            SET last_completed = %s
+            WHERE task_id = %s
+        """, (datetime.now(timezone.utc), task_id,))
+
+
+# Update the last login time for an account
+def update_account_last_login(account_id: int):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            UPDATE Account
+            SET last_login = %s
+            WHERE account_id = %s
+        """, (datetime.now(timezone.utc), account_id,))
+    conn.commit()
+
+# Update feature coordinates
+def update_feature_coordinates(feature_id, x_pos, y_pos, z_pos):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            UPDATE Feature
+            SET x_pos = %s, y_pos = %s, z_pos = %s
+            WHERE feature_id = %s
+        """, (x_pos, y_pos, z_pos, feature_id,))
+    conn.commit()
