@@ -4,12 +4,16 @@ This file is used to connect to the database and define functions for adding / r
 
 import psycopg2
 from datetime import datetime, timezone
-import db_config
+from dotenv import load_dotenv
+import os
 
-DB_HOST = db_config.DB_HOST
-DB_NAME = db_config.DB_NAME
-DB_USER = db_config.DB_USER
-DB_PASSWORD = db_config.DB_PASSWORD
+load_dotenv()
+
+DB_HOST = os.environ["DB_HOST"]
+DB_NAME = os.environ["DB_NAME"]
+DB_USER = os.environ["DB_USER"]
+DB_PASSWORD = os.environ["DB_PASSWORD"]
+DB_PORT = int(os.environ.get("DB_PORT", "5432"))
 
 def connect_to_db():
     """Establish a connection to the PostgreSQL database."""
