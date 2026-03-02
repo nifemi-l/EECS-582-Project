@@ -14,21 +14,54 @@ Known faults: Login not storing data until backend database is established.
 
 
 import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-native";
-import { router } from "expo-router";
-import { useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useState, useEffect } from "react";
 
 // Local state for the email and password text boxes
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const { registered } = useLocalSearchParams();
+
+  // Show success message if redirected from registration
+  useEffect(() => {
+    if (registered === "true") {
+      Alert.alert("Success", "Account created successfully. Please log in.");
+    }
+  }, [registered]);
 
   // Runs when the user presses the Sign In button
-  function handleLogin() {
-    // TEMP AUTH LOGIC
-    // Later: send email/password to backend and verify
-    // For now: always allow login and go to home screen
+  async function handleLogin() {
+    if (!email || !password) {
+      Alert.alert("Missing fields", "Please enter your email and password.");
+      return;
+    }
 
-    router.replace("/home");
+    try {
+      const response = await fetch("http://192.168.10.159:8000/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        Alert.alert("Login Failed", data.error || "Invalid credentials");
+        return;
+      }
+
+      // Successful login
+      router.replace("/home");
+
+    } catch (error: any) {
+      Alert.alert("Network Error", error.message);
+    }
   }
 
   return (
