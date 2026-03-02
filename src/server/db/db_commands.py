@@ -1,4 +1,19 @@
 """
+PROLOGUE
+File name: db_commands.py
+Description: Handles database connectivity and defines functions for inserting, updating, and retrieving data from the PostgreSQL database.
+Programmer: Blake Carlson
+Creation date: 2/22/26
+Revision date: 
+Preconditions: Environment variables for database credentials are defined in .env; PostgreSQL database is running and accessible.
+Postconditions: A database connection is established and utility functions are available for performing CRUD operations on Household, Account, Feature, and Task relations.
+Errors: Database connection may fail due to invalid credentials, unreachable host, or server-side errors; SQL execution errors may occur if schema constraints are violated.
+Side effects: Opens a persistent database connection; commits transactions for insert/update operations; prints connection status to stdout.
+Invariants: SQL statements use parameterized queries to prevent injection.
+Known faults: Uses a single global database connection which may not scale for concurrent production environments.
+"""
+
+"""
 This file is used to connect to the database and define functions for adding / retreiving data from the database
 """
 
@@ -28,8 +43,7 @@ def connect_to_db():
         return conn
     except Exception as e:
         print(f"DB connection failure: {e}")
-        # Return conn instead of None?
-        return conn
+        return None
 
 
 conn = connect_to_db()
@@ -53,16 +67,15 @@ def add_household(household_name):
     # Return the id, can be used or not
     return household_id
 
-def add_account(account_name, household_id, hashed_password, email, last_login=None):
+def add_account(account_name: str, hashed_password: str, email: str):
     with conn.cursor() as cursor:
         cursor.execute("""
-            INSERT INTO Account (account_name, household_id, hashed_password, email, last_login)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO Account (account_name, hashed_password, email)
+            VALUES (%s, %s, %s)
             RETURNING account_id
-        """, (account_name, household_id, hashed_password, email, last_login,))
+        """, (account_name, hashed_password, email))
         account_id = cursor.fetchone()[0]
     conn.commit()
-    # Return the account id
     return account_id
 
 def add_feature( household_id, feature_name, feature_type, x_pos, y_pos, z_pos):
@@ -86,7 +99,7 @@ def add_task(new_feature_id, existing_task_name, task_frequency_days, time_last_
             VALUES (%s, %s, %s, %s, %s)
             RETURNING task_id
         """, (new_feature_id, existing_task_name, task_frequency_days, time_last_completed, task_visibility,))
-        task_id = cursor.fetchone()[0]   
+        task_id = cursor.fetchone()[0]
     conn.commit()
     return task_id
 
@@ -101,7 +114,17 @@ def update_task_last_comp_time(task_id):
             SET last_completed = %s
             WHERE task_id = %s
         """, (datetime.now(timezone.utc), task_id,))
-    
+
+
+# Update the last login time for an account
+def update_account_last_login(account_id: int):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            UPDATE Account
+            SET last_login = %s
+            WHERE account_id = %s
+        """, (datetime.now(timezone.utc), account_id,))
+    conn.commit()
 
 """
 Functions for retrieving specific data from the database
@@ -139,6 +162,17 @@ def get_account_by_id(account_id):
             SELECT * FROM Account
             WHERE account_id = %s
         """, (account_id,))
+        account = cursor.fetchone()
+    return account
+
+# Retrieve data for an account by its email
+def get_account_by_email(email: str):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT account_id, account_name, hashed_password, email
+            FROM Account
+            WHERE email = %s
+        """, (email,))
         account = cursor.fetchone()
     return account
 

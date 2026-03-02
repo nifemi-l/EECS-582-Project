@@ -51,8 +51,6 @@ CREATE TABLE IF NOT EXISTS Account (
     hashed_password VARCHAR(255) NOT NULL,
     /* Each account should have a unique email for login */
     email VARCHAR(255) NOT NULL UNIQUE,
-    /* Email verification? */
-    email_verified BOOLEAN DEFAULT FALSE,
     /* Store time the account is created */
     created_at TIMESTAMPTZ DEFAULT NOW(),
     /* Last login time */
