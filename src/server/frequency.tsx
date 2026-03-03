@@ -1,10 +1,10 @@
 /* PROLOGUE
 File name: frequency.tsx
-Description: Class for a chore's requency, allowing for dynamic behavior scheduling repeated chores
+Description: Class for a task's requency, allowing for dynamic behavior scheduling repeated tasks
 Programmer: Delroy Wright
 Creation date: 2/19/26
 Revision date: 
-Preconditions: A client is running and has access to the Chore class and any inherited members.
+Preconditions: A client is running and has access to the Task class and any inherited members.
 Postconditions: An instantiated Frequency class along with any functions that are required.
 Errors: Frequencies may be attempted to be created with invalid data or fields.
 Side effects: None
@@ -13,84 +13,75 @@ Known faults: None
 */
 
 export abstract class Frequency {
-    constructor(
-        public timesPerInterval: number,
-        public skipIntervals: number,
-    ) { }
+    timesPerInterval : number;
+    days : number;
+    constructor() {
+        this.timesPerInterval = 1;
+    }
 
-    abstract getDecay(dueDate : Date): number;
-    abstract updateDueDate(dueDate: Date, now: Date): Date;
+    abstract checkOverdue(lastCompletedTime : Date): boolean;
 
-    protected getMsSinceDue(dueDate: Date): number {
+    protected getMsSinceLastComplete(lastCompletedTime : Date): number {
         const now = new Date();
-        if (now <= dueDate) return 0;
-        return Math.abs(dueDate.getTime() - now.getTime());
+        if (now <= lastCompletedTime) return 0;
+        return Math.abs(lastCompletedTime.getTime() - now.getTime());
     }
 }
 
-// Type of frequency - A certain amount of days in between 
+// Type of frequency - A certain amount of days in between
 export class DayAmount extends Frequency {
     constructor(
-        timesPerInterval: number, skipIntervals: number, public resetOnCompletion: boolean,
-        public numDays: number
+        public days: number,
     ) {
-        super(timesPerInterval, skipIntervals);
+        super();
+        this.days = days;
     }
 
     getDecay(dueDate: Date): number {
-        const msSince = this.getMsSinceDue(dueDate);
+        const msSince = this.getMsSinceLastComplete(dueDate);
         const daysSince = Math.floor(msSince / 86400000);
-        const intervalsSince = Math.floor(daysSince / this.numDays);
+        const intervalsSince = Math.floor(daysSince / this.days);
 
-        if (intervalsSince > this.skipIntervals) return 0;
         return intervalsSince * this.timesPerInterval;
     }
 
-    updateDueDate(dueDate: Date, now: Date): Date {
-        if (this.resetOnCompletion) {
-            const daysToAdd = this.numDays
-            const msToAdd = daysToAdd * 86400000
-            return new Date(now.getTime() + msToAdd)
+    checkOverdue(lastCompletedTime: Date): boolean {
+        const msSinceLastComplete = this.getMsSinceLastComplete(lastCompletedTime);
+        if (msSinceLastComplete > this.days * 86400000){
+            return true
         }
-
-        else {
-            const daysToAdd = this.numDays + Math.floor(Math.abs(now.getTime() - dueDate.getTime()) / 86400000)
-            return new Date(now.getTime() + daysToAdd)
-        }
+        return false
     }
 }
 
 // Type of frequency - Once per month, once per year. Varies differently than things like weekly
 export class SetInterval extends Frequency {
     constructor(
-        timesPerInterval: number, skipIntervals: number, 
-        public interval: Interval
+        public interval: Interval,
     ) {
-        super(timesPerInterval, skipIntervals);
+        super();
+        this.timesPerInterval = 1;
     }
 
     getDecay(dueDate: Date): number {
-        const msSince = this.getMsSinceDue(dueDate);
+        const msSince = this.getMsSinceLastComplete(dueDate);
         const intervalMs = getIntervalMillis(this.interval);
         const intervalsSince = Math.floor(msSince / intervalMs);
 
-        if (intervalsSince > this.skipIntervals) return 0;
         return intervalsSince * this.timesPerInterval;
     }
 
-    updateDueDate(dueDate: Date, now: Date): Date {
-
-        const shift = this.interval === Interval.Monthly
-            ? getMillisUntilNextMonth()
-            : getMillisUntilNextYear();
-
-        return new Date(dueDate.getTime() + shift);
+    checkOverdue(lastCompletedTime: Date): boolean {
+        const msSince = this.getMsSinceLastComplete(lastCompletedTime);
+        const intervalMs = getIntervalMillis(this.interval);
+        const intervalsSince = Math.floor(msSince / intervalMs);
+        return intervalsSince > 0;
     }
 }
 
 export enum Interval {
     Monthly,
-    Yearly
+    Yearly,
 }
 
 export enum Weekday {
@@ -98,9 +89,9 @@ export enum Weekday {
     Tuesday,
     Wednesday,
     Thursday,
-    Friday, 
+    Friday,
     Saturday,
-    Sunday
+    Sunday,
 }
 
 function getMillisUntilNextMonth(): number {
@@ -149,9 +140,11 @@ function getMillisSinceLastYear(): number {
 
 const getIntervalMillis = (interval: Interval): number => {
     switch (interval) {
-        case Interval.Monthly: return getMillisSinceLastMonth();
-        case Interval.Yearly: return getMillisSinceLastYear();
-        default: return 0;
+        case Interval.Monthly:
+            return getMillisSinceLastMonth();
+        case Interval.Yearly:
+            return getMillisSinceLastYear();
+        default:
+            return 0;
     }
 };
-

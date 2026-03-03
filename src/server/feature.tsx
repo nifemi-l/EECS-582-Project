@@ -1,6 +1,6 @@
 /* PROLOGUE
 File name: feature.tsx
-Description: Class for a location in a home that has a chore attached to it.
+Description: Class for a location in a home that has a task attached to it.
 Programmer: Delroy Wright
 Creation date: 2/13/26
 Revision date: 
@@ -15,44 +15,37 @@ Known faults: None
 */
 
 import User from "./user"
-import Chore from "./chore"
+import Task, { TaskVisibility } from "./task"
+import {add_task} from "./db/db_commands"
 
 export default class Feature {
-    title : string;
-    createdBy : User;
-    accessList : User[];
-    healthPercent : number;
-    chores : Chore[];
+    name : string;
+    id: string;
+    icon: string;
+    // createdBy : User;
+    // accessList : User[];
+    // healthPercent : number;
+    tasks : Task[];
     // location : Location ?? 
-    constructor(title : string, createdBy : User) {
-        this.title = title;
-        this.createdBy = createdBy;
-        this.accessList = [createdBy];
+    constructor(id: string, name : string, icon: string ) {
+        this.name = name;
+        this.id = id
+        this.icon = icon;
+        this.tasks = [];
     }
 
-    addChore(chore : Chore) {
-        this.chores.push(chore)
+    addTask(task : Task): void {
+        this.tasks.push(task)
+        const visibility = (() : string => {
+            if (task.visibility == TaskVisibility.Private)
+                return "private"
+            else if (task.visibility == TaskVisibility.Household)
+                return "household"
+            throw new Error(`Invalid visibility`);
+        })();
+
+        //TODO: update id
+        // add_task(0, task.name, task.frequency.days, null, visibility)
     }
 
-    calculateHealthPercent() : number {
-        // average of all chore's health percentages
-
-        let numChores = this.chores.length
-        if (numChores == 0)
-            return 0
-
-        let totalPercent = 0
-
-        for (let chore of this.chores) { 
-            totalPercent += chore.healthPercent    
-        }
-
-        return totalPercent / numChores
-    }
-
-    decay() {
-        for (let chore of this.chores) {
-            chore.decayChore()
-        }
-    }
 }
