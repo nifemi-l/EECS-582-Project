@@ -317,17 +317,17 @@ function AddTaskCard({
           <Text style={styles.customFreqLabel}>Every</Text>
           <TextInput
             style={styles.customFreqInput}
-            placeholder="e.g. 48"
+            placeholder="e.g. 2"
             placeholderTextColor="#bbb"
             keyboardType="numeric"
             value={customFreqText}
             onChangeText={(t) => {
               setCustomFreqText(t);
               const parsed = parseFloat(t);
-              if (!isNaN(parsed) && parsed > 0) setFreqHours(parsed);
+              if (!isNaN(parsed) && parsed > 0) setFreqHours(parsed * 24);
             }}
           />
-          <Text style={styles.customFreqLabel}>hours</Text>
+          <Text style={styles.customFreqLabel}>days</Text>
         </View>
       )}
 
