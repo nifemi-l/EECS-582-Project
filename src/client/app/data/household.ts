@@ -1,16 +1,22 @@
 /* PROLOGUE
 File name: household.ts
-Description: Mock household data and health bar helper functions for the task list
+Description: Household data types, health-bar helpers, AsyncStorage persistence,
+             and preset constants (icons, frequencies, task templates) for the list view
 Programmer: Nifemi Lawal
 Creation date: 2/6/26
-Revision date: None
-Preconditions: None
-Postconditions: Exports types, helper functions, and mock data for the household model
-Errors: None. Will always render successfully
-Side effects: None
+Revision date:
+  - 3/1/26: Add AsyncStorage save/load helpers, task/location icon sets,
+             frequency presets, and task preset templates (NL)
+Preconditions: @react-native-async-storage/async-storage must be installed
+Postconditions: Exports types, helpers, presets, and storage utilities
+Errors: loadLocations returns null on parse failure so callers can fall back to mock data
+Side effects: saveLocations writes to AsyncStorage (localStorage on web)
 Invariants: None
 Known faults: None
 */
+
+// uses localStorage on web, native key-value store on mobile
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Task interface representing a single chore or to-do item
 export interface Task {
@@ -54,12 +60,103 @@ export function healthColor(percent: number): string {
   return "#f44336"; // red for overdue
 }
 
+// key we use in AsyncStorage
+const STORAGE_KEY = "household_locations";
+
+// saves the locations array to local storage as JSON
+export async function saveLocations(locations: TaskLocation[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(locations));
+  } catch (e) {
+    console.error("Failed to save locations:", e);
+  }
+}
+
+// loads locations from local storage, returns null if nothing saved yet
+export async function loadLocations(): Promise<TaskLocation[] | null> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as TaskLocation[];
+  } catch (e) {
+    console.error("Failed to load locations:", e);
+    return null;
+  }
+}
+
+// icons you can pick when creating a task
+export const TASK_ICONS: string[] = [
+  "clipboard-text-outline",
+  "broom",
+  "vacuum",
+  "spray-bottle",
+  "dishwasher",
+  "toilet",
+  "bed-outline",
+  "washing-machine",
+  "trash-can-outline",
+  "silverware-fork-knife",
+  "mirror-rectangle",
+  "hand-wash-outline",
+  "window-closed-variant",
+  "fridge-outline",
+  "stove",
+  "dog",
+  "flower-outline",
+  "recycle",
+  "water-outline",
+];
+
+// icons you can pick when creating a section/room
+export const LOCATION_ICONS: string[] = [
+  "home-outline",
+  "silverware-fork-knife",
+  "shower",
+  "bed",
+  "sofa",
+  "desk",
+  "garage",
+  "tree",
+  "car-outline",
+  "stairs",
+  "washing-machine",
+  "door",
+];
+
+// Frequency preset options shown as selectable pills
+export interface FrequencyPreset {
+  label: string; // display text like "Daily"
+  hours: number; // value in hours
+}
+export const FREQUENCY_PRESETS: FrequencyPreset[] = [
+  { label: "Twice daily", hours: 12 },
+  { label: "Daily", hours: 24 },
+  { label: "Every 3 days", hours: 72 },
+  { label: "Weekly", hours: 168 },
+  { label: "Biweekly", hours: 336 },
+];
+
+// Bundled task presets that auto-fill name + icon + frequency
+export interface TaskPreset {
+  name: string; // task display name
+  icon: string; // icon name
+  frequencyHours: number; // how often
+}
+export const TASK_PRESETS: TaskPreset[] = [
+  { name: "Wash dishes", icon: "dishwasher", frequencyHours: 12 },
+  { name: "Vacuum", icon: "vacuum", frequencyHours: 72 },
+  { name: "Mop floor", icon: "broom", frequencyHours: 168 },
+  { name: "Wipe counters", icon: "spray-bottle", frequencyHours: 24 },
+  { name: "Take out trash", icon: "trash-can-outline", frequencyHours: 72 },
+  { name: "Do laundry", icon: "washing-machine", frequencyHours: 168 },
+];
+
 // Helper to generate an ISO timestamp for X hours ago
 function hoursAgo(h: number): string {
   return new Date(Date.now() - h * 60 * 60 * 1000).toISOString(); // subtract hours and convert
 }
 
-// Mock household data used until the real API is hooked up
+// Mock household data used as the initial seed when nothing is in storage yet
 export const MOCK_HOUSEHOLD: Household = {
   id: "h1", // household id
   name: "My Home", // household name

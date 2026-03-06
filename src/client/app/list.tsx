@@ -1,20 +1,25 @@
 /* PROLOGUE
 File name: list.tsx
-Description: A list view for managing household tasks grouped by location/room
+Description: A list view for managing household tasks grouped by location/room.
+             Supports local persistence via AsyncStorage, task presets, icon pickers,
+             and frequency selection when adding tasks or sections.
 Programmer: Nifemi Lawal
 Creation date: 2/6/26
 Revision date:
   - 2/11/26: Fix padding for the new section name input area
-Preconditions: Mock household data must be available from the data module
-Postconditions: Renders an interactive task list organized by location
-Errors: None. Will always render successfully
-Side effects: State changes when adding, deleting, or renaming tasks and locations
+  - 3/1/26: Add AsyncStorage persistence (load on mount, save on change),
+             expanded add-task card with icon picker / frequency pills / presets,
+             location icon picker for new sections; restore TaskRow comments
+Preconditions: household.ts must export storage helpers and preset constants
+Postconditions: Renders an interactive, persisted task list organized by location
+Errors: None. Will always render successfully; storage failures are logged silently
+Side effects: Reads/writes AsyncStorage on mount and on every mutation
 Invariants: None
 Known faults: None
 */
 
-// Import react hooks we need for state and performance
-import React, { useCallback, useRef, useState } from "react";
+// Import react hooks we need for state, lifecycle, and performance
+import React, { useCallback, useEffect, useRef, useState } from "react";
 // Import RN components for building the UI
 import {
   Alert,
@@ -29,13 +34,19 @@ import {
 // Material design icons
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
-// Import mock data and types from our data module
+// Import data helpers, types, presets, and storage utilities
 import {
-  healthColor,
-  healthPercent,
+  FREQUENCY_PRESETS,
+  LOCATION_ICONS,
   MOCK_HOUSEHOLD,
+  TASK_ICONS,
+  TASK_PRESETS,
   Task,
   TaskLocation,
+  healthColor,
+  healthPercent,
+  loadLocations,
+  saveLocations,
 } from "./data/household";
 
 // Counter for generating unique IDs
@@ -84,13 +95,8 @@ function TaskRow({
 }) {
   return (
     // Outer row container, highlighted if selected
-    <View
-      style={[
-        styles.taskRow,
-        isSelected && styles.taskRowSelected,
-      ]}
-    >
-      {/* Checkbox to select/deselect the task */}
+    <View style={[styles.taskRow, isSelected && styles.taskRowSelected]}>
+        {/* Checkbox to select/deselect the task */}
       <Pressable
         onPress={() => onToggleSelect(task.id)}
         hitSlop={8}
@@ -141,6 +147,209 @@ function TaskRow({
   );
 }
 
+// expandable card that lets you add a new task with presets, icon picker, etc.
+function AddTaskCard({
+  onAdd,
+}: {
+  onAdd: (name: string, icon: string, frequencyHours: number) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [name, setName] = useState("");
+  const [icon, setIcon] = useState(TASK_ICONS[0]);
+  const [freqHours, setFreqHours] = useState(FREQUENCY_PRESETS[0].hours);
+  const [customFreq, setCustomFreq] = useState(false);
+  const [customFreqText, setCustomFreqText] = useState("");
+
+  // clears everything and collapses the card
+  const resetForm = () => {
+    setName("");
+    setIcon(TASK_ICONS[0]);
+    setFreqHours(FREQUENCY_PRESETS[0].hours);
+    setCustomFreq(false);
+    setCustomFreqText("");
+    setExpanded(false);
+  };
+
+  const handleSubmit = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onAdd(trimmed, icon, freqHours);
+    resetForm();
+  };
+
+  // fills in the form from a preset template
+  const applyPreset = (preset: (typeof TASK_PRESETS)[number]) => {
+    setName(preset.name);
+    setIcon(preset.icon);
+    setFreqHours(preset.frequencyHours);
+    setCustomFreq(false);
+    setCustomFreqText("");
+  };
+
+  // collapsed: just show a clickable "Add a task..." row
+  if (!expanded) {
+    return (
+      <Pressable style={styles.addTaskRow} onPress={() => setExpanded(true)}>
+        <MaterialCommunityIcons
+          name="plus"
+          size={18}
+          color={ACCENT}
+          style={{ marginRight: 8 }}
+        />
+        <Text style={styles.addTaskPlaceholder}>Add a task...</Text>
+      </Pressable>
+    );
+  }
+
+  // expanded: full form
+  return (
+    <View style={styles.addTaskCard}>
+      {/* quick presets */}
+      <Text style={styles.addTaskLabel}>Quick presets</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.presetScroll}
+        contentContainerStyle={styles.presetScrollContent}
+      >
+        {TASK_PRESETS.map((p) => (
+          <Pressable
+            key={p.name}
+            style={[
+              styles.presetChip,
+              name === p.name && styles.presetChipActive,
+            ]}
+            onPress={() => applyPreset(p)}
+          >
+            <MaterialCommunityIcons
+              name={p.icon as any}
+              size={14}
+              color={name === p.name ? "#fff" : ACCENT}
+              style={{ marginRight: 4 }}
+            />
+            <Text
+              style={[
+                styles.presetChipText,
+                name === p.name && styles.presetChipTextActive,
+              ]}
+            >
+              {p.name}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      {/* task name input */}
+      <Text style={styles.addTaskLabel}>Task name</Text>
+      <TextInput
+        style={styles.addTaskNameInput}
+        placeholder="e.g. Scrub toilet"
+        placeholderTextColor="#bbb"
+        value={name}
+        onChangeText={setName}
+        onSubmitEditing={handleSubmit}
+        returnKeyType="done"
+      />
+
+      {/* icon picker grid */}
+      <Text style={styles.addTaskLabel}>Icon</Text>
+      <View style={styles.iconPickerRow}>
+        {TASK_ICONS.map((ic) => (
+          <Pressable
+            key={ic}
+            onPress={() => setIcon(ic)}
+            style={[
+              styles.iconPickerItem,
+              icon === ic && styles.iconPickerItemActive,
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={ic as any}
+              size={20}
+              color={icon === ic ? "#fff" : "#666"}
+            />
+          </Pressable>
+        ))}
+      </View>
+
+      {/* frequency pills */}
+      <Text style={styles.addTaskLabel}>Frequency</Text>
+      <View style={styles.freqRow}>
+        {FREQUENCY_PRESETS.map((fp) => (
+          <Pressable
+            key={fp.hours}
+            onPress={() => {
+              setFreqHours(fp.hours);
+              setCustomFreq(false);
+              setCustomFreqText("");
+            }}
+            style={[
+              styles.freqPill,
+              !customFreq && freqHours === fp.hours && styles.freqPillActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.freqPillText,
+                !customFreq && freqHours === fp.hours && styles.freqPillTextActive,
+              ]}
+            >
+              {fp.label}
+            </Text>
+          </Pressable>
+        ))}
+        {/* custom pill */}
+        <Pressable
+          onPress={() => setCustomFreq(true)}
+          style={[styles.freqPill, customFreq && styles.freqPillActive]}
+        >
+          <Text
+            style={[styles.freqPillText, customFreq && styles.freqPillTextActive]}
+          >
+            Custom
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* custom frequency input, only shows when custom is picked */}
+      {customFreq && (
+        <View style={styles.customFreqRow}>
+          <Text style={styles.customFreqLabel}>Every</Text>
+          <TextInput
+            style={styles.customFreqInput}
+            placeholder="e.g. 2"
+            placeholderTextColor="#bbb"
+            keyboardType="numeric"
+            value={customFreqText}
+            onChangeText={(t) => {
+              setCustomFreqText(t);
+              const parsed = parseFloat(t);
+              if (!isNaN(parsed) && parsed > 0) setFreqHours(parsed * 24);
+            }}
+          />
+          <Text style={styles.customFreqLabel}>days</Text>
+        </View>
+      )}
+
+      {/* cancel / add buttons */}
+      <View style={styles.addTaskActions}>
+        <Pressable onPress={resetForm} style={styles.addTaskCancelBtn}>
+          <Text style={styles.addTaskCancelText}>Cancel</Text>
+        </Pressable>
+        <Pressable
+          onPress={handleSubmit}
+          style={[
+            styles.addTaskSubmitBtn,
+            !name.trim() && styles.addTaskSubmitBtnDisabled,
+          ]}
+        >
+          <Text style={styles.addTaskSubmitText}>Add</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 // A collapsible group of tasks under one location/room
 function LocationGroup({
   location,
@@ -157,12 +366,10 @@ function LocationGroup({
   onToggleSelect: (id: string) => void; // toggle a task's selection
   onDeleteSelected: (locationId: string) => void; // delete all selected in this group
   onDeleteTask: (locationId: string, taskId: string) => void; // delete one task
-  onAddTask: (locationId: string, name: string) => void; // add a new task here
+  onAddTask: (locationId: string, name: string, icon: string, freqHours: number) => void; // add a new task here
   onRenameLocation: (locationId: string, newName: string) => void; // rename this location
   onDeleteLocation: (locationId: string) => void; // delete the whole location
 }) {
-  // State for the new task input field
-  const [newTaskName, setNewTaskName] = useState("");
   // Whether we're currently editing the location name
   const [isEditing, setIsEditing] = useState(false);
   // The text in the rename input
@@ -176,14 +383,6 @@ function LocationGroup({
   const hasSelection = location.tasks.some((t) => selectedIds.has(t.id));
   // Count how many tasks are selected
   const selectedCount = location.tasks.filter((t) => selectedIds.has(t.id)).length;
-
-  // Handle adding a new task from the input field
-  const handleAdd = () => {
-    const trimmed = newTaskName.trim(); // remove whitespace
-    if (!trimmed) return; // don't add empty tasks
-    onAddTask(location.id, trimmed); // call parent handler
-    setNewTaskName(""); // clear the input
-  };
 
   // Save the renamed location name
   const handleSaveRename = () => {
@@ -272,11 +471,7 @@ function LocationGroup({
             style={styles.batchDeleteBtn}
           >
             {/* Trash icon */}
-            <MaterialCommunityIcons
-              name="delete-outline"
-              size={18}
-              color="#f44336"
-            />
+            <MaterialCommunityIcons name="delete-outline" size={18} color="#f44336" />
             {/* Number of selected tasks */}
             <Text style={styles.batchDeleteText}>{selectedCount}</Text>
           </Pressable>
@@ -331,79 +526,82 @@ function LocationGroup({
             </View>
           )}
 
-          {/* Input row for adding a new task */}
-          <View style={styles.addTaskRow}>
-            {/* Plus icon */}
-            <MaterialCommunityIcons
-              name="plus"
-              size={18}
-              color="#4169E1"
-              style={{ marginRight: 8 }}
-            />
-            {/* Text input for the new task name */}
-            <TextInput
-              style={styles.addTaskInput}
-              placeholder="Add a task…"
-              placeholderTextColor="#bbb"
-              value={newTaskName}
-              onChangeText={setNewTaskName}
-              onSubmitEditing={handleAdd}
-              returnKeyType="done"
-            />
-            {/* Show the add button only when there's text */}
-            {newTaskName.trim().length > 0 && (
-              <Pressable onPress={handleAdd} style={styles.addTaskBtn}>
-                <Text style={styles.addTaskBtnText}>Add</Text>
-              </Pressable>
-            )}
-          </View>
+          <AddTaskCard
+            onAdd={(name, icon, freqHours) =>
+              onAddTask(location.id, name, icon, freqHours)
+            }
+          />
         </>
       )}
     </View>
   );
 }
 
-// Row at the bottom for creating a brand new location/section
+// row at the bottom for creating a new section, with an icon picker
 function AddSectionRow({
   onAdd,
 }: {
-  onAdd: (name: string) => void; // callback when a new section is created
+  onAdd: (name: string, icon: string) => void;
 }) {
-  // State for the section name input
   const [name, setName] = useState("");
+  const [icon, setIcon] = useState(LOCATION_ICONS[0]);
+  const [showIcons, setShowIcons] = useState(false);
 
-  // Handle creating the new section
   const handleAdd = () => {
-    const trimmed = name.trim(); // remove whitespace
-    if (!trimmed) return; // skip if empty
-    onAdd(trimmed); // pass the name up
-    setName(""); // clear the input
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onAdd(trimmed, icon);
+    setName("");
+    setIcon(LOCATION_ICONS[0]);
+    setShowIcons(false);
   };
 
   return (
-    // Dashed border container to visually separate it
     <View style={styles.addSectionRow}>
-      {/* Plus box icon */}
-      <MaterialCommunityIcons 
-        name="plus-box-outline"
-        size={22}
-        color="#4169E1" 
-      />
-      {/* Text input for the new section name */}
-      <TextInput
-        style={styles.addSectionInput}
-        placeholder="New section name…"
-        placeholderTextColor="#bbb"
-        value={name}
-        onChangeText={setName}
-        onSubmitEditing={handleAdd}
-        returnKeyType="done"
-      />
-      {/* Show the create button only when there's text */}
-      {name.trim().length > 0 && (
-        <Pressable onPress={handleAdd} style={styles.addSectionBtn}>
-          <Text style={styles.addSectionBtnText}>Create</Text>
+      <View style={styles.addSectionTopRow}>
+        {/* tap the icon to show/hide the picker */}
+        <Pressable onPress={() => setShowIcons((v) => !v)}>
+          <MaterialCommunityIcons name={icon as any} size={22} color={ACCENT} />
         </Pressable>
+        <TextInput
+          style={styles.addSectionInput}
+          placeholder="New section name..."
+          placeholderTextColor="#bbb"
+          value={name}
+          onChangeText={(t) => {
+            setName(t);
+            if (t.trim().length > 0 && !showIcons) setShowIcons(true);
+          }}
+          onSubmitEditing={handleAdd}
+          returnKeyType="done"
+        />
+        {name.trim().length > 0 && (
+          <Pressable onPress={handleAdd} style={styles.addSectionBtn}>
+            <Text style={styles.addSectionBtnText}>Create</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {/* icon picker for the section */}
+      {showIcons && (
+        <View style={styles.sectionIconRow}>
+          {LOCATION_ICONS.map((ic) => (
+            <Pressable
+              key={ic}
+              onPress={() => setIcon(ic)}
+              style={[
+                styles.iconPickerItem,
+                icon === ic && styles.iconPickerItemActive,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={ic as any}
+                size={20}
+                color={icon === ic ? "#fff" : "#666"}
+              />
+            </Pressable>
+          ))}
+        </View>
       )}
     </View>
   );
@@ -411,15 +609,37 @@ function AddSectionRow({
 
 // Main screen component that ties everything together
 export default function ListScreen() {
-  // Initialize locations state from the mock data, deep copy so we don't mutate the original
-  const [locations, setLocations] = useState<TaskLocation[]>(() =>
-    MOCK_HOUSEHOLD.locations.map((loc) => ({
-      ...loc, // spread the location fields
-      tasks: [...loc.tasks], // shallow copy the tasks array
-    }))
-  );
+  // Locations state: starts empty, loaded from storage or mock data on mount
+  const [locations, setLocations] = useState<TaskLocation[]>([]);
+  // Track whether we've finished loading from storage
+  const [loaded, setLoaded] = useState(false);
   // Track which task IDs are currently selected
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // load saved data on mount, fall back to mock data if nothing saved
+  useEffect(() => {
+    loadLocations().then((saved) => {
+      if (saved && saved.length > 0) {
+        // Use the persisted data if it exists
+        setLocations(saved);
+      } else {
+        // Fall back to mock data on first run
+        setLocations(
+          MOCK_HOUSEHOLD.locations.map((loc) => ({
+            ...loc, // spread the location fields
+            tasks: [...loc.tasks], // shallow copy the tasks array
+          }))
+        );
+      }
+      setLoaded(true); // mark as ready
+    });
+  }, []);
+
+  // save to storage whenever locations change (but not before initial load)
+  useEffect(() => {
+    if (!loaded) return; // don't save until we've loaded
+    saveLocations(locations);
+  }, [locations, loaded]);
 
   // Toggle a task's selection on or off
   const handleToggleSelect = useCallback((id: string) => {
@@ -471,24 +691,27 @@ export default function ListScreen() {
     []
   );
 
-  // Add a new task to a specific location
-  const handleAddTask = useCallback((locationId: string, name: string) => {
-    // Create a new task with default values
-    const newTask: Task = {
-      id: generateId("t"), // generate a unique ID
-      name, // the name from the input
-      frequencyHours: 24, // default to daily
-      lastCompleted: new Date().toISOString(), // mark as just completed
-      icon: "clipboard-text-outline", // default icon
-    };
-    setLocations((prev) =>
-      prev.map((loc) =>
-        loc.id === locationId
-          ? { ...loc, tasks: [...loc.tasks, newTask] } // append the new task
-          : loc // leave other locations alone
-      )
-    );
-  }, []);
+  // Add a new task to a specific location with chosen icon and frequency
+  const handleAddTask = useCallback(
+    (locationId: string, name: string, icon: string, frequencyHours: number) => {
+      // Create a new task with the provided values
+      const newTask: Task = {
+        id: generateId("t"), // generate a unique ID
+        name, // the name from the input
+        frequencyHours, // selected frequency
+        lastCompleted: new Date().toISOString(), // mark as just completed
+        icon, // selected icon
+      };
+      setLocations((prev) =>
+        prev.map((loc) =>
+          loc.id === locationId
+            ? { ...loc, tasks: [...loc.tasks, newTask] } // append the new task
+            : loc // leave other locations alone
+        )
+      );
+    },
+    []
+  );
 
   // Rename a location/section
   const handleRenameLocation = useCallback(
@@ -507,17 +730,26 @@ export default function ListScreen() {
     setLocations((prev) => prev.filter((loc) => loc.id !== locationId)); // filter it out
   }, []);
 
-  // Add a brand new empty location/section
-  const handleAddLocation = useCallback((name: string) => {
+  // Add a brand new empty location/section with a chosen icon
+  const handleAddLocation = useCallback((name: string, icon: string) => {
     // Create a new location with no tasks
     const newLoc: TaskLocation = {
       id: generateId("loc"), // unique ID
       name, // name from the input
-      icon: "home-outline", // default house icon
+      icon, // chosen icon from the picker
       tasks: [], // starts empty
     };
     setLocations((prev) => [...prev, newLoc]); // append to the list
   }, []);
+
+  // loading state while we read from storage
+  if (!loaded) {
+    return (
+      <View style={[styles.root, { justifyContent: "center", alignItems: "center" }]}>
+        <Text style={styles.subtitle}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -770,33 +1002,197 @@ const styles = StyleSheet.create({
     marginTop: 4, // gap below the icon
   },
 
-  // Row for adding a new task at the bottom of each group
+  // Collapsed add-task row
   addTaskRow: {
-    flexDirection: "row", // icon and input side by side
+    flexDirection: "row", // icon and text side by side
     alignItems: "center", // vertically centered
     paddingHorizontal: 14, // side padding
-    paddingVertical: 10, // top/bottom padding
+    paddingVertical: 12, // top/bottom padding
     borderTopWidth: StyleSheet.hairlineWidth, // separator from tasks above
     borderTopColor: "#f0f0f0", // light separator
   },
+  // Placeholder text in the collapsed add-task row
+  addTaskPlaceholder: {
+    fontSize: 14, // regular size
+    color: "#bbb", // muted
+  },
+
+  // Expanded add-task card
+  addTaskCard: {
+    paddingHorizontal: 14, // side padding
+    paddingVertical: 12, // top/bottom padding
+    borderTopWidth: StyleSheet.hairlineWidth, // separator line
+    borderTopColor: "#eee", // light border
+    backgroundColor: "#fbfbfd", // very faint background
+  },
+  // Section label inside the add-task card
+  addTaskLabel: {
+    fontSize: 11, // small label
+    fontWeight: "600", // semi-bold
+    color: "#999", // muted
+    textTransform: "uppercase", // ALL CAPS
+    letterSpacing: 0.5, // slight letter spread
+    marginTop: 8, // gap above
+    marginBottom: 4, // gap below
+  },
   // Text input for the new task name
-  addTaskInput: {
-    flex: 1, // fill remaining space
+  addTaskNameInput: {
     fontSize: 14, // regular size
     color: "#333", // dark text
-    paddingVertical: 6, // inner vertical padding
-    paddingHorizontal: 10, // inner horizontal padding
-  },
-  // "Add" button that appears when text is entered
-  addTaskBtn: {
-    backgroundColor: ACCENT, // accent colored button
-    paddingHorizontal: 14, // side padding
-    paddingVertical: 6, // top/bottom padding
+    backgroundColor: "#fff", // white background
+    borderWidth: 1, // thin border
+    borderColor: "#e8e8e8", // light border color
     borderRadius: 8, // rounded corners
-    marginLeft: 8, // gap from the input
+    paddingVertical: 8, // vertical inner padding
+    paddingHorizontal: 10, // horizontal inner padding
+    marginBottom: 4, // gap below
   },
-  // Text inside the add button
-  addTaskBtnText: {
+
+  // Preset chips
+  presetScroll: {
+    marginBottom: 4, // gap below the scroll
+  },
+  presetScrollContent: {
+    gap: 6, // spacing between chips
+  },
+  // Individual preset chip
+  presetChip: {
+    flexDirection: "row", // icon + text side by side
+    alignItems: "center", // vertically centered
+    paddingHorizontal: 10, // side padding
+    paddingVertical: 5, // top/bottom padding
+    borderRadius: 14, // pill shape
+    backgroundColor: "#eef0ff", // light accent bg
+    borderWidth: 1, // thin border
+    borderColor: "#dde0f0", // subtle border
+  },
+  // Active (selected) preset chip
+  presetChipActive: {
+    backgroundColor: ACCENT, // accent fill
+    borderColor: ACCENT, // matching border
+  },
+  // Preset chip text
+  presetChipText: {
+    fontSize: 12, // small text
+    fontWeight: "500", // medium weight
+    color: ACCENT, // accent colored
+  },
+  // Active preset chip text
+  presetChipTextActive: {
+    color: "#fff", // white on accent background
+  },
+
+  // Icon picker grid
+  iconPickerRow: {
+    flexDirection: "row", // icons side by side
+    flexWrap: "wrap", // wrap to next line if needed
+    gap: 6, // spacing between icons
+    marginBottom: 4, // gap below
+  },
+  // Individual icon in the picker
+  iconPickerItem: {
+    width: 36, // fixed size
+    height: 36, // square
+    borderRadius: 8, // rounded square
+    backgroundColor: "#f0f0f0", // light background
+    alignItems: "center", // center the icon
+    justifyContent: "center", // center the icon
+  },
+  // Active (selected) icon
+  iconPickerItemActive: {
+    backgroundColor: ACCENT, // accent fill when selected
+  },
+
+  // Frequency pills
+  freqRow: {
+    flexDirection: "row", // pills side by side
+    flexWrap: "wrap", // wrap if needed
+    gap: 6, // spacing between pills
+    marginBottom: 8, // gap below
+  },
+  // Individual frequency pill
+  freqPill: {
+    paddingHorizontal: 12, // side padding
+    paddingVertical: 5, // top/bottom padding
+    borderRadius: 14, // pill shape
+    backgroundColor: "#f0f0f0", // light background
+    borderWidth: 1, // thin border
+    borderColor: "#e0e0e0", // subtle border
+  },
+  // Active frequency pill
+  freqPillActive: {
+    backgroundColor: ACCENT, // accent fill
+    borderColor: ACCENT, // matching border
+  },
+  // Frequency pill text
+  freqPillText: {
+    fontSize: 12, // small text
+    fontWeight: "500", // medium weight
+    color: "#666", // muted
+  },
+  // Active frequency pill text
+  freqPillTextActive: {
+    color: "#fff", // white on accent
+  },
+
+  // Custom frequency input row
+  customFreqRow: {
+    flexDirection: "row", // label + input + label in a row
+    alignItems: "center", // vertically centered
+    gap: 6, // spacing between elements
+    marginBottom: 8, // gap below
+  },
+  // "Every" / "hours" labels beside the input
+  customFreqLabel: {
+    fontSize: 13, // regular size
+    color: "#666", // muted text
+  },
+  // Numeric text input for custom hours
+  customFreqInput: {
+    width: 70, // fixed width for the number
+    fontSize: 14, // regular size
+    color: "#333", // dark text
+    backgroundColor: "#fff", // white bg
+    borderWidth: 1, // thin border
+    borderColor: "#e8e8e8", // light border
+    borderRadius: 8, // rounded corners
+    paddingVertical: 5, // vertical padding
+    paddingHorizontal: 8, // horizontal padding
+    textAlign: "center", // center the number
+  },
+
+  // Add-task action buttons
+  addTaskActions: {
+    flexDirection: "row", // buttons side by side
+    justifyContent: "flex-end", // align to the right
+    gap: 8, // spacing between buttons
+    marginTop: 4, // gap above
+  },
+  // Cancel button
+  addTaskCancelBtn: {
+    paddingHorizontal: 14, // side padding
+    paddingVertical: 7, // top/bottom padding
+    borderRadius: 8, // rounded corners
+  },
+  // Cancel button text
+  addTaskCancelText: {
+    fontSize: 13, // small text
+    fontWeight: "600", // semi-bold
+    color: "#999", // muted
+  },
+  // Submit / Add button
+  addTaskSubmitBtn: {
+    backgroundColor: ACCENT, // accent color
+    paddingHorizontal: 18, // side padding
+    paddingVertical: 7, // top/bottom padding
+    borderRadius: 8, // rounded corners
+  },
+  // Disabled state for the submit button
+  addTaskSubmitBtnDisabled: {
+    opacity: 0.4, // faded out when disabled
+  },
+  // Submit button text
+  addTaskSubmitText: {
     color: "#fff", // white text
     fontSize: 13, // small
     fontWeight: "700", // bold
@@ -804,8 +1200,6 @@ const styles = StyleSheet.create({
 
   // Dashed row for adding a new section/location
   addSectionRow: {
-    flexDirection: "row", // icon and input side by side
-    alignItems: "center", // vertically centered
     backgroundColor: "#fff", // white background
     borderRadius: 14, // rounded corners
     paddingHorizontal: 14, // side padding
@@ -814,6 +1208,11 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, // dashed border thickness
     borderColor: "#e0e4f0", // light border color
     borderStyle: "dashed", // dashed style to look different from regular cards
+  },
+  // Top row inside add-section: icon + input + button
+  addSectionTopRow: {
+    flexDirection: "row", // items in a row
+    alignItems: "center", // vertically centered
   },
   // Text input for the new section name
   addSectionInput: {
@@ -837,5 +1236,12 @@ const styles = StyleSheet.create({
     color: "#fff", // white text
     fontSize: 13, // small
     fontWeight: "700", // bold
+  },
+  // Icon picker row inside the add-section card
+  sectionIconRow: {
+    flexDirection: "row", // icons side by side
+    flexWrap: "wrap", // wrap if needed
+    gap: 6, // spacing
+    marginTop: 10, // gap from the input row above
   },
 });
