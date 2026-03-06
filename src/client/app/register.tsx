@@ -38,7 +38,7 @@ export default function RegisterScreen() {
     setLoading(true);
 
     try {
-      const response = await fetch("http://192.168.10.159:8000/auth/register", {
+      const response = await fetch("http://localhost:8000/auth/register", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
