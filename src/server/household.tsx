@@ -13,19 +13,30 @@ Side effects: None
 Invariants: None
 Known faults: None
 */
+
 import User from "./user" 
 import Sensors from "./sensors"
 import Feature from "./feature"
 
 export default class Household {
     title : string
-    users : string[] 
-    adminUsers: User[]
+    users : Set<User>
+    adminUsers: Set<User>
     sensors : Sensors
-    features : Feature[]
+    features : Set<Feature>
 
-    constructor(title, users) {
+    constructor(title : string, adminUsers : Set<User>) {
         this.title = title;
-        this.users = users;
+        this.adminUsers = adminUsers;
+    }
+
+    addUser(user : User){
+        this.users.add(user)
+    }
+
+    decay() {
+        for (let feature of this.features) {
+            feature.decay()
+        }
     }
 }

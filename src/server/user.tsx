@@ -17,13 +17,17 @@ Known faults: None
 import Household from "./household"
 
 export default class User {
-    household: Household 
+    households: Set<Household> 
     readonly username : string 
     readonly password : string 
 
-    constructor(household : Household, username: string, password : string){
-        this.household = household;
+    constructor(username: string, password : string){
         this.username = username; 
         this.password = password;
+    }
+
+    setHousehold(household : Household) {
+        household.addUser(this)
+        this.households.add(household)
     }
 }
