@@ -99,4 +99,10 @@ export default class Household {
             return new Date(Date.now() - h * 60 * 60 * 1000);
         }
     }
+
+
+    //TODO: add feature
+    //TODO: delete feature
+    //TODO: rename feature
+    //TODO: rename feature
 }

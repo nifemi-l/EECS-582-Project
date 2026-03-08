@@ -45,7 +45,7 @@ export default class Feature {
         })();
 
         //TODO: update id
-        // add_task(0, task.name, task.frequency.days, null, visibility)
+        add_task(0, task.name, task.frequency.days, null, visibility)
     }
 
 }
