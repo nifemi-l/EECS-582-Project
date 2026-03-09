@@ -71,11 +71,11 @@ export async function add_feature(household_id: number, feature_name: string, fe
     return result.feature_id;
 }
 
-export async function add_task(new_feature_id: number, existing_task_name: string, task_frequency_days: number, time_last_completed: Date | null, task_visibility: string) {
+export async function add_task(new_feature_id: number, existing_task_name: string, task_frequency_days: number, time_last_completed: Date | null, task_visibility: string, created_by_account_id: number | null = null) {
     // Ex: add_task(12, "Clean Room", 7, new Date(), "private")
     const [result] = await sql`
-        INSERT INTO Task (feature_id, task_name, frequency_days, last_completed, visibility)
-        VALUES (${new_feature_id}, ${existing_task_name}, ${task_frequency_days}, ${time_last_completed}, ${task_visibility})
+        INSERT INTO Task (feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id)
+        VALUES (${new_feature_id}, ${existing_task_name}, ${task_frequency_days}, ${time_last_completed}, ${task_visibility}, ${created_by_account_id})
         RETURNING task_id
     `;
     return result.task_id;
@@ -96,6 +96,12 @@ export async function add_account_role(account_id: number, household_id: number,
  * Functions for retrieving specific data from the database
  */
 
+// Retrieve all households
+export async function get_all_households() {
+    const households = await sql`SELECT * FROM Household`;
+    return households;
+}
+
 // Retrieve data for a household by its household id
 export async function get_household_by_id(household_id: number) {
     const [household] = await sql`
@@ -103,6 +109,12 @@ export async function get_household_by_id(household_id: number) {
         WHERE household_id = ${household_id}
     `;
     return household;
+}
+
+// Retrieve all accounts
+export async function get_all_accounts() {
+    const accounts = await sql`SELECT * FROM Account`;
+    return accounts;
 }
 
 // Retrieve data for an account by its account id
@@ -124,6 +136,12 @@ export async function get_account_by_email(email: string) {
     return account;
 }
 
+// Retrieve all features
+export async function get_all_features() {
+    const features = await sql`SELECT * FROM Feature`;
+    return features;
+}
+
 // Retrieve data for a feature by its feature id
 export async function get_feature_by_id(feature_id: number) {
     const [feature] = await sql`
@@ -131,6 +149,12 @@ export async function get_feature_by_id(feature_id: number) {
         WHERE feature_id = ${feature_id}
     `;
     return feature;
+}
+
+// Retrieve all tasks
+export async function get_all_tasks() {
+    const tasks = await sql`SELECT * FROM Task`;
+    return tasks;
 }
 
 // Retrieve data for a task by its task id
@@ -196,6 +220,59 @@ export async function get_household_tasks(household_id: number) {
  * Functions for updating data
  */
 
+// Update household information
+export async function update_household(household_id: number, household_name: string) {
+    await sql`
+        UPDATE Household
+        SET household_name = ${household_name}
+        WHERE household_id = ${household_id}
+    `;
+}
+
+// Update account information
+export async function update_account(account_id: number, account_name: string, email: string) {
+    await sql`
+        UPDATE Account
+        SET account_name = ${account_name}, email = ${email}
+        WHERE account_id = ${account_id}
+    `;
+}
+
+// Update an account role
+export async function update_account_role(account_id: number, household_id: number, role: string) {
+    await sql`
+        UPDATE AccountRole
+        SET role = ${role}
+        WHERE account_id = ${account_id} AND household_id = ${household_id}
+    `;
+}
+
+// Update feature information
+export async function update_feature(feature_id: number, feature_name: string, feature_type: string, x_pos: number, y_pos: number, z_pos: number) {
+    await sql`
+        UPDATE Feature
+        SET feature_name = ${feature_name}, feature_type = ${feature_type}, x_pos = ${x_pos}, y_pos = ${y_pos}, z_pos = ${z_pos}
+        WHERE feature_id = ${feature_id}
+    `;
+}
+
+// Update task information
+export async function update_task(task_id: number, task_name: string, frequency_days: number, visibility: string, last_completed: Date | null = null) {
+    if (last_completed) {
+        await sql`
+            UPDATE Task
+            SET task_name = ${task_name}, frequency_days = ${frequency_days}, visibility = ${visibility}, last_completed = ${last_completed}
+            WHERE task_id = ${task_id}
+        `;
+    } else {
+        await sql`
+            UPDATE Task
+            SET task_name = ${task_name}, frequency_days = ${frequency_days}, visibility = ${visibility}
+            WHERE task_id = ${task_id}
+        `;
+    }
+}
+
 export async function update_task_last_comp_time(task_id: number) {
     await sql`
         UPDATE Task
@@ -220,5 +297,32 @@ export async function update_feature_coordinates(feature_id: number, x_pos: numb
         SET x_pos = ${x_pos}, y_pos = ${y_pos}, z_pos = ${z_pos}
         WHERE feature_id = ${feature_id}
     `;
+}
+
+/**
+ * Functions for deleting data
+ */
+
+export async function delete_household(household_id: number) {
+    await sql`DELETE FROM Household WHERE household_id = ${household_id}`;
+}
+
+export async function delete_account(account_id: number) {
+    await sql`DELETE FROM Account WHERE account_id = ${account_id}`;
+}
+
+export async function delete_account_role(account_id: number, household_id: number) {
+    await sql`
+        DELETE FROM AccountRole
+        WHERE account_id = ${account_id} AND household_id = ${household_id}
+    `;
+}
+
+export async function delete_feature(feature_id: number) {
+    await sql`DELETE FROM Feature WHERE feature_id = ${feature_id}`;
+}
+
+export async function delete_task(task_id: number) {
+    await sql`DELETE FROM Task WHERE task_id = ${task_id}`;
 }
 
