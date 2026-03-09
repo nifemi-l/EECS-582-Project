@@ -46,7 +46,7 @@ function generateId(prefix = "t") {
 }
 
 // Health bar component that shows how "healthy" a task is as a colored bar
-function HealthBar({ task }: { task: Task }) {
+function HealthBar({ task: task }: { task: Task }) {
     const pct = task.getAndSetHealthPercent(); // get the health as a 0-1 decimal
     const color = task.getHealthColor(pct); // pick a color based on the percentage
     const label = `${Math.round(pct * 100)}%`; // format as a readable percentage
