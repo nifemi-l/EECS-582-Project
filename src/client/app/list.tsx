@@ -1,20 +1,26 @@
 /* PROLOGUE
 File name: list.tsx
-Description: A list view for managing household tasks grouped by feature/room
+Description: A list view for managing household tasks grouped by location/room.
+             Supports local persistence via AsyncStorage, task presets, icon pickers,
+             and frequency selection when adding tasks or sections.
 Programmer: Nifemi Lawal
 Creation date: 2/6/26
 Revision date:
   - 2/11/26: Fix padding for the new section name input area
-Preconditions: Mock household data must be available from the data module
-Postconditions: Renders an interactive task list organized by feature
-Errors: None. Will always render successfully
-Side effects: State changes when adding, deleting, or renaming tasks and features
+  - 3/1/26: Add AsyncStorage persistence (load on mount, save on change),
+             expanded add-task card with icon picker / frequency pills / presets,
+             location icon picker for new sections; restore TaskRow comments
+  - 3/8/26: Use server classes for consistency
+Preconditions: household.ts must export storage helpers and preset constants
+Postconditions: Renders an interactive, persisted task list organized by location
+Errors: None. Will always render successfully; storage failures are logged silently
+Side effects: Reads/writes AsyncStorage on mount and on every mutation
 Invariants: None
 Known faults: None
 */
 
-// Import react hooks we need for state and performance
-import React, { useCallback, useRef, useState } from "react";
+// Import react hooks we need for state, lifecycle, and performance
+import React, { useCallback, useEffect, useRef, useState } from "react";
 // Import RN components for building the UI
 import {
     Alert,
@@ -29,33 +35,43 @@ import {
 // Material design icons
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
-// Import mock data and types from our data module
+// Import server classes
 import Task from "../../server/task";
 import Household from "../../server/household";
 import Feature from "../../server/feature";
-import { DayAmount } from "../../server/frequency";
 
-const MOCK_HOUSEHOLD = Household.createMockHousehold();
+// Import data helpers, types, presets, and storage utilities
+import {
+  MOCK_HOUSEHOLD,
+  FREQUENCY_PRESETS,
+  LOCATION_ICONS,
+  TASK_ICONS,
+  TASK_PRESETS,
+  healthPercent,
+  healthColor,
+  saveFeatures,
+  loadFeatures,
+} from "./data/household";
+
+// Accent color and background color constants
+const ACCENT = "#4169E1";
+const BG = "#f0f2f5";
 
 // Counter for generating unique IDs
-let nextId = 100;
-// Simple ID generator that increments and returns a prefixed string
+let nextId = 1000;
 function generateId(prefix = "t") {
-    nextId += 1; // bump the counter
-    return `${prefix}-gen-${nextId}`; // return something like "t-gen-101"
+    nextId += 1;
+    return `${prefix}-gen-${nextId}`;
 }
 
 // Health bar component that shows how "healthy" a task is as a colored bar
-function HealthBar({ task: task }: { task: Task }) {
-    const pct = task.getAndSetHealthPercent(); // get the health as a 0-1 decimal
-    const color = task.getHealthColor(pct); // pick a color based on the percentage
+function HealthBar({ task }: { task: Task }) {
+    const pct = healthPercent(task); // get the health as a 0-1 decimal
+    const color = healthColor(pct); // pick a color based on the percentage
     const label = `${Math.round(pct * 100)}%`; // format as a readable percentage
     return (
-        // Row that holds the bar and the label side by side
         <View style={styles.healthBarRow}>
-            {/* Outer track of the bar */}
             <View style={styles.healthBarOuter}>
-                {/* Inner fill, width and color depend on health */}
                 <View
                     style={[
                         styles.healthBarInner,
@@ -63,7 +79,6 @@ function HealthBar({ task: task }: { task: Task }) {
                     ]}
                 />
             </View>
-            {/* Percentage text next to the bar */}
             <Text style={[styles.healthBarLabel, { color }]}>{label}</Text>
         </View>
     );
@@ -76,787 +91,1004 @@ function TaskRow({
     onToggleSelect,
     onDeleteTask,
 }: {
-    task: Task; // the task data
-    isSelected: boolean; // whether this task is currently selected
-    onToggleSelect: (id: string) => void; // callback to toggle selection
-    onDeleteTask: (id: string) => void; // callback to delete this task
+    task: Task;
+    isSelected: boolean;
+    onToggleSelect: (id: string) => void;
+    onDeleteTask: (id: string) => void;
 }) {
+  return (
+    <View style={[styles.taskRow, isSelected && styles.taskRowSelected]}>
+      <Pressable
+        onPress={() => onToggleSelect(task.id)}
+        hitSlop={8}
+        style={styles.checkbox}
+      >
+        <MaterialCommunityIcons
+          name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"}
+          size={22}
+          color={isSelected ? ACCENT : "#ccc"}
+        />
+      </Pressable>
+
+      <View style={styles.taskIconWrap}>
+        <MaterialCommunityIcons
+          name={task.icon as any}
+          size={20}
+          color={ACCENT}
+        />
+      </View>
+
+      <View style={styles.taskInfo}>
+        <Text style={styles.taskName} numberOfLines={1}>
+          {task.name}
+        </Text>
+        <HealthBar task={task} />
+      </View>
+
+      <Pressable
+        onPress={() => onDeleteTask(task.id)}
+        hitSlop={8}
+        style={styles.taskDeleteBtn}
+      >
+        <MaterialCommunityIcons
+          name="close-circle-outline"
+          size={20}
+          color="#ccc"
+        />
+      </Pressable>
+    </View>
+  );
+}
+
+// expandable card that lets you add a new task with presets, icon picker, etc.
+function AddTaskCard({
+  onAdd,
+}: {
+  onAdd: (name: string, icon: string, frequencyDays: number) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [name, setName] = useState("");
+  const [icon, setIcon] = useState(TASK_ICONS[0]);
+  const [freqDays, setFreqDays] = useState(FREQUENCY_PRESETS[0].days);
+  const [customFreq, setCustomFreq] = useState(false);
+  const [customFreqText, setCustomFreqText] = useState("");
+
+  const resetForm = () => {
+    setName("");
+    setIcon(TASK_ICONS[0]);
+    setFreqDays(FREQUENCY_PRESETS[0].days);
+    setCustomFreq(false);
+    setCustomFreqText("");
+    setExpanded(false);
+  };
+
+  const handleSubmit = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onAdd(trimmed, icon, freqDays);
+    resetForm();
+  };
+
+  const applyPreset = (preset: (typeof TASK_PRESETS)[number]) => {
+    setName(preset.name);
+    setIcon(preset.icon);
+    setFreqDays(preset.frequencyDays);
+    setCustomFreq(false);
+    setCustomFreqText("");
+  };
+
+  if (!expanded) {
     return (
-        // Outer row container, highlighted if selected
-        <View style={[styles.taskRow, isSelected && styles.taskRowSelected]}>
-            {/* Checkbox to select/deselect the task */}
-            <Pressable
-                onPress={() => onToggleSelect(task.id)}
-                hitSlop={8}
-                style={styles.checkbox}
-            >
-                {/* Filled or empty checkbox icon depending on selection */}
-                <MaterialCommunityIcons
-                    name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"}
-                    size={22}
-                    color={isSelected ? "#4169E1" : "#ccc"}
-                />
-            </Pressable>
-
-            {/* Icon container for the task type */}
-            <View style={styles.taskIconWrap}>
-                {/* The actual task icon */}
-                <MaterialCommunityIcons
-                    name={task.icon as any}
-                    size={20}
-                    color="#4169E1"
-                />
-            </View>
-
-            {/* Task name and health bar */}
-            <View style={styles.taskInfo}>
-                {/* Task name, truncated to one line */}
-                <Text style={styles.taskName} numberOfLines={1}>
-                    {task.name}
-                </Text>
-                {/* Health bar showing task status */}
-                <HealthBar task={task} />
-            </View>
-
-            {/* Delete button for this individual task */}
-            <Pressable
-                onPress={() => onDeleteTask(task.id)}
-                hitSlop={8}
-                style={styles.taskDeleteBtn}
-            >
-                {/* X circle icon for delete */}
-                <MaterialCommunityIcons
-                    name="close-circle-outline"
-                    size={20}
-                    color="#ccc"
-                />
-            </Pressable>
-        </View>
+      <Pressable style={styles.addTaskRow} onPress={() => setExpanded(true)}>
+        <MaterialCommunityIcons
+          name="plus"
+          size={18}
+          color={ACCENT}
+          style={{ marginRight: 8 }}
+        />
+        <Text style={styles.addTaskPlaceholder}>Add a task...</Text>
+      </Pressable>
     );
+  }
+
+  return (
+    <View style={styles.addTaskCard}>
+      <Text style={styles.addTaskLabel}>Quick presets</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.presetScroll}
+        contentContainerStyle={styles.presetScrollContent}
+      >
+        {TASK_PRESETS.map((p) => (
+          <Pressable
+            key={p.name}
+            style={[
+              styles.presetChip,
+              name === p.name && styles.presetChipActive,
+            ]}
+            onPress={() => applyPreset(p)}
+          >
+            <MaterialCommunityIcons
+              name={p.icon as any}
+              size={14}
+              color={name === p.name ? "#fff" : ACCENT}
+              style={{ marginRight: 4 }}
+            />
+            <Text
+              style={[
+                styles.presetChipText,
+                name === p.name && styles.presetChipTextActive,
+              ]}
+            >
+              {p.name}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      <Text style={styles.addTaskLabel}>Task name</Text>
+      <TextInput
+        style={styles.addTaskNameInput}
+        placeholder="e.g. Scrub toilet"
+        placeholderTextColor="#bbb"
+        value={name}
+        onChangeText={setName}
+        onSubmitEditing={handleSubmit}
+        returnKeyType="done"
+      />
+
+      <Text style={styles.addTaskLabel}>Icon</Text>
+      <View style={styles.iconPickerRow}>
+        {TASK_ICONS.slice(0, 12).map((ic) => (
+          <Pressable
+            key={ic}
+            onPress={() => setIcon(ic)}
+            style={[
+              styles.iconPickerItem,
+              icon === ic && styles.iconPickerItemActive,
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={ic as any}
+              size={20}
+              color={icon === ic ? "#fff" : "#666"}
+            />
+          </Pressable>
+        ))}
+      </View>
+
+      <Text style={styles.addTaskLabel}>Frequency</Text>
+      <View style={styles.freqRow}>
+        {FREQUENCY_PRESETS.map((fp) => (
+          <Pressable
+            key={fp.days}
+            onPress={() => {
+              setFreqDays(fp.days);
+              setCustomFreq(false);
+              setCustomFreqText("");
+            }}
+            style={[
+              styles.freqPill,
+              !customFreq && freqDays === fp.days && styles.freqPillActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.freqPillText,
+                !customFreq && freqDays === fp.days && styles.freqPillTextActive,
+              ]}
+            >
+              {fp.label}
+            </Text>
+          </Pressable>
+        ))}
+        <Pressable
+          onPress={() => setCustomFreq(true)}
+          style={[styles.freqPill, customFreq && styles.freqPillActive]}
+        >
+          <Text
+            style={[styles.freqPillText, customFreq && styles.freqPillTextActive]}
+          >
+            Custom
+          </Text>
+        </Pressable>
+      </View>
+
+      {customFreq && (
+        <View style={styles.customFreqRow}>
+          <Text style={styles.customFreqLabel}>Every</Text>
+          <TextInput
+            style={styles.customFreqInput}
+            placeholder="e.g. 2"
+            placeholderTextColor="#bbb"
+            keyboardType="numeric"
+            value={customFreqText}
+            onChangeText={(t) => {
+              setCustomFreqText(t);
+              const parsed = parseFloat(t);
+              if (!isNaN(parsed) && parsed > 0) setFreqDays(parsed);
+            }}
+          />
+          <Text style={styles.customFreqLabel}>days</Text>
+        </View>
+      )}
+
+      <View style={styles.addTaskActions}>
+        <Pressable onPress={resetForm} style={styles.addTaskCancelBtn}>
+          <Text style={styles.addTaskCancelText}>Cancel</Text>
+        </Pressable>
+        <Pressable
+          onPress={handleSubmit}
+          style={[
+            styles.addTaskSubmitBtn,
+            !name.trim() && styles.addTaskSubmitBtnDisabled,
+          ]}
+        >
+          <Text style={styles.addTaskSubmitText}>Add</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 }
 
 // A collapsible group of tasks under one feature/room
 function FeatureGroup({
-    feature,
-    selectedIds,
-    onToggleSelect,
-    onDeleteSelected,
-    onDeleteTask,
-    onAddTask,
-    onRenameFeature,
-    onDeleteFeature,
+  feature,
+  selectedIds,
+  onToggleSelect,
+  onDeleteSelected,
+  onDeleteTask,
+  onAddTask,
+  onRenameFeature,
+  onDeleteFeature,
 }: {
-    feature: Feature; // the feature data with its tasks
-    selectedIds: Set<string>; // set of currently selected task IDs
-    onToggleSelect: (id: string) => void; // toggle a task's selection
-    onDeleteSelected: (featureId: string) => void; // delete all selected in this group
-    onDeleteTask: (featureId: string, taskId: string) => void; // delete one task
-    onAddTask: (featureId: string, name: string) => void; // add a new task here
-    onRenameFeature: (featureId: string, newName: string) => void; // rename this feature
-    onDeleteFeature: (featureId: string) => void; // delete the whole feature
+  feature: Feature;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onDeleteSelected: (featureId: string) => void;
+  onDeleteTask: (featureId: string, taskId: string) => void;
+  onAddTask: (featureId: string, name: string, icon: string, freqDays: number) => void;
+  onRenameFeature: (featureId: string, newName: string) => void;
+  onDeleteFeature: (featureId: string) => void;
 }) {
-    // State for the new task input field
-    const [newTaskName, setNewTaskName] = useState("");
-    // Whether we're currently editing the feature name
-    const [isEditing, setIsEditing] = useState(false);
-    // The text in the rename input
-    const [editName, setEditName] = useState(feature.name);
-    // Whether the group is collapsed or expanded
-    const [collapsed, setCollapsed] = useState(false);
-    // Ref to the rename input so we can focus it programmatically
-    const inputRef = useRef<TextInput>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(feature.name);
+  const [collapsed, setCollapsed] = useState(false);
+  const inputRef = useRef<TextInput>(null);
 
-    // Check if any tasks in this group are selected
-    const hasSelection = feature.tasks.some((t) =>
-        selectedIds.has(t.id),
-    );
-    // Count how many tasks are selected
-    const selectedCount = feature.tasks.filter((t) =>
-        selectedIds.has(t.id),
-    ).length;
+  const hasSelection = Array.from(feature.tasks).some((t) => selectedIds.has(t.id));
+  const selectedCount = Array.from(feature.tasks).filter((t) => selectedIds.has(t.id)).length;
 
-    // Handle adding a new task from the input field
-    const handleAdd = () => {
-        const trimmed = newTaskName.trim(); // remove whitespace
-        if (!trimmed) return; // don't add empty tasks
-        onAddTask(feature.id, trimmed); // call parent handler
-        setNewTaskName(""); // clear the input
-    };
+  const handleSaveRename = () => {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== feature.name) {
+      onRenameFeature(feature.id, trimmed);
+    } else {
+      setEditName(feature.name);
+    }
+    setIsEditing(false);
+  };
 
-    // Save the renamed feature name
-    const handleSaveRename = () => {
-        const trimmed = editName.trim(); // clean up whitespace
-        if (trimmed && trimmed !== feature.name) {
-            onRenameFeature(feature.id, trimmed); // only rename if it actually changed
-        } else {
-            setEditName(feature.name); // revert if empty or unchanged
-        }
-        setIsEditing(false); // exit editing mode
-    };
+  const handleStartEdit = () => {
+    setEditName(feature.name);
+    setIsEditing(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
 
-    // Start editing the feature name
-    const handleStartEdit = () => {
-        setEditName(feature.name); // populate with the current name
-        setIsEditing(true); // enter editing mode
-        setTimeout(() => inputRef.current?.focus(), 50); // focus the input after a short delay
-    };
+  const confirmDeleteFeature = () => {
+    if (Platform.OS === "web") {
+      if (window.confirm(`Delete "${feature.name}" and all its tasks?`)) {
+        onDeleteFeature(feature.id);
+      }
+    } else {
+      Alert.alert(
+        "Delete Section",
+        `Delete "${feature.name}" and all its tasks?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => onDeleteFeature(feature.id),
+          },
+        ]
+      );
+    }
+  };
 
-    // Show a confirmation dialog before deleting the entire feature
-    const confirmDeleteFeature = () => {
-        if (Platform.OS === "web") {
-            // Web uses window.confirm
-            if (window.confirm(`Delete "${feature.name}" and all its tasks?`)) {
-                onDeleteFeature(feature.id); // delete if confirmed
-            }
-        } else {
-            // Mobile uses the native Alert API
-            Alert.alert(
-                "Delete Section",
-                `Delete "${feature.name}" and all its tasks?`,
-                [
-                    { text: "Cancel", style: "cancel" }, // cancel option
-                    {
-                        text: "Delete",
-                        style: "destructive",
-                        onPress: () => onDeleteFeature(feature.id), // delete on confirm
-                    },
-                ],
-            );
-        }
-    };
+  return (
+    <View style={styles.featureGroup}>
+      <Pressable
+        style={styles.featureHeader}
+        onPress={() => setCollapsed((c) => !c)}
+      >
+        <MaterialCommunityIcons
+          name={feature.icon as any}
+          size={24}
+          color={ACCENT}
+        />
 
-    return (
-        // Card-like container for the whole feature group
-        <View style={styles.featureGroup}>
-            {/* Collapsible header bar */}
-            <Pressable
-                style={styles.featureHeader}
-                onPress={() => setCollapsed((c) => !c)}
-            >
-                {/* Feature icon */}
-                <MaterialCommunityIcons
-                    name={feature.icon as any}
-                    size={24}
-                    color="#4169E1"
-                />
+        {isEditing ? (
+          <TextInput
+            ref={inputRef}
+            style={styles.featureNameInput}
+            value={editName}
+            onChangeText={setEditName}
+            onBlur={handleSaveRename}
+            onSubmitEditing={handleSaveRename}
+            returnKeyType="done"
+            selectTextOnFocus
+          />
+        ) : (
+          <Pressable onLongPress={handleStartEdit} style={{ flex: 1 }}>
+            <Text style={styles.featureName}>{feature.name}</Text>
+          </Pressable>
+        )}
 
-                {/* Show an editable input or the feature name depending on mode */}
-                {isEditing ? (
-                    // Rename input field
-                    <TextInput
-                        ref={inputRef}
-                        style={styles.featureNameInput}
-                        value={editName}
-                        onChangeText={setEditName}
-                        onBlur={handleSaveRename}
-                        onSubmitEditing={handleSaveRename}
-                        returnKeyType="done"
-                        selectTextOnFocus
-                    />
-                ) : (
-                    // Tappable feature name, long press to edit
-                    <Pressable onLongPress={handleStartEdit} style={{ flex: 1 }}>
-                        <Text style={styles.featureName}>{feature.name}</Text>
-                    </Pressable>
-                )}
+        <Text style={styles.taskCount}>{Array.from(feature.tasks).length}</Text>
 
-                {/* Badge showing how many tasks are in this group */}
-                <Text style={styles.taskCount}>{feature.tasks.length}</Text>
+        {hasSelection && (
+          <Pressable
+            onPress={() => onDeleteSelected(feature.id)}
+            style={styles.batchDeleteBtn}
+          >
+            <MaterialCommunityIcons name="delete-outline" size={18} color="#f44336" />
+            <Text style={styles.batchDeleteText}>{selectedCount}</Text>
+          </Pressable>
+        )}
 
-                {/* Batch delete button, only shows when tasks are selected */}
-                {hasSelection && (
-                    <Pressable
-                        onPress={() => onDeleteSelected(feature.id)}
-                        style={styles.batchDeleteBtn}
-                    >
-                        {/* Trash icon */}
-                        <MaterialCommunityIcons
-                            name="delete-outline"
-                            size={18}
-                            color="#f44336"
-                        />
-                        {/* Number of selected tasks */}
-                        <Text style={styles.batchDeleteText}>{selectedCount}</Text>
-                    </Pressable>
-                )}
-
-                {/* Edit and delete buttons for the feature itself */}
-                {!isEditing && (
-                    <View style={styles.headerActions}>
-                        {/* Pencil icon to rename */}
-                        <Pressable
-                            onPress={handleStartEdit}
-                            hitSlop={6}
-                            style={styles.headerActionBtn}
-                        >
-                            <MaterialCommunityIcons
-                                name="pencil-outline"
-                                size={18}
-                                color="#999"
-                            />
-                        </Pressable>
-                        {/* Trash icon to delete the whole section */}
-                        <Pressable
-                            onPress={confirmDeleteFeature}
-                            hitSlop={6}
-                            style={styles.headerActionBtn}
-                        >
-                            <MaterialCommunityIcons
-                                name="trash-can-outline"
-                                size={18}
-                                color="#999"
-                            />
-                        </Pressable>
-                    </View>
-                )}
-
-                {/* Chevron that flips based on collapsed state */}
-                <MaterialCommunityIcons
-                    name={collapsed ? "chevron-down" : "chevron-up"}
-                    size={22}
-                    color="#999"
-                    style={{ marginLeft: 4 }}
-                />
+        {!isEditing && (
+          <View style={styles.headerActions}>
+            <Pressable onPress={handleStartEdit} hitSlop={6} style={styles.headerActionBtn}>
+              <MaterialCommunityIcons name="pencil-outline" size={18} color="#999" />
             </Pressable>
+            <Pressable onPress={confirmDeleteFeature} hitSlop={6} style={styles.headerActionBtn}>
+              <MaterialCommunityIcons name="trash-can-outline" size={18} color="#999" />
+            </Pressable>
+          </View>
+        )}
 
-            {/* Only show the task list and add row when not collapsed */}
-            {!collapsed && (
-                <>
-                    {/* Show empty state or the task list */}
-                    {feature.tasks.length === 0 ? (
-                        // Empty state when there are no tasks
-                        <View style={styles.emptyState}>
-                            <MaterialCommunityIcons
-                                name="playlist-remove"
-                                size={32}
-                                color="#ddd"
-                            />
-                            <Text style={styles.emptyStateText}>No tasks yet</Text>
-                        </View>
-                    ) : (
-                        // Container for all the task rows
-                        <View style={styles.taskListContainer}>
-                            {/* Render each task as a row */}
-                            {Array.from(feature.tasks).map((task) => (
-                                <TaskRow
-                                    key={task.id}
-                                    task={task}
-                                    isSelected={selectedIds.has(task.id)}
-                                    onToggleSelect={onToggleSelect}
-                                    onDeleteTask={(taskId) => onDeleteTask(feature.id, taskId)}
-                                />
-                            ))}
-                        </View>
-                    )}
+        <MaterialCommunityIcons
+          name={collapsed ? "chevron-down" : "chevron-up"}
+          size={22}
+          color="#999"
+          style={{ marginLeft: 4 }}
+        />
+      </Pressable>
 
-                    {/* Input row for adding a new task */}
-                    <View style={styles.addTaskRow}>
-                        {/* Plus icon */}
-                        <MaterialCommunityIcons
-                            name="plus"
-                            size={18}
-                            color="#4169E1"
-                            style={{ marginRight: 8 }}
-                        />
-                        {/* Text input for the new task name */}
-                        <TextInput
-                            style={styles.addTaskInput}
-                            placeholder="Add a task…"
-                            placeholderTextColor="#bbb"
-                            value={newTaskName}
-                            onChangeText={setNewTaskName}
-                            onSubmitEditing={handleAdd}
-                            returnKeyType="done"
-                        />
-                        {/* Show the add button only when there's text */}
-                        {newTaskName.trim().length > 0 && (
-                            <Pressable onPress={handleAdd} style={styles.addTaskBtn}>
-                                <Text style={styles.addTaskBtnText}>Add</Text>
-                            </Pressable>
-                        )}
-                    </View>
-                </>
-            )}
-        </View>
-    );
+      {!collapsed && (
+        <>
+          {Array.from(feature.tasks).length === 0 ? (
+            <View style={styles.emptyState}>
+              <MaterialCommunityIcons name="playlist-remove" size={32} color="#ddd" />
+              <Text style={styles.emptyStateText}>No tasks yet</Text>
+            </View>
+          ) : (
+            <View style={styles.taskListContainer}>
+              {Array.from(feature.tasks).map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  isSelected={selectedIds.has(task.id)}
+                  onToggleSelect={onToggleSelect}
+                  onDeleteTask={(taskId) => onDeleteTask(feature.id, taskId)}
+                />
+              ))}
+            </View>
+          )}
+
+          <AddTaskCard
+            onAdd={(name, icon, freqDays) =>
+              onAddTask(feature.id, name, icon, freqDays)
+            }
+          />
+        </>
+      )}
+    </View>
+  );
 }
 
-// Row at the bottom for creating a brand new feature/section
+// row at the bottom for creating a new section, with an icon picker
 function AddSectionRow({
-    onAdd,
+  onAdd,
 }: {
-    onAdd: (name: string) => void; // callback when a new section is created
+  onAdd: (name: string, icon: string) => void;
 }) {
-    // State for the section name input
-    const [name, setName] = useState("");
+  const [name, setName] = useState("");
+  const [icon, setIcon] = useState(LOCATION_ICONS[0]);
+  const [showIcons, setShowIcons] = useState(false);
 
-    // Handle creating the new section
-    const handleAdd = () => {
-        const trimmed = name.trim(); // remove whitespace
-        if (!trimmed) return; // skip if empty
-        onAdd(trimmed); // pass the name up
-        setName(""); // clear the input
-    };
+  const handleAdd = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onAdd(trimmed, icon);
+    setName("");
+    setIcon(LOCATION_ICONS[0]);
+    setShowIcons(false);
+  };
 
-    return (
-        // Dashed border container to visually separate it
-        <View style={styles.addSectionRow}>
-            {/* Plus box icon */}
-            <MaterialCommunityIcons
-                name="plus-box-outline"
-                size={22}
-                color="#4169E1"
-            />
-            {/* Text input for the new section name */}
-            <TextInput
-                style={styles.addSectionInput}
-                placeholder="New section name…"
-                placeholderTextColor="#bbb"
-                value={name}
-                onChangeText={setName}
-                onSubmitEditing={handleAdd}
-                returnKeyType="done"
-            />
-            {/* Show the create button only when there's text */}
-            {name.trim().length > 0 && (
-                <Pressable onPress={handleAdd} style={styles.addSectionBtn}>
-                    <Text style={styles.addSectionBtnText}>Create</Text>
-                </Pressable>
-            )}
+  return (
+    <View style={styles.addSectionRow}>
+      <View style={styles.addSectionTopRow}>
+        <Pressable onPress={() => setShowIcons((v) => !v)}>
+          <MaterialCommunityIcons name={icon as any} size={22} color={ACCENT} />
+        </Pressable>
+        <TextInput
+          style={styles.addSectionInput}
+          placeholder="New section name..."
+          placeholderTextColor="#bbb"
+          value={name}
+          onChangeText={(t) => {
+            setName(t);
+            if (t.trim().length > 0 && !showIcons) setShowIcons(true);
+          }}
+          onSubmitEditing={handleAdd}
+          returnKeyType="done"
+        />
+        {name.trim().length > 0 && (
+          <Pressable onPress={handleAdd} style={styles.addSectionBtn}>
+            <Text style={styles.addSectionBtnText}>Create</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {showIcons && (
+        <View style={styles.sectionIconRow}>
+          {LOCATION_ICONS.map((ic) => (
+            <Pressable
+              key={ic}
+              onPress={() => setIcon(ic)}
+              style={[
+                styles.iconPickerItem,
+                icon === ic && styles.iconPickerItemActive,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={ic as any}
+                size={20}
+                color={icon === ic ? "#fff" : "#666"}
+              />
+            </Pressable>
+          ))}
         </View>
-    );
+      )}
+    </View>
+  );
 }
 
 // Main screen component that ties everything together
 export default function ListScreen() {
-    // Initialize features state from the mock data, deep copy so we don't mutate the original
-    //
-    const [features, setFeatures] = useState<Feature[]>(() =>
-        MOCK_HOUSEHOLD.features.map((loc) => ({
-        ...loc, // spread the feature fields
-        tasks: [...loc.tasks], // shallow copy the tasks array 
-    }))
-                                                       );
+  const [features, setFeatures] = useState<Feature[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-    // Track which task IDs are currently selected
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // load saved data on mount
+  useEffect(() => {
+    loadFeatures().then((saved) => {
+      if (saved && saved.length > 0) {
+        setFeatures(saved);
+      } else {
+        setFeatures(
+          Array.from(MOCK_HOUSEHOLD.features).map((loc) => {
+             // We cast to any to avoid lose-methods error on state update
+             // but since we don't use methods in the UI, this is fine.
+             return { ...loc, tasks: Array.from(loc.tasks) } as any;
+          })
+        );
+      }
+      setLoaded(true);
+    });
+  }, []);
 
-    // Toggle a task's selection on or off
-    const handleToggleSelect = useCallback((id: string) => {
-        setSelectedIds((prev) => {
-            const next = new Set(prev); // copy the set
-            if (next.has(id))
-                next.delete(id); // deselect if already selected
-            else next.add(id); // select if not
-            return next;
-        });
-    }, []);
+  // save to storage whenever features change
+  useEffect(() => {
+    if (!loaded) return;
+    saveFeatures(features);
+  }, [features, loaded]);
 
-    // Delete all selected tasks within a specific feature
-    const handleDeleteSelected = useCallback(
-        (featureId: string) => {
-            setFeatures((prev) =>
-                prev.map((loc) => {
-                    if (loc.id !== featureId) return loc; // skip other features
-                    return {
-                        ...loc,
-                        tasks: loc.tasks.filter((t) => !selectedIds.has(t.id)), // remove selected ones
-                    };
-                }),
-            );
-            setSelectedIds(new Set()); // clear all selections after deleting
-        },
-        [selectedIds],
+  const handleToggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleDeleteSelected = useCallback(
+    (featureId: string) => {
+      setFeatures((prev) =>
+        prev.map((loc) => {
+          if (loc.id !== featureId) return loc;
+          return {
+            ...loc,
+            tasks: Array.from(loc.tasks).filter((t) => !selectedIds.has(t.id)),
+          } as any;
+        })
+      );
+      setSelectedIds(new Set());
+    },
+    [selectedIds]
+  );
+
+  const handleDeleteTask = useCallback(
+    (featureId: string, taskId: string) => {
+      setFeatures((prev) =>
+        prev.map((loc) => {
+          if (loc.id !== featureId) return loc;
+          return {
+            ...loc,
+            tasks: Array.from(loc.tasks).filter((t) => t.id !== taskId),
+          } as any;
+        })
+      );
+      setSelectedIds((prev) => {
+        if (!prev.has(taskId)) return prev;
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleAddTask = useCallback(
+    (featureId: string, name: string, icon: string, freqDays: number) => {
+      const newTask: Task = new Task(
+        name,
+        parseInt(featureId),
+        freqDays,
+        icon
+      );
+      setFeatures((prev) =>
+        prev.map((loc) =>
+          loc.id === featureId
+            ? ({ ...loc, tasks: [...Array.from(loc.tasks), newTask] } as any)
+            : loc
+        )
+      );
+    },
+    []
+  );
+
+  const handleRenameFeature = useCallback(
+    (featureId: string, newName: string) => {
+      setFeatures((prev) =>
+        prev.map((loc) => (loc.id === featureId ? ({ ...loc, name: newName } as any) : loc))
+      );
+    },
+    []
+  );
+
+  const handleDeleteFeature = useCallback((featureId: string) => {
+    setFeatures((prev) => prev.filter((loc) => loc.id !== featureId));
+  }, []);
+
+  const handleAddFeature = useCallback((name: string, icon: string) => {
+    const newLoc: Feature = new Feature(
+      name,
+      MOCK_HOUSEHOLD.household_id,
+      "",
+      0, 0, 0,
+      nextId++, // mock id
+      icon
     );
+    setFeatures((prev) => [...prev, newLoc]);
+  }, []);
 
-    // Delete a single task by its ID within a feature
-    const handleDeleteTask = useCallback((featureId: string, taskId: string) => {
-        setFeatures((prev) =>
-            prev.map((loc) => {
-                if (loc.id !== featureId) return loc; // skip other features
-                return {
-                    ...loc,
-                    tasks: loc.tasks.filter((t) => t.id !== taskId), // filter out the deleted task
-                };
-            }),
-        );
-        // Also remove it from the selection set if it was selected
-        setSelectedIds((prev) => {
-            if (!prev.has(taskId)) return prev; // skip if not selected
-            const next = new Set(prev); // copy
-            next.delete(taskId); // remove
-            return next;
-        });
-    }, []);
-
-    // Add a new task to a specific feature
-    const handleAddTask = useCallback((featureId: string, name: string) => {
-        // Create a new task with default values
-        const newTask: Task = new Task(
-            "t",
-            name,
-            1,
-            new Date(),
-            "clipboard-text-outline",
-        );
-
-        setFeatures((prev) =>
-            prev.map(
-                (loc) =>
-                    loc.id === featureId
-                        ? { ...loc, tasks: [...loc.tasks, newTask] } // append the new task
-                        : loc, // leave other features alone
-            ),
-        );
-    }, []);
-
-    // Rename a feature/section
-    const handleRenameFeature = useCallback(
-        (featureId: string, newName: string) => {
-            setFeatures((prev) =>
-                prev.map(
-                    (loc) => (loc.id === featureId ? { ...loc, name: newName } : loc), // update the name
-                ),
-            );
-        },
-        [],
-    );
-
-    // Delete an entire feature and all its tasks
-    const handleDeleteFeature = useCallback((featureId: string) => {
-        setFeatures((prev) => prev.filter((loc) => loc.id !== featureId)); // filter it out
-    }, []);
-
-    // Add a brand new empty feature/section
-    const handleAddFeature = useCallback((name: string) => {
-        // Create a new feature with no tasks
-        const newLoc: Feature = new Feature(
-            generateId("loc"), // unique ID
-            name, // name from the input
-            "home-outline", // default house icon
-        );
-        setFeatures((prev) => [...prev, newLoc]); // append to the list
-    }, []);
-
+  if (!loaded) {
     return (
-        <View style={styles.root} >
-            {/* Title section showing household name and stats */}
-            < View style={styles.titleBar} >
-                {/* Household name */}
-                < Text style={styles.title} > {MOCK_HOUSEHOLD.name}</Text>
-                {/* Summary line with section and task counts */}
-                < Text style={styles.subtitle} >
-                    {features.length} section{features.length !== 1 ? "s" : ""} ·{" "}
-                    {features.reduce((n, l) => n + l.tasks.length, 0)} tasks
-                </Text >
-            </View >
-
-            {/* Scrollable area for all feature groups */}
-            < ScrollView
-                style={styles.scroll}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-            >
-                {/* Render each feature as a collapsible group */}
-                {
-                    features.map((loc) => (
-                        <FeatureGroup
-                            key={loc.id}
-                            feature={loc}
-                            selectedIds={selectedIds}
-                            onToggleSelect={handleToggleSelect}
-                            onDeleteSelected={handleDeleteSelected}
-                            onDeleteTask={handleDeleteTask}
-                            onAddTask={handleAddTask}
-                            onRenameFeature={handleRenameFeature}
-                            onDeleteFeature={handleDeleteFeature}
-                        />
-                    ))
-                }
-
-                {/* Row for adding a new section at the bottom */}
-                <AddSectionRow onAdd={handleAddFeature} />
-            </ScrollView >
-        </View >
+      <View style={[styles.root, { justifyContent: "center", alignItems: "center" }]}>
+        <Text style={styles.subtitle}>Loading...</Text>
+      </View>
     );
+  }
+
+  return (
+    <View style={styles.root}>
+      <View style={styles.titleBar}>
+        <Text style={styles.title}>{MOCK_HOUSEHOLD.name}</Text>
+        <Text style={styles.subtitle}>
+          {features.length} section{features.length !== 1 ? "s" : ""} ·{" "}
+          {features.reduce((n, l) => n + Array.from(l.tasks).length, 0)} tasks
+        </Text>
+      </View>
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {features.map((loc) => (
+          <FeatureGroup
+            key={loc.id}
+            feature={loc}
+            selectedIds={selectedIds}
+            onToggleSelect={handleToggleSelect}
+            onDeleteSelected={handleDeleteSelected}
+            onDeleteTask={handleDeleteTask}
+            onAddTask={handleAddTask}
+            onRenameFeature={handleRenameFeature}
+            onDeleteFeature={handleDeleteFeature}
+          />
+        ))}
+
+        <AddSectionRow onAdd={handleAddFeature} />
+      </ScrollView>
+    </View>
+  );
 }
 
-// Accent color and background color constants
-const ACCENT = "#4169E1";
-const BG = "#f0f2f5";
-
-// All styles for the list screen
 const styles = StyleSheet.create({
-    // Root container fills the screen
     root: {
-        flex: 1, // take up all available space
-        backgroundColor: BG, // light gray background
+        flex: 1,
+        backgroundColor: BG,
     },
-    // Scroll view fills remaining space
     scroll: {
-        flex: 1, // take remaining vertical space
+        flex: 1,
     },
-    // Padding inside the scroll view
     scrollContent: {
-        padding: 16, // space around content
-        paddingBottom: 48, // extra space at the bottom so content isn't cut off
+        padding: 16,
+        paddingBottom: 48,
     },
-
-    // Title bar above the scroll area
     titleBar: {
-        paddingHorizontal: 20, // side padding
-        paddingTop: 4, // small top gap
-        paddingBottom: 10, // space before the list starts
+        paddingHorizontal: 20,
+        paddingTop: 4,
+        paddingBottom: 10,
     },
-    // Main title text
     title: {
-        fontSize: 22, // large text
-        fontWeight: "700", // bold
-        color: "#1a1a2e", // dark color
+        fontSize: 22,
+        fontWeight: "700",
+        color: "#1a1a2e",
     },
-    // Subtitle showing counts
     subtitle: {
-        fontSize: 13, // smaller text
-        color: "#888", // gray
-        marginTop: 2, // tiny gap below the title
+        fontSize: 13,
+        color: "#888",
+        marginTop: 2,
     },
-
-    // Card container for each feature group
     featureGroup: {
-        backgroundColor: "#fff", // white card
-        borderRadius: 14, // rounded corners
-        marginBottom: 14, // space between cards
-        overflow: "hidden", // clip children to rounded corners
-        elevation: 1, // android shadow
-        shadowColor: "#000", // ios shadow color
-        shadowOffset: { width: 0, height: 1 }, // shadow direction
-        shadowOpacity: 0.06, // very subtle shadow
-        shadowRadius: 4, // shadow blur
+        backgroundColor: "#fff",
+        borderRadius: 14,
+        marginBottom: 14,
+        overflow: "hidden",
+        elevation: 1,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
     },
-    // Header bar inside each feature group
     featureHeader: {
-        flexDirection: "row", // items in a row
-        alignItems: "center", // vertically centered
-        paddingVertical: 12, // top and bottom padding
-        paddingHorizontal: 14, // side padding
-        backgroundColor: "#fafbfd", // slightly off-white background
-        borderBottomWidth: StyleSheet.hairlineWidth, // thin separator line
-        borderBottomColor: "#e8e8e8", // light gray separator
+        flexDirection: "row",
+        alignItems: "center",
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        backgroundColor: "#fafbfd",
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: "#e8e8e8",
     },
-    // Feature name text
     featureName: {
-        fontSize: 16, // medium text
-        fontWeight: "600", // semi-bold
-        color: "#1a1a2e", // dark
-        marginLeft: 10, // gap after the icon
+        fontSize: 16,
+        fontWeight: "600",
+        color: "#1a1a2e",
+        marginLeft: 10,
     },
-    // Text input for renaming a feature
     featureNameInput: {
-        flex: 1, // fill available space
-        fontSize: 16, // match the name text size
-        fontWeight: "600", // match the name weight
-        color: "#1a1a2e", // match the name color
-        marginLeft: 10, // same gap as the name
-        borderBottomWidth: 2, // underline to show editing
-        borderBottomColor: ACCENT, // accent colored underline
-        paddingVertical: 2, // small vertical padding
-        paddingHorizontal: 4, // small horizontal padding
+        flex: 1,
+        fontSize: 16,
+        fontWeight: "600",
+        color: "#1a1a2e",
+        marginLeft: 10,
+        borderBottomWidth: 2,
+        borderBottomColor: ACCENT,
+        paddingVertical: 2,
+        paddingHorizontal: 4,
     },
-    // Small badge showing the number of tasks
     taskCount: {
-        fontSize: 12, // small text
-        fontWeight: "600", // semi-bold
-        color: "#bbb", // light gray
-        backgroundColor: "#f0f0f0", // pill background
-        borderRadius: 10, // rounded pill shape
-        paddingHorizontal: 8, // side padding
-        paddingVertical: 2, // top/bottom padding
-        marginLeft: 6, // gap from the name
-        overflow: "hidden", // clip to rounded corners
+        fontSize: 12,
+        fontWeight: "600",
+        color: "#bbb",
+        backgroundColor: "#f0f0f0",
+        borderRadius: 10,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        marginLeft: 6,
+        overflow: "hidden",
     },
-    // Container for the edit/delete action buttons
     headerActions: {
-        flexDirection: "row", // buttons side by side
-        marginLeft: 6, // gap from the task count
+        flexDirection: "row",
+        marginLeft: 6,
     },
-    // Individual header action button
     headerActionBtn: {
-        padding: 4, // tap target padding
-        marginLeft: 2, // small gap between buttons
+        padding: 4,
+        marginLeft: 2,
     },
-
-    // Red batch delete button that appears when tasks are selected
     batchDeleteBtn: {
-        flexDirection: "row", // icon and count side by side
-        alignItems: "center", // vertically centered
-        paddingHorizontal: 8, // side padding
-        paddingVertical: 3, // top/bottom padding
-        borderRadius: 6, // slightly rounded
-        backgroundColor: "#fdecea", // light red background
-        marginLeft: 8, // gap from other elements
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 6,
+        backgroundColor: "#fdecea",
+        marginLeft: 8,
     },
-    // Text showing how many are selected for deletion
     batchDeleteText: {
-        color: "#f44336", // red text
-        fontSize: 12, // small
-        fontWeight: "700", // bold
-        marginLeft: 2, // gap after the icon
+        color: "#f44336",
+        fontSize: 12,
+        fontWeight: "700",
+        marginLeft: 2,
     },
-
-    // Container for the list of task rows
     taskListContainer: {
-        paddingHorizontal: 4, // slight indent
+        paddingHorizontal: 4,
     },
-    // Individual task row
     taskRow: {
-        flexDirection: "row", // everything in a row
-        alignItems: "center", // vertically centered
-        paddingVertical: 10, // top/bottom spacing
-        paddingHorizontal: 4, // side spacing
-        marginHorizontal: 4, // outer margin
-        borderBottomWidth: StyleSheet.hairlineWidth, // thin separator
-        borderBottomColor: "#f0f0f0", // very light separator
+        flexDirection: "row",
+        alignItems: "center",
+        paddingVertical: 10,
+        paddingHorizontal: 4,
+        marginHorizontal: 4,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: "#f0f0f0",
     },
-    // Highlighted style when a task row is selected
     taskRowSelected: {
-        backgroundColor: "#f3f0ff", // light purple tint
+        backgroundColor: "#f3f0ff",
     },
-    // Checkbox area
     checkbox: {
-        marginRight: 6, // gap between checkbox and icon
+        marginRight: 6,
     },
-    // Wrapper around the task type icon
     taskIconWrap: {
-        width: 32, // fixed size
-        height: 32, // square
-        borderRadius: 8, // rounded square
-        backgroundColor: "#eef0ff", // light accent background
-        alignItems: "center", // center the icon
-        justifyContent: "center", // center the icon
-        marginRight: 10, // gap before the task info
+        width: 32,
+        height: 32,
+        borderRadius: 8,
+        backgroundColor: "#eef0ff",
+        alignItems: "center",
+        justifyContent: "center",
+        marginRight: 10,
     },
-    // Container for task name and health bar
     taskInfo: {
-        flex: 1, // take up remaining space
+        flex: 1,
     },
-    // Task name text
     taskName: {
-        fontSize: 14, // regular size
-        fontWeight: "500", // medium weight
-        color: "#333", // dark gray
-        marginBottom: 4, // gap before the health bar
+        fontSize: 14,
+        fontWeight: "500",
+        color: "#333",
+        marginBottom: 4,
     },
-    // Delete button on the right side of each task
     taskDeleteBtn: {
-        padding: 6, // tap target
-        marginLeft: 4, // gap from task info
+        padding: 6,
+        marginLeft: 4,
     },
-
-    // Row layout for the health bar and its label
     healthBarRow: {
-        flexDirection: "row", // bar and label side by side
-        alignItems: "center", // vertically centered
+        flexDirection: "row",
+        alignItems: "center",
     },
-    // Outer track of the health bar
     healthBarOuter: {
-        flex: 1, // fill available width
-        height: 5, // thin bar
-        borderRadius: 3, // rounded ends
-        backgroundColor: "#ececec", // gray track
-        overflow: "hidden", // clip the inner fill
+        flex: 1,
+        height: 5,
+        borderRadius: 3,
+        backgroundColor: "#ececec",
+        overflow: "hidden",
     },
-    // Inner colored fill of the health bar
     healthBarInner: {
-        height: "100%", // fill the track height
-        borderRadius: 3, // match the track rounding
+        height: "100%",
+        borderRadius: 3,
     },
-    // Percentage label next to the health bar
     healthBarLabel: {
-        fontSize: 10, // small text
-        fontWeight: "700", // bold
-        marginLeft: 6, // gap from the bar
-        width: 32, // fixed width so it doesn't shift
-        textAlign: "right", // right-align the percentage
+        fontSize: 10,
+        fontWeight: "700",
+        marginLeft: 6,
+        width: 32,
+        textAlign: "right",
     },
-
-    // Empty state when a feature has no tasks
     emptyState: {
-        alignItems: "center", // center horizontally
-        paddingVertical: 20, // vertical spacing
+        alignItems: "center",
+        paddingVertical: 20,
     },
-    // "No tasks yet" text
     emptyStateText: {
-        fontSize: 13, // small text
-        color: "#ccc", // light gray
-        marginTop: 4, // gap below the icon
+        fontSize: 13,
+        color: "#ccc",
+        marginTop: 4,
     },
-
-    // Row for adding a new task at the bottom of each group
     addTaskRow: {
-        flexDirection: "row", // icon and input side by side
-        alignItems: "center", // vertically centered
-        paddingHorizontal: 14, // side padding
-        paddingVertical: 10, // top/bottom padding
-        borderTopWidth: StyleSheet.hairlineWidth, // separator from tasks above
-        borderTopColor: "#f0f0f0", // light separator
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: "#f0f0f0",
     },
-    // Text input for the new task name
-    addTaskInput: {
-        flex: 1, // fill remaining space
-        fontSize: 14, // regular size
-        color: "#333", // dark text
-        paddingVertical: 6, // inner vertical padding
-        paddingHorizontal: 10, // inner horizontal padding
+    addTaskPlaceholder: {
+      fontSize: 14,
+      color: "#bbb",
     },
-    // "Add" button that appears when text is entered
-    addTaskBtn: {
-        backgroundColor: ACCENT, // accent colored button
-        paddingHorizontal: 14, // side padding
-        paddingVertical: 6, // top/bottom padding
-        borderRadius: 8, // rounded corners
-        marginLeft: 8, // gap from the input
+    addTaskCard: {
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: "#eee",
+      backgroundColor: "#fbfbfd",
     },
-    // Text inside the add button
-    addTaskBtnText: {
-        color: "#fff", // white text
-        fontSize: 13, // small
-        fontWeight: "700", // bold
+    addTaskLabel: {
+      fontSize: 11,
+      fontWeight: "600",
+      color: "#999",
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+      marginTop: 8,
+      marginBottom: 4,
     },
-
-    // Dashed row for adding a new section/feature
+    addTaskNameInput: {
+      fontSize: 14,
+      color: "#333",
+      backgroundColor: "#fff",
+      borderWidth: 1,
+      borderColor: "#e8e8e8",
+      borderRadius: 8,
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      marginBottom: 4,
+    },
+    presetScroll: {
+      marginBottom: 4,
+    },
+    presetScrollContent: {
+      gap: 6,
+    },
+    presetChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 14,
+      backgroundColor: "#eef0ff",
+      borderWidth: 1,
+      borderColor: "#dde0f0",
+    },
+    presetChipActive: {
+      backgroundColor: ACCENT,
+      borderColor: ACCENT,
+    },
+    presetChipText: {
+      fontSize: 12,
+      fontWeight: "500",
+      color: ACCENT,
+    },
+    presetChipTextActive: {
+      color: "#fff",
+    },
+    iconPickerRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+      marginBottom: 4,
+    },
+    iconPickerItem: {
+      width: 36,
+      height: 36,
+      borderRadius: 8,
+      backgroundColor: "#f0f0f0",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    iconPickerItemActive: {
+      backgroundColor: ACCENT,
+    },
+    freqRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+      marginBottom: 8,
+    },
+    freqPill: {
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      borderRadius: 14,
+      backgroundColor: "#f0f0f0",
+      borderWidth: 1,
+      borderColor: "#e0e0e0",
+    },
+    freqPillActive: {
+      backgroundColor: ACCENT,
+      borderColor: ACCENT,
+    },
+    freqPillText: {
+      fontSize: 12,
+      fontWeight: "500",
+      color: "#666",
+    },
+    freqPillTextActive: {
+      color: "#fff",
+    },
+    customFreqRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginBottom: 8,
+    },
+    customFreqLabel: {
+      fontSize: 13,
+      color: "#666",
+    },
+    customFreqInput: {
+      width: 70,
+      fontSize: 14,
+      color: "#333",
+      backgroundColor: "#fff",
+      borderWidth: 1,
+      borderColor: "#e8e8e8",
+      borderRadius: 8,
+      paddingVertical: 5,
+      paddingHorizontal: 8,
+      textAlign: "center",
+    },
+    addTaskActions: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      gap: 8,
+      marginTop: 4,
+    },
+    addTaskCancelBtn: {
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: 8,
+    },
+    addTaskCancelText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: "#999",
+    },
+    addTaskSubmitBtn: {
+      backgroundColor: ACCENT,
+      paddingHorizontal: 18,
+      paddingVertical: 7,
+      borderRadius: 8,
+    },
+    addTaskSubmitBtnDisabled: {
+      opacity: 0.4,
+    },
+    addTaskSubmitText: {
+      color: "#fff",
+      fontSize: 13,
+      fontWeight: "700",
+    },
     addSectionRow: {
-        flexDirection: "row", // icon and input side by side
-        alignItems: "center", // vertically centered
-        backgroundColor: "#fff", // white background
-        borderRadius: 14, // rounded corners
-        paddingHorizontal: 14, // side padding
-        paddingVertical: 14, // top/bottom padding
-        marginBottom: 14, // space below
-        borderWidth: 1.5, // dashed border thickness
-        borderColor: "#e0e4f0", // light border color
-        borderStyle: "dashed", // dashed style to look different from regular cards
+      backgroundColor: "#fff",
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      marginBottom: 14,
+      borderWidth: 1.5,
+      borderColor: "#e0e4f0",
+      borderStyle: "dashed",
     },
-    // Text input for the new section name
+    addSectionTopRow: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
     addSectionInput: {
-        flex: 1, // fill remaining space
-        fontSize: 15, // slightly larger text
-        color: "#333", // dark text
-        marginLeft: 10, // gap after the icon
-        paddingVertical: 6, // inner vertical padding
-        paddingHorizontal: 10, // inner horizontal padding
+      flex: 1,
+      fontSize: 15,
+      color: "#333",
+      marginLeft: 10,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
     },
-    // "Create" button that appears when text is entered
     addSectionBtn: {
-        backgroundColor: ACCENT, // accent colored
-        paddingHorizontal: 16, // side padding
-        paddingVertical: 7, // top/bottom padding
-        borderRadius: 8, // rounded corners
-        marginLeft: 8, // gap from the input
+      backgroundColor: ACCENT,
+      paddingHorizontal: 16,
+      paddingVertical: 7,
+      borderRadius: 8,
+      marginLeft: 8,
     },
-    // Text inside the create button
     addSectionBtnText: {
-        color: "#fff", // white text
-        fontSize: 13, // small
-        fontWeight: "700", // bold
+      color: "#fff",
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    sectionIconRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+      marginTop: 10,
     },
 });

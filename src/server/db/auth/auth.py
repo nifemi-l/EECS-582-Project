@@ -17,10 +17,18 @@ Known faults: None
 from flask import Blueprint, request, jsonify
 from passlib.context import CryptContext
 from db.db_commands import add_account, get_account_by_email, update_account_last_login
+import jwt
+import os
+from datetime import datetime, timedelta, timezone
 
 # Blueprint for auth routes
 auth_bp = Blueprint("auth", __name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# JWT configuration - secret key, algorithm, and expiration time
+JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_ALG = "HS256"
+JWT_EXPIRE_HOURS = 2
 
 # Resgister route for creating new accounts
 @auth_bp.route("/register", methods=["POST"])
@@ -68,6 +76,7 @@ def login():
         return jsonify({"error": "Missing email or password"}), 400
 
     # Fetch the account from the database using the provided email
+    email = email.strip().lower()
     account = get_account_by_email(email)
 
     # If no account is found with the provided email, return an error
@@ -84,8 +93,23 @@ def login():
     # Only runs if password is correct, update last login time in the database
     update_account_last_login(account_id)
 
+    # Create JWT token payload with account information and expiration time
+    payload = {
+        "account_id": account_id,
+        "username": account_name,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS),
+    }
+
+    # Encode the JWT token using the secret key and algorithm
+    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
+    # DEBUG: print the token and account information to the console for verification
+    print("LOGIN OK, token issued for account:", account_id)
+
+    # Return the token and account information to the client
     return jsonify({
         "message": "Login successful",
+        "token": token,
         "account_id": account_id,
         "username": account_name
     }), 200

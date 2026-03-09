@@ -1,41 +1,184 @@
 /* PROLOGUE
-File name: register+api.ts
-Description: Route contining behavior for /api/auth/register endpoint
-Programmer: Delroy Wright
-Creation date: 2/19/26
-Revision date: 
-Preconditions: A client is running and has requested to register
-Postconditions: A response is returned to the client.
-Errors: Invalid requests may be sent to this endpoint.
+File name: register.tsx
+Description: Provide a registration screen UI that collects username, email, and password verification for account creation
+Programmer: Logan Smith
+Creation date: 2/14/26
+Revision date: N/A
+Preconditions: A React application requesting the register screen route ("/register")
+Postconditions: A registration screen component is ready for rendering; successful registration flow can route back to login (temporary)
+Errors: None
 Side effects: None
 Invariants: None
-Known faults: None
+Known faults: Backend persistence is not implemented yet; registration does not store user data.
 */
 
 
-export async function POST(req: Request) {
-  try {
-    const body = (await req.json()) as {
-      email?: string;
-      password?: string;
-      name?: string;
-    };
+import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-native";
+import { router } from "expo-router";
+import { useState } from "react";
 
-    if (!body.email || !body.password) {
-      return Response.json(
-        { ok: false, error: "email and password required" },
-        { status: 400 }
-      );
+export default function RegisterScreen() {
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password1, setPassword1] = useState("");
+  const [password2, setPassword2] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleRegister() {
+    if (password1 !== password2) {
+      Alert.alert("Passwords do not match", "Please re-enter your passwords.");
+      return;
     }
 
-    // call server logic here 
+    if (!username || !email || !password1) {
+      Alert.alert("Missing fields", "Please fill out all fields.");
+      return;
+    }
 
-    return Response.json(
-      { ok: true, user: { email: body.email, name: body.name ?? null } },
-      { status: 201 }
-    );
-  } catch {
-    return Response.json({ ok: false, error: "invalid JSON" }, { status: 400 });
+    setLoading(true);
+
+    try {
+      const response = await fetch("http://localhost:8000/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: username.trim(),
+          email: email.trim().toLowerCase(),
+          password: password1,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        Alert.alert("Registration Failed", data.error || "Unknown error");
+        setLoading(false);
+        return;
+      }
+
+      Alert.alert("Success", "Account created successfully!");
+      router.replace({
+        pathname: "/login",
+        params: { registered: "true" },
+      });
+
+    } catch (error: any) {
+      Alert.alert("Network Error", error.message);
+    } finally {
+      setLoading(false);
+    }
   }
+
+  return (
+    <View style={styles.page}>
+      <View style={styles.card}>
+        <Text style={styles.title}>Create Account</Text>
+
+        {/* Username */}
+        <TextInput
+          placeholder="Username"
+          style={styles.input}
+          autoCapitalize="none"
+          value={username}
+          onChangeText={setUsername}
+        />
+
+        {/* Email */}
+        <TextInput
+          placeholder="Email"
+          style={styles.input}
+          autoCapitalize="none"
+          value={email}
+          onChangeText={setEmail}
+        />
+
+        {/* Password */}
+        <TextInput
+          placeholder="Password"
+          secureTextEntry
+          style={styles.input}
+          value={password1}
+          onChangeText={setPassword1}
+        />
+
+        {/* Confirm Password */}
+        <TextInput
+          placeholder="Confirm Password"
+          secureTextEntry
+          style={styles.input}
+          value={password2}
+          onChangeText={setPassword2}
+        />
+
+        <Pressable style={styles.button} onPress={handleRegister}>
+          <Text style={styles.buttonText}>Create Account</Text>
+        </Pressable>
+
+        <Pressable onPress={() => router.replace("/login")}>
+          <Text style={styles.link}>Back to login</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 }
 
+const styles = StyleSheet.create({
+  // centers everything on the screen
+  page: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f4f4f4",
+  },
+
+  // the white register box
+  card: {
+    width: "90%",
+    maxWidth: 420,
+    backgroundColor: "white",
+    padding: 28,
+    borderRadius: 14,
+
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 5,
+  },
+
+  title: {
+    fontSize: 28,
+    marginBottom: 22,
+    textAlign: "center",
+    fontWeight: "600",
+  },
+
+  input: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    padding: 14,
+    marginBottom: 14,
+    borderRadius: 8,
+    width: "100%",
+  },
+
+  button: {
+    backgroundColor: "black",
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 6,
+  },
+
+  buttonText: {
+    color: "white",
+    textAlign: "center",
+    fontWeight: "600",
+  },
+
+  link: {
+    marginTop: 18,
+    textAlign: "center",
+    color: "#333",
+  },
+});
