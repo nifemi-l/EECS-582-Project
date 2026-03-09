@@ -19,6 +19,8 @@ Invariants: None
 Known faults: None
 */
 
+//TODO: talk w/ group ab ids, currently strings, do we want to make numbers that the db references?
+//TODO: work w/ jack to ensure all location logic is consistent
 //TODO: make all ids use numbers 
 //TODO: fix highlight not working
 
@@ -96,8 +98,8 @@ function TaskRow({
 }: {
     task: Task;
     isSelected: boolean;
-    onToggleSelect: (id: string) => void;
-    onDeleteTask: (id: string) => void;
+    onToggleSelect: (id: number) => void;
+    onDeleteTask: (id: number) => void;
 }) {
   return (
     <View style={[styles.taskRow, isSelected && styles.taskRowSelected]}>
