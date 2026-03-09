@@ -12,10 +12,11 @@ Invariants: None
 Known faults: Login not storing data until backend database is established.
 */
 
-
+// Imports 
 import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState, useEffect } from "react";
+import { saveToken } from "./authStorage";
 
 // Local state for the email and password text boxes
 export default function LoginScreen() {
@@ -38,7 +39,7 @@ export default function LoginScreen() {
     }
 
     try {
-      const response = await fetch("http://192.168.10.159:8000/auth/login", {
+      const response = await fetch("http://localhost:8000/auth/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -49,10 +50,30 @@ export default function LoginScreen() {
         }),
       });
 
+      // Parse the JSON response from the server, which should contain a token if login is successful
       const data = await response.json();
 
       if (!response.ok) {
         Alert.alert("Login Failed", data.error || "Invalid credentials");
+        return;
+      }
+
+      // Extract the token from the response data
+      const token = data.token;
+
+      // If no token is returned, show an error message
+      if (!token) {
+        Alert.alert("Login Failed", "No token returned");
+        return;
+      }
+
+      // Store the token securely (mobile: SecureStore, web: AsyncStorage)
+      try {
+        await saveToken(token);
+        // DEBUG: Alert to confirm token is saved before navigating
+        Alert.alert("Debug", "Token saved! Redirecting to home...");
+      } catch (e) {
+        Alert.alert("Error", "Failed to store authentication token.");
         return;
       }
 
