@@ -36,6 +36,7 @@ export default class Task {
     healthPercent: number;
 
     constructor(
+        //TODO: get id from database
         task_name: string,
         feature_id: number,
         frequency_days: number,

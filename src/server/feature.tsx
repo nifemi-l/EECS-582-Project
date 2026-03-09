@@ -29,6 +29,7 @@ export default class Feature {
     icon: string; // for compatibility
 
     constructor(feature_name: string, household_id: number, feature_type: string = "", x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline") {
+        //TODO: get id from database
         this.feature_name = feature_name;
         this.name = feature_name;
         this.household_id = household_id;

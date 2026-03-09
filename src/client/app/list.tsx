@@ -19,6 +19,9 @@ Invariants: None
 Known faults: None
 */
 
+//TODO: make all ids use numbers 
+//TODO: fix highlight not working
+
 // Import react hooks we need for state, lifecycle, and performance
 import React, { useCallback, useEffect, useRef, useState } from "react";
 // Import RN components for building the UI
