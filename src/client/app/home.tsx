@@ -111,12 +111,12 @@ function addBlock(cellX: number, cellY: number, cellZ: number) {
   const newModelMatrix = GLM.mat4.create(); // create a new transform 
   GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
   const newMaterial: Material = currentDrawingColor;
-  const newFeature = new Feature(newModelMatrix, newMaterial); // this is the new feature object we're adding
+  const newFeature = new RenderableFeature("test", house.household_id , newModelMatrix, newMaterial); // this is the new feature object we're adding
   // randomly add a second task for demo purposes
   if (Math.round(Math.random()) == 0) {
-    newFeature.tasks.push(new Task());
+    newFeature.tasks.push(new Task("test", newFeature.feature_id, 1, undefined, undefined, null, 9 ));
   }
-  house.features.push(newFeature); // add the feature to the house
+  house.features.add(newFeature); // add the feature to the house
 }
 
 // A helper function to retrieve the cell that was clicked from a given position on the xz plane
@@ -578,7 +578,6 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   lastFrameTime = 0;
   shaderProgram = null; // I don't think this causes a memory leak as Expo should clean up resources on unmount
   bbShaderProgram = null;
-  house = new Household();
   cam = new Camera();
 
   // Rebuild the grid if we're missing it
