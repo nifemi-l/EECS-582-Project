@@ -258,3 +258,82 @@ def update_feature_coordinates(feature_id, x_pos, y_pos, z_pos):
             WHERE feature_id = %s
         """, (x_pos, y_pos, z_pos, feature_id,))
     conn.commit()
+
+def update_feature(feature_id, feature_name, feature_type, x_pos, y_pos, z_pos):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            UPDATE Feature
+            SET feature_name = %s, feature_type = %s, x_pos = %s, y_pos = %s, z_pos = %s
+            WHERE feature_id = %s
+        """, (feature_name, feature_type, x_pos, y_pos, z_pos, feature_id,))
+    conn.commit()
+
+"""
+Functions for deleting data
+"""
+
+def delete_task(task_id):
+    with conn.cursor() as cursor:
+        cursor.execute("DELETE FROM Task WHERE task_id = %s", (task_id,))
+    conn.commit()
+
+def delete_feature(feature_id):
+    with conn.cursor() as cursor:
+        cursor.execute("DELETE FROM Feature WHERE feature_id = %s", (feature_id,))
+    conn.commit()
+
+def delete_household(household_id):
+    with conn.cursor() as cursor:
+        cursor.execute("DELETE FROM Household WHERE household_id = %s", (household_id,))
+    conn.commit()
+
+def delete_account(account_id):
+    with conn.cursor() as cursor:
+        cursor.execute("DELETE FROM Account WHERE account_id = %s", (account_id,))
+    conn.commit()
+
+"""
+Additional update functions
+"""
+
+def update_household(household_id, household_name):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            UPDATE Household
+            SET household_name = %s
+            WHERE household_id = %s
+        """, (household_name, household_id,))
+    conn.commit()
+
+def update_task(task_id, task_name, frequency_days, visibility):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            UPDATE Task
+            SET task_name = %s, frequency_days = %s, visibility = %s
+            WHERE task_id = %s
+        """, (task_name, frequency_days, visibility, task_id,))
+    conn.commit()
+
+def update_account(account_id, account_name, email):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            UPDATE Account
+            SET account_name = %s, email = %s
+            WHERE account_id = %s
+        """, (account_name, email, account_id,))
+    conn.commit()
+
+"""
+Additional add functions
+"""
+
+def add_task(feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            INSERT INTO Task (feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING task_id
+        """, (feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id,))
+        task_id = cursor.fetchone()[0]
+    conn.commit()
+    return task_id

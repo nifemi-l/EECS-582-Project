@@ -16,8 +16,7 @@ Known faults: None
 import Task from "./task"
 
 export default class Feature {
-    feature_id: number;
-    id: string; // for compatibility
+    id: number;
     household_id: number;
     feature_name: string;
     name: string; // for compatibility
@@ -37,8 +36,7 @@ export default class Feature {
         this.x_pos = x;
         this.y_pos = y;
         this.z_pos = z;
-        this.feature_id = feature_id;
-        this.id = feature_id.toString();
+        this.id = 0;
         this.tasks = [];
         this.icon = icon;
     }

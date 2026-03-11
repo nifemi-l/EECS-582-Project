@@ -26,9 +26,9 @@ import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 // Import server classes
-import Task from "../../server/task";
-import Feature from "../../server/feature";
-import Household from "../../server/household";
+import Task from "./data/task";
+import Feature from "./data/feature";
+import Household from "./data/household";
 
 
 // Define the near and far clips for the projection matrix
@@ -114,7 +114,7 @@ function addBlock(cellX: number, cellY: number, cellZ: number) {
   const newFeature = new RenderableFeature("test", house.household_id , newModelMatrix, newMaterial); // this is the new feature object we're adding
   // randomly add a second task for demo purposes
   if (Math.round(Math.random()) == 0) {
-    newFeature.tasks.push(new Task("test", newFeature.feature_id, 1, undefined, undefined, null, 9 ));
+    newFeature.tasks.push(new Task("test", newFeature.id, 1, undefined, undefined, null, 9 ));
   }
   house.features.add(newFeature); // add the feature to the house
 }

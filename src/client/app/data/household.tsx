@@ -19,7 +19,7 @@ import Task from "./task"
 
 export default class Household {
     household_id: number;
-    id: string; // for compatibility
+    id: number; // for compatibility
     household_name: string;
     name: string; // for compatibility
     users: Set<User>;
@@ -30,7 +30,7 @@ export default class Household {
         this.household_name = household_name;
         this.name = household_name;
         this.household_id = household_id;
-        this.id = household_id.toString();
+        this.id = 0;
         this.users = new Set();
         this.features = new Set();
     }

@@ -21,8 +21,7 @@ export enum TaskVisibility {
 }
 
 export default class Task {
-    task_id: number;
-    id: string; // for compatibility with older code
+    id: number; // for compatibility with older code
     feature_id: number;
     task_name: string;
     name: string; // for compatibility with older code
@@ -52,8 +51,7 @@ export default class Task {
         this.icon = icon;
         this.visibility = visibility;
         this.created_by_account_id = created_by_account_id;
-        this.task_id = task_id;
-        this.id = task_id.toString();
+        this.id = task_id;
         this.last_completed = null;
         this.healthPercent = 1;
     }

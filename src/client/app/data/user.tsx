@@ -31,6 +31,9 @@ export default class User {
         this.created_at = new Date();
         this.last_login = null;
         this.households = new Set();
+
+        this.account_id = 0
+        // TODO: grab id from database
     }
 
     setHousehold(household: Household) {

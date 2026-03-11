@@ -16,9 +16,9 @@ Invariants: None
 Known faults: None
 */
 
-import Task from "../../../server/task";
-import Feature from "../../../server/feature";
-import Household from "../../../server/household";
+import Task from "./task";
+import Feature from "./feature";
+import Household from "./household";
 
 // Mock household data used until the real API is hooked up
 export const MOCK_HOUSEHOLD = Household.createMockHousehold();

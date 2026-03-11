@@ -41,9 +41,9 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 // Import server classes
-import Task from "../../server/task";
-import Household from "../../server/household";
-import Feature from "../../server/feature";
+import Task from "./data/task";
+import Household from "./data/household";
+import Feature from "./data/feature";
 
 // Import data helpers, types, presets, and storage utilities
 import {
@@ -56,7 +56,7 @@ import {
   healthColor,
   saveFeatures,
   loadFeatures,
-} from "./data/household";
+} from "./data/householdUtils";
 
 // Accent color and background color constants
 const ACCENT = "#4169E1";
@@ -349,13 +349,13 @@ function FeatureGroup({
   onDeleteFeature,
 }: {
   feature: Feature;
-  selectedIds: Set<string>;
-  onToggleSelect: (id: string) => void;
-  onDeleteSelected: (featureId: string) => void;
-  onDeleteTask: (featureId: string, taskId: string) => void;
-  onAddTask: (featureId: string, name: string, icon: string, freqDays: number) => void;
-  onRenameFeature: (featureId: string, newName: string) => void;
-  onDeleteFeature: (featureId: string) => void;
+  selectedIds: Set<number>;
+  onToggleSelect: (id: number) => void;
+  onDeleteSelected: (featureId: number) => void;
+  onDeleteTask: (featureId: number, taskId: number) => void;
+  onAddTask: (featureId: number, name: string, icon: string, freqDays: number) => void;
+  onRenameFeature: (featureId: number, newName: string) => void;
+  onDeleteFeature: (featureId: number) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(feature.name);
@@ -566,7 +566,7 @@ function AddSectionRow({
 export default function ListScreen() {
   const [features, setFeatures] = useState<Feature[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   // load saved data on mount
   useEffect(() => {
@@ -592,7 +592,7 @@ export default function ListScreen() {
     saveFeatures(features);
   }, [features, loaded]);
 
-  const handleToggleSelect = useCallback((id: string) => {
+  const handleToggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -602,7 +602,7 @@ export default function ListScreen() {
   }, []);
 
   const handleDeleteSelected = useCallback(
-    (featureId: string) => {
+    (featureId: number) => {
       setFeatures((prev) =>
         prev.map((loc) => {
           if (loc.id !== featureId) return loc;
@@ -618,7 +618,7 @@ export default function ListScreen() {
   );
 
   const handleDeleteTask = useCallback(
-    (featureId: string, taskId: string) => {
+    (featureId: number, taskId: number) => {
       setFeatures((prev) =>
         prev.map((loc) => {
           if (loc.id !== featureId) return loc;
@@ -639,10 +639,10 @@ export default function ListScreen() {
   );
 
   const handleAddTask = useCallback(
-    (featureId: string, name: string, icon: string, freqDays: number) => {
+    (featureId: number, name: string, icon: string, freqDays: number) => {
       const newTask: Task = new Task(
         name,
-        parseInt(featureId),
+        featureId,
         freqDays,
         icon
       );
@@ -658,7 +658,7 @@ export default function ListScreen() {
   );
 
   const handleRenameFeature = useCallback(
-    (featureId: string, newName: string) => {
+    (featureId: number, newName: string) => {
       setFeatures((prev) =>
         prev.map((loc) => (loc.id === featureId ? ({ ...loc, name: newName } as any) : loc))
       );
@@ -666,7 +666,7 @@ export default function ListScreen() {
     []
   );
 
-  const handleDeleteFeature = useCallback((featureId: string) => {
+  const handleDeleteFeature = useCallback((featureId: number) => {
     setFeatures((prev) => prev.filter((loc) => loc.id !== featureId));
   }, []);
 
