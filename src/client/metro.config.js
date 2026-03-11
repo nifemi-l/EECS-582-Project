@@ -18,13 +18,6 @@ const path = require("path");
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
 
-// Allow Metro to watch the sibling server directory
-config.watchFolders = [
-  path.resolve(__dirname, "../server"),
-  path.resolve(__dirname, ".."),
-];
-
-
 // Add support for vertex and fragment shaders
 config.resolver.assetExts.push(
     'vert',
