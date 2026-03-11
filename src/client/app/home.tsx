@@ -6,7 +6,7 @@ Creation date: 2/15/26
 Revision date: 
   - 2/15/26: Move graphical context and related code from index.tsx to here. Add comments. 
   - 2/23/26: Add a grid on the xz-axis, the ability to pan and tap, and convert taps from screen to world coordinates
-  - 3/1/26: Add a floor to the house model, features spawn on click with type options, healthbars shown per chore per feature
+  - 3/1/26: Add a floor to the house model, features spawn on click with type options, healthbars shown per task per feature
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -24,6 +24,12 @@ import * as GLM from 'gl-matrix';
 import { LayoutChangeEvent, Platform, Pressable, View, useWindowDimensions } from "react-native";
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+
+// Import server classes
+import Task from "./data/task";
+import Feature from "./data/feature";
+import Household from "./data/household";
+
 
 // Define the near and far clips for the projection matrix
 const NEAR_CLIP = 0.1;
@@ -105,12 +111,12 @@ function addBlock(cellX: number, cellY: number, cellZ: number) {
   const newModelMatrix = GLM.mat4.create(); // create a new transform 
   GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
   const newMaterial: Material = currentDrawingColor;
-  const newFeature = new Feature(newModelMatrix, newMaterial); // this is the new feature object we're adding
-  // randomly add a second chore for demo purposes
+  const newFeature = new RenderableFeature("test", house.household_id , newModelMatrix, newMaterial); // this is the new feature object we're adding
+  // randomly add a second task for demo purposes
   if (Math.round(Math.random()) == 0) {
-    newFeature.chores.push(new Chore());
+    newFeature.tasks.push(new Task("test", newFeature.id, 1, undefined, undefined, null, 9 ));
   }
-  house.features.push(newFeature); // add the feature to the house
+  house.features.add(newFeature); // add the feature to the house
 }
 
 // A helper function to retrieve the cell that was clicked from a given position on the xz plane
@@ -405,46 +411,26 @@ const FEATURE_GREY: Material = {
 const FEATURE_COLORS = [FEATURE_RED, FEATURE_BLUE, FEATURE_GREEN, FEATURE_ORANGE]
 let currentDrawingColor = FEATURE_ORANGE;
 
-// A class represneting a chore object that should be attached to a feature
-class Chore {
-  decayValue: number; // the "heatlhbar" % full. Starting at 1 ending at 0
+// Extended Feature class for 3D rendering
+class RenderableFeature extends Feature {
+  modelMatrix: GLM.mat4;
+  material: Material;
 
-  constructor() {
-    this.decayValue = 1.0; // Default to 1 for now
+  constructor(name: string, household_id: number, mm: GLM.mat4 | null, mat: Material | null) {
+    super(name, household_id);
+    this.modelMatrix = mm || GLM.mat4.create();
+    this.material = mat || FEATURE_ORANGE;
+    // Default task list for demo
+    this.addTask(new Task("Mock Task", 0, 1));
   }
 }
 
-// Define what one of our cleanable features should have
-class Feature {
-   modelMatrix: GLM.mat4; // The transform of the feature in the world
-   material: Material; // How the feature looks materially
-   chores: Chore[]; // The chores associated
 
-   constructor(mm: GLM.mat4 | null, mat: Material | null) {
-    // Assign model matrix to either a provided value or a default
-    if (!mm) {
-      this.modelMatrix = GLM.mat4.create();
-    } else {
-      this.modelMatrix = mm;
-    }
-
-    // Do the same for the material (basically what should the object look like color-wise).
-    if (!mat) {
-      this.material = FEATURE_ORANGE;
-    } else {
-      this.material = mat;
-    }
-
-   // Default chore list
-   this.chores = [new Chore()]
-   }
-}
-
-// This is the household class. It is meant to be the primary way to store and access the currently rendered house model
-class Household {
+// Extended Household class for 3D rendering
+class RenderableHousehold extends Household {
    // A series of relevant variables to render the household on the screen.
    blockVertices: Float32Array; // The vertices that make up a cube (including the normals of each face)
-   features: Feature[]; // The list of feature objects in our household
+   renderableFeatures: RenderableFeature[]; // The list of feature objects in our household
    buffer: WebGLBuffer | null; // A way to access the buffer storing cube vertex data on the GPU
    vao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null; // A single object to store the vertex attribute data and which buffer to bind for the household
    modelLoc: WebGLUniformLocation | null; // The location to access and provide the model matrix data for the shaders to use
@@ -461,7 +447,8 @@ class Household {
    bbHeightOffsetLoc: WebGLUniformLocation | null; // access to the height offset uniform
    bbHealthPercentLoc: WebGLUniformLocation | null; // access to the healthbar's health percent uniform
 
-   constructor() {
+   constructor(name: string) {
+    super(name);
     // Vertices + normal vectors of a cube. Each cube has 6 faces, and each face is made up of two triangles. Each triangle has 3 vertices. 
     this.blockVertices = new Float32Array([
         -0.5, -0.5, -0.5,  0.0,  0.0, -1.0,
@@ -517,15 +504,15 @@ class Household {
     ]);
 
     // These are as mentioned above. We initialize the WebGL specific ones to null because they need a proper WebGL context first
-    this.features = []; // This is variable, start with none
+    this.renderableFeatures = []; // This is variable, start with none
 
     // Add a floor to the house
     const floorMatrix = GLM.mat4.create();
     GLM.mat4.scale(floorMatrix, floorMatrix, [10, 0.5, 10]);
     GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
-    const floorFeature = new Feature(floorMatrix, FEATURE_GREY);
-    floorFeature.chores = []; // reset chores so no healthbar
-    this.features.push(floorFeature);
+    const floorFeature = new RenderableFeature("Floor", this.household_id, floorMatrix, FEATURE_GREY);
+    floorFeature.tasks = []; // reset tasks so no healthbar
+    this.renderableFeatures.push(floorFeature);
 
     // We cannot determine the following entries without a gl context
     this.buffer = null;
@@ -542,7 +529,8 @@ class Household {
     this.bbHealthPercentLoc = null;
    }
 }
-let house = new Household(); // Create a global household object
+let house = new RenderableHousehold("My Home"); // Create a global household object
+
 
 // This is the grid class, used to draw a grid on the screen
 class Grid {
@@ -590,7 +578,6 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   lastFrameTime = 0;
   shaderProgram = null; // I don't think this causes a memory leak as Expo should clean up resources on unmount
   bbShaderProgram = null;
-  house = new Household();
   cam = new Camera();
 
   // Rebuild the grid if we're missing it
@@ -906,12 +893,12 @@ function drawFrame(time: number) {
     gl.uniformMatrix4fv(cam.viewLoc, false, cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
 
     // Iterate through all cubes making up our model and draw them each
-    for (let i = 0; i < house.features.length; i++) {
-      gl.uniformMatrix4fv(house.modelLoc, false, house.features[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
-      gl.uniform3fv(house.ambientLoc, house.features[i].material.ambient); // update lighting uniform values for the material of the object
-      gl.uniform3fv(house.diffuseLoc, house.features[i].material.diffuse);
-      gl.uniform3fv(house.specularLoc, house.features[i].material.specular);
-      gl.uniform1f(house.shininessLoc, house.features[i].material.shininess);
+    for (let i = 0; i < house.renderableFeatures.length; i++) {
+      gl.uniformMatrix4fv(house.modelLoc, false, house.renderableFeatures[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
+      gl.uniform3fv(house.ambientLoc, house.renderableFeatures[i].material.ambient); // update lighting uniform values for the material of the object
+      gl.uniform3fv(house.diffuseLoc, house.renderableFeatures[i].material.diffuse);
+      gl.uniform3fv(house.specularLoc, house.renderableFeatures[i].material.specular);
+      gl.uniform1f(house.shininessLoc, house.renderableFeatures[i].material.shininess);
       gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yiels 6 faces * 6 vertices for 36 vertices to draw.
     }
 
@@ -942,13 +929,13 @@ function drawFrame(time: number) {
       gl.uniformMatrix4fv(cam.bbViewLoc, false, cam.viewMatrix as Float32Array);
       gl.uniformMatrix4fv(cam.bbInverseViewLoc, false, inverseView as Float32Array);
       // Now iterate through
-      for (let i = 0; i < house.features.length; i++) {
+      for (let i = 0; i < house.renderableFeatures.length; i++) {
         // Get the feature position
-        gl.uniformMatrix4fv(house.bbModelLoc, false, house.features[i].modelMatrix as Float32Array);
-        for (let j = 0; j < house.features[i].chores.length; j++) {
-          gl.uniform1f(house.bbHeightOffsetLoc, 0.8 + (j + 1) * 0.4); // Add an offset per chore bar
-          house.features[i].chores[j].decayValue -= delta * 0.1; // add a decay per frame for demonstration purposes
-          gl.uniform1f(house.bbHealthPercentLoc, house.features[i].chores[j].decayValue); // Set chore decay / health percent
+        gl.uniformMatrix4fv(house.bbModelLoc, false, house.renderableFeatures[i].modelMatrix as Float32Array);
+        for (let j = 0; j < house.renderableFeatures[i].tasks.length; j++) {
+          gl.uniform1f(house.bbHeightOffsetLoc, 0.8 + (j + 1) * 0.4); // Add an offset per task bar
+          // house.features[i].tasks[j].decayValue -= delta * 0.1; // add a decay per frame for demonstration purposes
+          gl.uniform1f(house.bbHealthPercentLoc, house.renderableFeatures[i].tasks[j].getAndSetHealthPercent()); // Set task decay / health percent
           gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
         }
       }

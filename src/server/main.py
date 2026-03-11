@@ -16,6 +16,7 @@ Known faults: None
 # Imports
 from flask import Flask
 from db.auth.auth import auth_bp
+from routes import routes_bp
 from flask_cors import CORS
 
 # Initialize Flask app and configure CORS
@@ -24,6 +25,7 @@ CORS(app)
 
 # Register blueprints for route handling
 app.register_blueprint(auth_bp, url_prefix="/auth")
+app.register_blueprint(routes_bp, url_prefix="/api")
 
 # Main entry point to start the Flask server
 if __name__ == "__main__":
