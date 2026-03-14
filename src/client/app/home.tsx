@@ -299,6 +299,27 @@ function ColorButtons() {
       >
         <MaterialCommunityIcons name={drawingColor !== FEATURE_ORANGE ? 'circle-outline' : 'circle'} size={20} color="#de8537" />
       </Pressable>
+
+      {/* Edit grid size buttons */}
+      <Pressable
+        onPress={() => {grid.resize(grid.width + 2, grid.height); house.resizeFloorFeature()}}>
+        <MaterialCommunityIcons name='arrow-right' color="#abcd" />
+      </Pressable>
+
+      <Pressable
+        onPress={() => {grid.resize(grid.width, grid.height + 2); house.resizeFloorFeature()}}>
+        <MaterialCommunityIcons name='arrow-up' color="#abcd" />
+      </Pressable>
+
+      <Pressable
+        onPress={() => {grid.resize(grid.width - 2, grid.height); house.resizeFloorFeature()}}>
+        <MaterialCommunityIcons name='arrow-left' color="#abcd" />
+      </Pressable>
+
+      <Pressable
+        onPress={() => {grid.resize(grid.width, grid.height - 2); house.resizeFloorFeature()}}>
+        <MaterialCommunityIcons name='arrow-down' color="#abcd" />
+      </Pressable>
     </View>
   );
 }
@@ -435,6 +456,14 @@ const FEATURE_GREY: Material = {
 const FEATURE_COLORS = [FEATURE_RED, FEATURE_BLUE, FEATURE_GREEN, FEATURE_ORANGE]
 let currentDrawingColor = FEATURE_ORANGE;
 
+// Define tools to use for different house features
+enum Tool {
+  TOOL_FEATURE,
+  TOOL_WALL,
+  TOOL_GRID,
+  TOOL_EDIT_FEATURE
+}
+
 // A class represneting a chore object that should be attached to a feature
 class Chore {
   decayValue: number; // the "heatlhbar" % full. Starting at 1 ending at 0
@@ -505,6 +534,17 @@ class Household {
    bbModelLoc: WebGLUniformLocation | null; // The location to access and provide the model matrix data for the shaders to use
    bbHeightOffsetLoc: WebGLUniformLocation | null; // access to the height offset uniform
    bbHealthPercentLoc: WebGLUniformLocation | null; // access to the healthbar's health percent uniform
+
+   // change the size of the floor feature to match the grid
+   resizeFloorFeature() {
+    // floor feature is always the first feature in the features array
+    const floorMatrix = GLM.mat4.create();
+    GLM.mat4.scale(floorMatrix, floorMatrix, [grid.width, 0.5, grid.height]);
+    GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
+    const floorFeature = new Feature(floorMatrix, FEATURE_GREY, [0, -1, 0]); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
+    floorFeature.chores = []; // reset chores so no healthbar
+    this.features[0] = floorFeature;
+   }
 
    constructor() {
     // Vertices + normal vectors of a cube. Each cube has 6 faces, and each face is made up of two triangles. Each triangle has 3 vertices. 
@@ -598,6 +638,30 @@ class Grid {
   width: number;
   height: number;
   material: Material;
+
+  // For cases where we want to resize the grid
+  resize(w: number, h: number) {
+    if (w <= 1 || h <= 1) {
+      console.error("Invalid grid size given.");
+      return;
+    }
+
+    // Note: this function should not be called in the render loop
+    if (!glRef) {
+      console.error("Cannot resize grid without OpenGL context.");
+      return;
+    }
+
+    // Set member data
+    this.width = w;
+    this.height = h;
+    this.gridVertices = genGrid(this.width, this.height);
+
+    bindVAO(this.vao);
+    glRef.bindBuffer(glRef.ARRAY_BUFFER, this.buffer);
+    glRef.bufferData(glRef.ARRAY_BUFFER, grid.gridVertices, glRef.STATIC_DRAW); 
+    bindVAO(null);
+  }
 
   constructor() {
     // As above, but no need for normal data
