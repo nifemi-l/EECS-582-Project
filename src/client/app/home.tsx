@@ -678,7 +678,7 @@ class Grid {
     this.material = FEATURE_ORANGE;
   }
 }
-const grid = new Grid(); // Store a global grid object
+let grid = new Grid(); // Store a global grid object
 
 // This is the function called to create the WebGL context, setup extensions if needed, read and compile shaders, and do all
 // other prep work which is neccessary to initialize our renderer. 
@@ -701,6 +701,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   bbShaderProgram = null;
   house = new Household();
   cam = new Camera();
+  grid = new Grid();
 
   // Rebuild the grid if we're missing it
   if (!grid) {
