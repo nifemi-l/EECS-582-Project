@@ -99,6 +99,25 @@ function selectRandomMaterial() {
   return FEATURE_COLORS[index];
 }
 
+// Check if a block already exists on the cell - check against all existing cells. If it does, remove what's there
+function checkValidBlockAndRemove(cellX: number, cellY: number, cellZ: number) {
+  // copy array to new array, without the removed element. We'll do this as we iterate. If we find one to remove, set the result bool
+  let success = true;
+  let copyArray = []; 
+  for (let i = 0; i < house.features.length; i++) {
+    if (house.features[i].x == cellX && house.features[i].y == cellY && house.features[i].z == cellZ) {
+      // We've found a feature not to keep
+      success = false;
+    } else {
+      // We've found a feature we want to keep
+      copyArray.push(house.features[i]);
+    }
+  }
+  // update house array and return success or not
+  house.features = copyArray;
+  return success;
+}
+
 // A function to add a block to the household at a certain position
 function addBlock(cellX: number, cellY: number, cellZ: number) {
   // Disallow invalid block positions. For a grid of size 10,10 we allow range [-5, 4] in the xz directions. We lock to the xz plane (y=0)
@@ -108,10 +127,15 @@ function addBlock(cellX: number, cellY: number, cellZ: number) {
     return;
   }
 
+  // Ensure we haven't already placed a block here. If we have, remove it 
+  if (!checkValidBlockAndRemove(cellX, cellY, cellZ)) {
+    return;
+  }
+
   const newModelMatrix = GLM.mat4.create(); // create a new transform 
   GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
   const newMaterial: Material = currentDrawingColor;
-  const newFeature = new Feature(newModelMatrix, newMaterial); // this is the new feature object we're adding
+  const newFeature = new Feature(newModelMatrix, newMaterial, [cellX, cellY, cellZ]); // this is the new feature object we're adding
   // randomly add a second chore for demo purposes
   if (Math.round(Math.random()) == 0) {
     newFeature.chores.push(new Chore());
@@ -425,8 +449,11 @@ class Feature {
    modelMatrix: GLM.mat4; // The transform of the feature in the world
    material: Material; // How the feature looks materially
    chores: Chore[]; // The chores associated
+   x: number;
+   y: number;
+   z: number;
 
-   constructor(mm: GLM.mat4 | null, mat: Material | null) {
+   constructor(mm: GLM.mat4 | null, mat: Material | null, cellPos: [number, number, number] | null) {
     // Assign model matrix to either a provided value or a default
     if (!mm) {
       this.modelMatrix = GLM.mat4.create();
@@ -443,6 +470,18 @@ class Feature {
 
    // Default chore list
    this.chores = [new Chore()]
+
+   // set cell position - this is redundant and should be cleaned up later with model matrix
+   if (!cellPos) {
+    this.x = 0;
+    this.y = 0; 
+    this.z = 0;
+   } else {
+    this.x = cellPos[0];
+    this.y = cellPos[1];
+    this.z = cellPos[2];
+   }
+
    }
 }
 
@@ -529,7 +568,7 @@ class Household {
     const floorMatrix = GLM.mat4.create();
     GLM.mat4.scale(floorMatrix, floorMatrix, [10, 0.5, 10]);
     GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
-    const floorFeature = new Feature(floorMatrix, FEATURE_GREY);
+    const floorFeature = new Feature(floorMatrix, FEATURE_GREY, [0, -1, 0]); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
     floorFeature.chores = []; // reset chores so no healthbar
     this.features.push(floorFeature);
 
