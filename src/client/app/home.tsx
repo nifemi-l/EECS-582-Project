@@ -34,7 +34,8 @@ const FAR_CLIP = 100.0;
 let panVelocityX = 0;
 let panLastX = 0 
 let panVelocityY = 0;
-let panLastY = 0 
+let panLastY = 0; 
+let panYDir = 0;
 
 // A helper function to update the velocity of the pan. We multiply the delta by a constant speed value
 function updateVelocityPan(dx: number, dy: number) {
@@ -50,6 +51,7 @@ const handlePan = Gesture.Pan()
   .onStart(() => {
     panLastX = 0;
     panLastY = 0;
+    panYDir = 0;
   })
 
   // Handle gesture updates and calculate the difference between frames, then update the velocity
@@ -60,12 +62,16 @@ const handlePan = Gesture.Pan()
     const deltaY = event.translationY - panLastY;
     panLastY = event.translationY;
 
+    // store the direction of our y movement
+    panYDir = deltaY > 0 ? 1 : -1;
+
     updateVelocityPan(deltaX, deltaY);
   })
 
   // When we let go of the drag, we no longer want to rotate so we set the rotation value to 0
   .onEnd(() => {
     updateVelocityPan(0, 0);
+    panYDir = 0;
   });
 
 // Handle screen taps (on web, clicks)
@@ -898,10 +904,16 @@ function drawFrame(time: number) {
     // Prepare draw by clearing the screen and depth buffer
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration. 
+    // For the cube draw calls, we need to switch to the correct vertex at  tribute and buffer configuration. 
     // This also updates our view matrix so we can rotate the world around
     gl.useProgram(shaderProgram); // use the household shader program
     bindVAO(house.vao);
+    // Make sure we have high enough velocity to zoom, so we don't annoyingly pan when want to zoom
+    if (Math.abs(panVelocityY) > 1.0) {
+      // scale according to y pan and y drag direction
+      const scaleAmt = panYDir < 0 ? 1 + panVelocityY * delta : 1 + panVelocityY * delta;
+      GLM.mat4.scale(cam.viewMatrix, cam.viewMatrix, [scaleAmt, scaleAmt, scaleAmt]);
+    }
     GLM.mat4.rotateY(cam.viewMatrix, cam.viewMatrix, panVelocityX * delta); // Rotate the world according to the frame delta for smooth movement
     gl.uniformMatrix4fv(cam.viewLoc, false, cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
 
