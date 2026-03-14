@@ -481,6 +481,7 @@ class Feature {
    x: number;
    y: number;
    z: number;
+   visible: boolean;
 
    constructor(mm: GLM.mat4 | null, mat: Material | null, cellPos: [number, number, number] | null) {
     // Assign model matrix to either a provided value or a default
@@ -511,6 +512,7 @@ class Feature {
     this.z = cellPos[2];
    }
 
+   this.visible = true;
    }
 }
 
@@ -606,11 +608,29 @@ class Household {
 
     // Add a floor to the house
     const floorMatrix = GLM.mat4.create();
-    GLM.mat4.scale(floorMatrix, floorMatrix, [10, 0.5, 10]);
+    GLM.mat4.scale(floorMatrix, floorMatrix, [10, 0.5, 10]); // note implicitly depends on grid size defaulting to 10
     GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
     const floorFeature = new Feature(floorMatrix, FEATURE_GREY, [0, -1, 0]); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
     floorFeature.chores = []; // reset chores so no healthbar
-    this.features.push(floorFeature);
+    this.features.push(floorFeature); // must be the first feature
+
+    // Add walls
+    // Left wall
+    const leftWallMatrix = GLM.mat4.create();
+    GLM.mat4.translate(leftWallMatrix, leftWallMatrix, [-5.25, 1.5, 0])
+    GLM.mat4.scale(leftWallMatrix, leftWallMatrix, [0.5, 3, 10.1]); 
+    const leftWall = new Feature(leftWallMatrix, FEATURE_GREY, [-5, -1, 0])
+    leftWall.chores = [];
+    this.features.push(leftWall);
+
+    // Back wall
+    const backWallMatrix = GLM.mat4.create();
+    GLM.mat4.identity(backWallMatrix);
+    GLM.mat4.translate(backWallMatrix, backWallMatrix, [0, 1.5, -5.25])
+    GLM.mat4.scale(backWallMatrix, backWallMatrix, [10.1, 3, 0.5]); 
+    const backWall = new Feature(backWallMatrix, FEATURE_GREY, [0, -1, -5])
+    backWall.chores = [];
+    this.features.push(backWall);
 
     // We cannot determine the following entries without a gl context
     this.buffer = null;
@@ -1023,6 +1043,10 @@ function drawFrame(time: number) {
 
     // Iterate through all cubes making up our model and draw them each
     for (let i = 0; i < house.features.length; i++) {
+      if (!house.features[i].visible) {
+        // Skip invisible features
+        continue;
+      }
       gl.uniformMatrix4fv(house.modelLoc, false, house.features[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
       gl.uniform3fv(house.ambientLoc, house.features[i].material.ambient); // update lighting uniform values for the material of the object
       gl.uniform3fv(house.diffuseLoc, house.features[i].material.diffuse);
