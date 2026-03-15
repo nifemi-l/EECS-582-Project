@@ -623,14 +623,29 @@ class Household {
     leftWall.chores = [];
     this.features.push(leftWall);
 
+    // Right wall
+    const rightWallMatrix = GLM.mat4.create();
+    GLM.mat4.translate(rightWallMatrix, rightWallMatrix, [5.25, 1.5, 0])
+    GLM.mat4.scale(rightWallMatrix, rightWallMatrix, [0.5, 3, 10.1]); 
+    const rightWall = new Feature(rightWallMatrix, FEATURE_GREY, [5, -1, 0])
+    rightWall.chores = [];
+    this.features.push(rightWall);
+
     // Back wall
     const backWallMatrix = GLM.mat4.create();
-    GLM.mat4.identity(backWallMatrix);
     GLM.mat4.translate(backWallMatrix, backWallMatrix, [0, 1.5, -5.25])
     GLM.mat4.scale(backWallMatrix, backWallMatrix, [10.1, 3, 0.5]); 
     const backWall = new Feature(backWallMatrix, FEATURE_GREY, [0, -1, -5])
     backWall.chores = [];
     this.features.push(backWall);
+
+    // Front wall
+    const frontWallMatrix = GLM.mat4.create();
+    GLM.mat4.translate(frontWallMatrix, frontWallMatrix, [0, 1.5, 5.25])
+    GLM.mat4.scale(frontWallMatrix, frontWallMatrix, [10.1, 3, 0.5]); 
+    const frontWall = new Feature(frontWallMatrix, FEATURE_GREY, [0, -1, 5])
+    frontWall.chores = [];
+    this.features.push(frontWall);
 
     // We cannot determine the following entries without a gl context
     this.buffer = null;
@@ -1040,6 +1055,29 @@ function drawFrame(time: number) {
     }
     GLM.mat4.rotateY(cam.viewMatrix, cam.viewMatrix, panVelocityX * delta); // Rotate the world according to the frame delta for smooth movement
     gl.uniformMatrix4fv(cam.viewLoc, false, cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
+
+    // Figure out which walls to hide - walls will be features[1-4]
+    // we need to figure out which walls have vectors pointing towards the camera
+    const upVec = GLM.vec3.fromValues(0, 1, 0);
+    for (let i = 1; i <= 4; i++) {
+      // we add walls in the order left (-x), right (+x) back (+z), front (-z)
+      let sideVec = GLM.vec3.create();
+      switch(i) {
+        case 1:
+          sideVec = GLM.vec3.fromValues(-1, 0, 0); 
+        case 2:
+          sideVec = GLM.vec3.fromValues(1, 0, 0);
+        case 3:
+          sideVec = GLM.vec3.fromValues(0, 0, 1);
+        case 4:
+          sideVec = GLM.vec3.fromValues(0, 0, -1);
+      }
+      const dotVec = GLM.vec3.create();
+      GLM.vec3.dot(upVec, sideVec); // Get the normal for each wall in normal space
+
+      // Transform normal using view matrix
+      
+    }
 
     // Iterate through all cubes making up our model and draw them each
     for (let i = 0; i < house.features.length; i++) {
