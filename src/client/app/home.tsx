@@ -1058,25 +1058,35 @@ function drawFrame(time: number) {
 
     // Figure out which walls to hide - walls will be features[1-4]
     // we need to figure out which walls have vectors pointing towards the camera
-    const upVec = GLM.vec3.fromValues(0, 1, 0);
     for (let i = 1; i <= 4; i++) {
       // we add walls in the order left (-x), right (+x) back (+z), front (-z)
+
+      // Get the normal pointing away from the origin for each wall
       let sideVec = GLM.vec3.create();
       switch(i) {
         case 1:
-          sideVec = GLM.vec3.fromValues(-1, 0, 0); 
+          sideVec = GLM.vec3.fromValues(1, 0, 0); 
+          break;
         case 2:
-          sideVec = GLM.vec3.fromValues(1, 0, 0);
+          sideVec = GLM.vec3.fromValues(-1, 0, 0);
+          break;
         case 3:
           sideVec = GLM.vec3.fromValues(0, 0, 1);
+          break;
         case 4:
           sideVec = GLM.vec3.fromValues(0, 0, -1);
-      }
-      const dotVec = GLM.vec3.create();
-      GLM.vec3.dot(upVec, sideVec); // Get the normal for each wall in normal space
+          break;
+        }
 
-      // Transform normal using view matrix
-      
+        // Calculate the camera forward vector from the view matrix
+        const cameraFwdVec = GLM.vec3.fromValues(
+          // camera forward is the third column in the view matrix
+          cam.viewMatrix[2], cam.viewMatrix[6], cam.viewMatrix[10]
+        );
+
+        // Check if the normal is facing more away from the camera or to the camera and set visibility accordingly
+        const dot = GLM.vec3.dot(sideVec, cameraFwdVec);
+        house.features[i].visible = dot > 0;
     }
 
     // Iterate through all cubes making up our model and draw them each
