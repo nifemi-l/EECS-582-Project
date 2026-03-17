@@ -24,6 +24,16 @@ import * as GLM from 'gl-matrix';
 import { LayoutChangeEvent, Platform, Pressable, View, useWindowDimensions } from "react-native";
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Text } from '@react-navigation/elements';
+
+// Define tools to use for different house features
+enum Tool {
+  TOOL_FEATURE,
+  TOOL_WALL,
+  TOOL_GRID,
+  TOOL_EDIT_FEATURE
+}
+let currentTool = Tool.TOOL_FEATURE;
 
 // Define the near and far clips for the projection matrix
 const NEAR_CLIP = 0.1;
@@ -87,11 +97,20 @@ const handleTap = Gesture.Tap() // Handle the tap gesture
       } else {
         // We have successfully found a world position from our tap, so figure out what cell we're in
         const tappedCell = cellFromCoords(worldPos[0], worldPos[2]);
-        // Add the matrix to House
-        addBlock(tappedCell[0], 0, tappedCell[1]);
+        // Add to House or select depending on tool
+        if (isUsingEditTool()) {
+          console.log("Edit!");
+        } else {
+          addBlock(tappedCell[0], 0, tappedCell[1]);
+        }
       }
     }
   })
+
+// This needs to be a function so that we can dynamically change the tool
+function isUsingEditTool() {
+  return currentTool === Tool.TOOL_EDIT_FEATURE;
+}
 
 // Select a random material from the materials list
 function selectRandomMaterial() {
@@ -324,6 +343,56 @@ function ColorButtons() {
   );
 }
 
+// A window that will appear to edit feature info
+function EditWindow() {
+  // the feature being edited
+  const [editFeature, setEditFeature] = useState(house.features[0]);
+  // if in edit mode or not
+  const [isEditing, setIsEditing] = useState(false);
+
+  // sync feature
+  if (editFeature !== selectedEditFeature) {
+    setEditFeature(selectedEditFeature);
+  }
+
+  return (
+    <View 
+      style={{
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          position: "absolute",
+          top: 10,
+          left: 20,
+          padding: 10,
+          zIndex: 10,
+          gap: 10,
+        }}
+      >
+        {/* Edit button */}
+        <Pressable
+          onPress={() => {
+            currentTool = isEditing ? Tool.TOOL_FEATURE : Tool.TOOL_EDIT_FEATURE;
+            setIsEditing(!isEditing);
+          }}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name='wrench' color={isEditing ? "rgb(255, 0, 0)": "rgb(47, 47, 255)"}/>
+        </Pressable>
+
+        {/* Context Edit Window */}
+        <View
+          style={{
+            backgroundColor: "rgb(189, 41, 41)",
+            zIndex: 20,
+          }}
+        >
+        <Text>Hello</Text>
+        </View>
+    </View>
+  );
+}
+
 // Outline the layout of the main page. The GLView component will provide our WebGL context for graphics, the ViewToggle
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
 // the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
@@ -359,6 +428,7 @@ export default function Index() {
         />
       </GestureDetector>
 
+      <EditWindow />
       <ColorButtons />
     </View>
   );
@@ -455,14 +525,6 @@ const FEATURE_GREY: Material = {
 // We will pick from this array of colors
 const FEATURE_COLORS = [FEATURE_RED, FEATURE_BLUE, FEATURE_GREEN, FEATURE_ORANGE]
 let currentDrawingColor = FEATURE_ORANGE;
-
-// Define tools to use for different house features
-enum Tool {
-  TOOL_FEATURE,
-  TOOL_WALL,
-  TOOL_GRID,
-  TOOL_EDIT_FEATURE
-}
 
 // A class represneting a chore object that should be attached to a feature
 class Chore {
@@ -663,6 +725,7 @@ class Household {
    }
 }
 let house = new Household(); // Create a global household object
+let selectedEditFeature: Feature = house.features[0]; // The current feature being edited in the edit window
 
 // This is the grid class, used to draw a grid on the screen
 class Grid {
@@ -1086,7 +1149,7 @@ function drawFrame(time: number) {
 
         // Check if the normal is facing more away from the camera or to the camera and set visibility accordingly
         const dot = GLM.vec3.dot(sideVec, cameraFwdVec);
-        house.features[i].visible = dot > 0;
+        house.features[i].visible = dot > 0.1;
     }
 
     // Iterate through all cubes making up our model and draw them each
