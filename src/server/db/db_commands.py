@@ -2,9 +2,10 @@
 PROLOGUE
 File name: db_commands.py
 Description: Handles database connectivity and defines functions for inserting, updating, and retrieving data from the PostgreSQL database.
-Programmer: Blake Carlson
+Programmers: Blake Carlson, Logan Smith
 Creation date: 2/22/26
 Revision date: 
+    - 3/19/26: Added create_household, make_household_join_code, add_account_to_household, get_household_by_join_code, is_account_in_household, and get_households_for_account
 Preconditions: Environment variables for database credentials are defined in .env; PostgreSQL database is running and accessible.
 Postconditions: A database connection is established and utility functions are available for performing CRUD operations on Household, Account, Feature, and Task relations.
 Errors: Database connection may fail due to invalid credentials, unreachable host, or server-side errors; SQL execution errors may occur if schema constraints are violated.
@@ -18,6 +19,8 @@ This file is used to connect to the database and define functions for adding / r
 """
 
 import psycopg2
+import random
+import string
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
@@ -111,10 +114,100 @@ def add_task(new_feature_id, existing_task_name, task_frequency_days, time_last_
 def add_account_role(account_id, household_id, role):
     with conn.cursor() as cursor:
         cursor.execute("""
-            INSERT INTO AccountRole (account_id, household_id, role)
+            INSERT INTO HouseholdMember (account_id, household_id, role)
             VALUES (%s, %s, %s)
         """, (account_id, household_id, role,))
     conn.commit()
+
+# Generate a unique join code for households
+def make_household_join_code(length=8):
+    alphabet = string.ascii_uppercase + string.digits
+    return "".join(random.choices(alphabet, k=length))
+
+# Create a new household and store the join code, maker included
+def create_household(household_name, creator_account_id=None):
+    with conn.cursor() as cursor:
+        while True:
+            join_code = make_household_join_code(8)
+            try:
+                cursor.execute("""
+                    INSERT INTO Household (household_name, join_code, created_by_account_id)
+                    VALUES (%s, %s, %s)
+                    RETURNING household_id, household_name, join_code, created_by_account_id, created_at, updated_at
+                """, (household_name, join_code, creator_account_id))
+                row = cursor.fetchone()
+                break
+            except psycopg2.errors.UniqueViolation:
+                conn.rollback()
+                continue
+
+    conn.commit()
+    return {
+        "household_id": row[0],
+        "household_name": row[1],
+        "join_code": row[2],
+        "created_by_account_id": row[3],
+        "created_at": row[4],
+        "updated_at": row[5],
+    }
+
+# Add the account to the household membership table
+def add_account_to_household(account_id, household_id, role):
+    add_account_role(account_id, household_id, role)
+
+# Retrieve a household row by its join code
+def get_household_by_join_code(join_code):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT household_id, household_name, join_code, created_by_account_id, created_at, updated_at
+            FROM Household
+            WHERE join_code = %s
+        """, (join_code,))
+        row = cursor.fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "household_id": row[0],
+        "household_name": row[1],
+        "join_code": row[2],
+        "created_by_account_id": row[3],
+        "created_at": row[4],
+        "updated_at": row[5],
+    }
+
+# Check membership existence to avoid duplicate enrollments
+def is_account_in_household(account_id, household_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT 1 FROM HouseholdMember
+            WHERE account_id = %s AND household_id = %s
+        """, (account_id, household_id))
+        result = cursor.fetchone()
+    return bool(result)
+
+# Retrieve household summaries for a member account
+def get_households_for_account(account_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT h.household_id, h.household_name, h.join_code, h.created_by_account_id, h.created_at, h.updated_at
+            FROM Household h
+            JOIN HouseholdMember hm ON h.household_id = hm.household_id
+            WHERE hm.account_id = %s
+        """, (account_id,))
+        households = cursor.fetchall()
+    return [
+        {
+            "household_id": row[0],
+            "household_name": row[1],
+            "join_code": row[2],
+            "created_by_account_id": row[3],
+            "created_at": row[4],
+            "updated_at": row[5],
+        }
+        for row in households
+    ]
 
 """
 Functions for retrieving specific data from the database
@@ -186,7 +279,7 @@ def get_account_roles_by_account_id(account_id):
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT household_id, role
-            FROM AccountRole
+            FROM HouseholdMember
             WHERE account_id = %s
         """, (account_id,))
         roles = cursor.fetchall()
@@ -197,7 +290,7 @@ def get_account_roles_by_household_id(household_id):
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT account_id, role
-            FROM AccountRole
+            FROM HouseholdMember
             WHERE household_id = %s
         """, (household_id,))
         roles = cursor.fetchall()

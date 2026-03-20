@@ -10,6 +10,7 @@ Revision date:
   - 3/1/26: Add AsyncStorage persistence (load on mount, save on change),
              expanded add-task card with icon picker / frequency pills / presets,
              location icon picker for new sections; restore TaskRow comments
+  - 3/19/26: Fixed an excessive terminal output bug.
 Preconditions: household.ts must export storage helpers and preset constants
 Postconditions: Renders an interactive, persisted task list organized by location
 Errors: None. Will always render successfully; storage failures are logged silently
@@ -47,7 +48,7 @@ import {
   healthPercent,
   loadLocations,
   saveLocations,
-} from "./data/household";
+} from "../../../data/household";
 
 // Counter for generating unique IDs
 let nextId = 100;
@@ -759,8 +760,7 @@ export default function ListScreen() {
         <Text style={styles.title}>{MOCK_HOUSEHOLD.name}</Text>
         {/* Summary line with section and task counts */}
         <Text style={styles.subtitle}>
-          {locations.length} section{locations.length !== 1 ? "s" : ""} ·{" "}
-          {locations.reduce((n, l) => n + l.tasks.length, 0)} tasks
+          {`${locations.length} section${locations.length !== 1 ? "s" : ""} · ${locations.reduce((n, l) => n + l.tasks.length, 0)} tasks`}
         </Text>
       </View>
 

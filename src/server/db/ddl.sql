@@ -1,13 +1,16 @@
 /*
-Author: Blake Carlson
-Filename: ddl.sql
-Purpose: SQL file containing the DDL for the project database
+File name: ddl.sql
+Description: SQL file containing the DDL for the project database
+Programmers: Blake Carlson, Logan Smith
 Creation Date: 2/15/2026
+Revision date:
+    - 3/19/26: Added Household Relation
 Preconditions: N/A
 Postconditions: Create the base structure of the database with the tables, attributes, and data types
-Error / Exception conditions: N/A
-Side effects: N/A
+Errors: None
+Side effects: None
 Invariants: The structure of the database must match the DDL
+Known faults: None. 
 
 The tables that will need to be created are
     Household
@@ -19,17 +22,26 @@ The tables that will need to be created are
 /* 
 Create a table for the Households
     Attributes:
-        ID (Primary key)
-        Name
-        
-        (Anything else?)
+        ID (Primary key) : Int
+        name : String
+        join code : String
+        created_by : Int
+        created_at : Time
+        updated_at : Time
 */
 CREATE TABLE IF NOT EXISTS Household (
     /* Household has an id as the primary key */
     household_id SERIAL PRIMARY KEY CHECK (household_id > 0),
     /* The name of the household */
-    household_name VARCHAR(50) NOT NULL
-    /* Any more needed? */
+    household_name VARCHAR(50) NOT NULL,
+    /* Shareable code used for joining a household; should be unique */
+    join_code VARCHAR(20) NOT NULL UNIQUE,
+    /* Track which account originally created the household */
+    created_by_account_id INTEGER,
+    /* Store time the household is created */
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    /* Store time the household was last updated */
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 /*
@@ -57,17 +69,25 @@ CREATE TABLE IF NOT EXISTS Account (
     last_login TIMESTAMPTZ
 );
 
-/* Create a table for account roles
+/* Constraint on created_by_account_id to ensure it is an active account and is replaced by NULL if deleted */
+ALTER TABLE Household
+ADD CONSTRAINT fk_household_created_by
+FOREIGN KEY (created_by_account_id)
+REFERENCES Account(account_id)
+ON DELETE SET NULL;
+
+/* Create a table for household membership / roles
     Each account could have a different role in each household
     The roles are either "admin" and "member"
 */
-CREATE TABLE IF NOT EXISTS AccountRole (
+CREATE TABLE IF NOT EXISTS HouseholdMember (
     account_id INTEGER NOT NULL
         REFERENCES Account(account_id) ON DELETE CASCADE,
     household_id INTEGER NOT NULL
         REFERENCES Household(household_id) ON DELETE CASCADE,
     role VARCHAR(10) NOT NULL
         CHECK (role IN ('admin', 'member')),
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (account_id, household_id)
 );
 
@@ -99,7 +119,6 @@ CREATE TABLE IF NOT EXISTS Feature (
     y_pos FLOAT NOT NULL,
     z_pos FLOAT NOT NULL
 );
-
 
 /*
 Create a feature for the individual tasks

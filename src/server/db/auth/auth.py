@@ -5,6 +5,7 @@ Description: Route contining server behavior for authentication - login, registe
 Programmer: Logan Smith
 Creation date: 3/1/26
 Revision date: 
+    - Moved JWT info into util file
 Preconditions: A client is running and has requested an endpoint in the /api/auth/ folder
 Postconditions: A response is returned to the client.
 Errors: Invalid requests may be sent to this endpoint.
@@ -18,16 +19,14 @@ from flask import Blueprint, request, jsonify
 from passlib.context import CryptContext
 from db.db_commands import add_account, get_account_by_email, update_account_last_login
 import jwt
-import os
 from datetime import datetime, timedelta, timezone
+from db.auth.auth_utils import JWT_SECRET, JWT_ALG
 
 # Blueprint for auth routes
 auth_bp = Blueprint("auth", __name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# JWT configuration - secret key, algorithm, and expiration time
-JWT_SECRET = os.environ["JWT_SECRET"]
-JWT_ALG = "HS256"
+# JWT configuration - expiration time for issued login tokens
 JWT_EXPIRE_HOURS = 2
 
 # Resgister route for creating new accounts
@@ -35,11 +34,13 @@ JWT_EXPIRE_HOURS = 2
 def register():
 
     # Get the JSON data from the request body
-    data = request.get_json()
+    data = request.get_json() or {}
 
     # Extract fields from the request body
     account_name = data.get("username")
     email = data.get("email")
+    if email:
+        email = email.strip().lower()
     password = data.get("password")
 
     # Make sure all required fields are present [account_name, email, password]
@@ -65,7 +66,7 @@ def register():
 def login():
 
     # Get the JSON data from the request body
-    data = request.get_json()
+    data = request.get_json() or {}
 
     # Extract fields from the request body
     email = data.get("email")

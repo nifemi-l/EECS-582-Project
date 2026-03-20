@@ -42,23 +42,18 @@ const SENSORS: SensorBadgeProps[] = [
 // Props for the ViewToggle component
 interface ViewToggleProps {
   active: ViewMode; // which view is currently selected
+  onChange: (mode: ViewMode) => void; // callback used by the parent layout to switch views
 }
 
 // Main toggle bar component at the top of the screen
-export default function ViewToggle({ active }: ViewToggleProps) {
-  // Grab the router so we can navigate between pages
-  const router = useRouter();
+export default function ViewToggle({ active, onChange }: ViewToggleProps) {
   // Track which sensor detail card is open, null means all are closed
   const [openLabel, setOpenLabel] = useState<string | null>(null);
 
   // Handle switching between views
   const navigate = (mode: ViewMode) => {
-    if (mode === active) return; // don't navigate if we're already there
-    if (mode === "3d") {
-      router.replace("/home"); // go to the 3D home view
-    } else {
-      router.replace("/list"); // go to the list view
-    }
+    if (mode === active) return; // don't switch if we're already there
+    onChange(mode); // ask the parent layout to navigate
   };
 
   return (
