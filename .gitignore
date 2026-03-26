@@ -1,3 +1,5 @@
 /artifacts
 # database files
 src/server/.env
+#vscode files
+.vscode
