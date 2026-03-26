@@ -39,6 +39,10 @@ let currentTool = Tool.TOOL_FEATURE;
 const NEAR_CLIP = 0.1;
 const FAR_CLIP = 100.0;
 
+// Define min and max world scaling
+const MIN_WORLD_SCALE = 0.1;
+const MAX_WORLD_SCALE = 6.0;
+
 // See https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture for gesture handler details
 // Also define global variables to store this data and update each frame
 let panVelocityX = 0;
@@ -1043,6 +1047,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 
 // This is the function that will be called every frame to draw a frame on in the WebGL context
 const inverseView = GLM.mat4.create(); // store our inverse view matrix here to avoid re-creation every frame
+const scale = GLM.vec3.create(); // store the current scale of our view matrix
 function drawFrame(time: number) {
     // Ensure we have an OpenGL context, if not error and return
     if (!glRef) {
@@ -1110,12 +1115,25 @@ function drawFrame(time: number) {
     // This also updates our view matrix so we can rotate the world around
     gl.useProgram(shaderProgram); // use the household shader program
     bindVAO(house.vao);
+
+    // Scale view matrix (thus scaling the world)
+    // Get the current scale
+    GLM.mat4.getScaling(scale, cam.viewMatrix);
     // Make sure we have high enough velocity to zoom, so we don't annoyingly pan when want to zoom
     if (Math.abs(panVelocityY) > 1.0) {
       // scale according to y pan and y drag direction
+      // scale up = scaleAmt > 1
+      // scale down = scale amt < 1
       const scaleAmt = panYDir < 0 ? 1 + panVelocityY * delta : 1 + panVelocityY * delta;
-      GLM.mat4.scale(cam.viewMatrix, cam.viewMatrix, [scaleAmt, scaleAmt, scaleAmt]);
+
+      // Check if the proposed scale is valid (since we evenly scale, we only need to do this for the first component)
+      const testScale = scaleAmt * scale[0];
+      if (testScale > MIN_WORLD_SCALE && testScale < MAX_WORLD_SCALE) {
+        // we have a valid scale
+        GLM.mat4.scale(cam.viewMatrix, cam.viewMatrix, [scaleAmt, scaleAmt, scaleAmt]);
+      } 
     }
+    
     GLM.mat4.rotateY(cam.viewMatrix, cam.viewMatrix, panVelocityX * delta); // Rotate the world according to the frame delta for smooth movement
     gl.uniformMatrix4fv(cam.viewLoc, false, cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
 
