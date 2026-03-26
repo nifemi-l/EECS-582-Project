@@ -16,7 +16,7 @@ Known faults: None
 */
 
 // Import required components
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { Asset } from 'expo-asset';
 import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
@@ -25,6 +25,7 @@ import { LayoutChangeEvent, Platform, Pressable, View, useWindowDimensions } fro
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@react-navigation/elements';
+import { Button, PaperProvider, Card } from 'react-native-paper';
 
 // Define tools to use for different house features
 enum Tool {
@@ -103,7 +104,7 @@ const handleTap = Gesture.Tap() // Handle the tap gesture
         const tappedCell = cellFromCoords(worldPos[0], worldPos[2]);
         // Add to House or select depending on tool
         if (isUsingEditTool()) {
-          console.log("Edit!");
+          findAndSetSelectedFeature(tappedCell[0], 0, tappedCell[1]);
         } else {
           addBlock(tappedCell[0], 0, tappedCell[1]);
         }
@@ -116,10 +117,22 @@ function isUsingEditTool() {
   return currentTool === Tool.TOOL_EDIT_FEATURE;
 }
 
-// Select a random material from the materials list
-function selectRandomMaterial() {
-  const index = Math.floor(Math.random() * FEATURE_COLORS.length)
-  return FEATURE_COLORS[index];
+// Given coordinates, select the feature in the house lists
+function findAndSetSelectedFeature(cellX: number, cellY: number, cellZ: number) {
+  // iterate through house features. We do it in the order x, z, y since y should always be constant so far (we only support the xz plane)
+  // There should also only ever be one feature that matches
+  for (let i = 0; i < house.features.length; i++) {
+    if (house.features[i].x != cellX || house.features[i].z != cellZ || house.features[i].y != cellY) {
+      continue;
+    } else {
+      // if this is already selected, deselect. Otherwise, select it
+      if (selectedEditFeature === house.features[i]) {
+        setSelectedEditFeature(null);
+      } else {
+        setSelectedEditFeature(house.features[i]);
+      }
+    }
+  }
 }
 
 // Check if a block already exists on the cell - check against all existing cells. If it does, remove what's there
@@ -349,22 +362,17 @@ function ColorButtons() {
 
 // A window that will appear to edit feature info
 function EditWindow() {
-  // the feature being edited
-  const [editFeature, setEditFeature] = useState(house.features[0]);
   // if in edit mode or not
   const [isEditing, setIsEditing] = useState(false);
-
-  // sync feature
-  if (editFeature !== selectedEditFeature) {
-    setEditFeature(selectedEditFeature);
-  }
+  // get the currently selected edit feature
+  const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
 
   return (
     <View 
       style={{
           flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
+          alignItems: "baseline",
+          justifyContent: "flex-end",
           position: "absolute",
           top: 10,
           left: 20,
@@ -374,25 +382,45 @@ function EditWindow() {
         }}
       >
         {/* Edit button */}
-        <Pressable
+        <Button 
+          mode="contained" 
+          style={{backgroundColor: "white"}}
           onPress={() => {
+            // We cannot assume isEditing changes sequentially here
             currentTool = isEditing ? Tool.TOOL_FEATURE : Tool.TOOL_EDIT_FEATURE;
-            setIsEditing(!isEditing);
-          }}
-          hitSlop={8}
-        >
+            selectedEditFeature = null; // should handle updating selectedFeature through callbacks
+            setIsEditing(!isEditing); 
+          }}>
           <MaterialCommunityIcons name='wrench' color={isEditing ? "rgb(255, 0, 0)": "rgb(47, 47, 255)"}/>
-        </Pressable>
+          <Text>  {isEditing ? "View" : "Edit" }</Text>
+        </Button>
 
-        {/* Context Edit Window */}
-        <View
-          style={{
-            backgroundColor: "rgb(189, 41, 41)",
-            zIndex: 20,
-          }}
-        >
-        <Text>Hello</Text>
-        </View>
+        {/* Context Edit Window 
+              In the menu we display:
+                - Button to mark complete
+                - Feature type
+                - Feature time remaining until 0 out of total
+                - Option to change total decay
+        */}
+
+        {/* Case 1: We are editing and have a feature selected */}
+        {/* Case 2: We are editing and no feature is selected */} 
+        {/* Case 3: We are not editing anything */}
+
+        {isEditing && selectedFeature !== null ? (
+          <Card
+            mode='contained'
+          >
+            <Card.Title title={"Feature: (" + selectedFeature.x + ", " + selectedFeature.y + ", " + selectedFeature.z + ")"}/>
+            <Card.Actions>
+              <Button onPress={() => {}}>Set interval</Button>
+              <Button onPress={() => {selectedFeature.chores.forEach((c) => {c.decayValue = 1;})}}>Mark complete!</Button>
+            </Card.Actions>
+          </Card>
+        ) : isEditing && !selectedFeature ? (
+          <Text style={{color: "red"}}>Select a feature to edit</Text>
+        ) : null }
+       
     </View>
   );
 }
@@ -415,26 +443,28 @@ export default function Index() {
   windowWidth = useWindowDimensions().width; 
   windowHeight = useWindowDimensions().height;
   return (
-    <View
-      onLayout={handleLayout}
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <GestureDetector gesture={composedGesture}>
-        <GLView style={{
-          width: "100%",
-          height: "100%"
-        }} 
-        onContextCreate={onContextCreate} 
-        />
-      </GestureDetector>
+    <PaperProvider>
+      <View
+        onLayout={handleLayout}
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <GestureDetector gesture={composedGesture}>
+          <GLView style={{
+            width: "100%",
+            height: "100%"
+          }} 
+          onContextCreate={onContextCreate} 
+          />
+        </GestureDetector>
 
-      <EditWindow />
-      <ColorButtons />
-    </View>
+        <EditWindow />
+        <ColorButtons />
+      </View>
+    </PaperProvider>
   );
 }
 
@@ -729,7 +759,32 @@ class Household {
    }
 }
 let house = new Household(); // Create a global household object
-let selectedEditFeature: Feature = house.features[0]; // The current feature being edited in the edit window
+let selectedEditFeature: Feature | null = null; // The current feature being edited in the edit window
+
+// We'll set up a listener pattern so that we can update the react UI from the GL side
+let reactListeners: ((val: any) => void)[] = []; // Store callback functions to use when state changes
+
+// A function to add a callback function to the listeners list so that we can update react when GL state changes
+function subListener(cb: ((val: any) => void)) {
+  reactListeners.push(cb);
+
+  // return an "unsubscribe" function that will remove the listener from the list
+  return () => {
+    reactListeners = reactListeners.filter((l) => l !== cb); // set the listener list to a new version filtered to just the ones that DON'T match
+    console.log("Unsubscribed listener");
+  };
+}
+
+// setter so that listeners are all notified on update
+function setSelectedEditFeature(feature: Feature | null) {
+  selectedEditFeature = feature;
+  reactListeners.forEach((cb) => cb(selectedEditFeature)); // call the callback set by each listener
+}
+
+// getter for listeners
+function getSelectedEditFeature() {
+  return selectedEditFeature;
+}
 
 // This is the grid class, used to draw a grid on the screen
 class Grid {
