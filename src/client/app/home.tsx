@@ -771,7 +771,6 @@ function subListener(cb: ((val: any) => void)) {
   // return an "unsubscribe" function that will remove the listener from the list
   return () => {
     reactListeners = reactListeners.filter((l) => l !== cb); // set the listener list to a new version filtered to just the ones that DON'T match
-    console.log("Unsubscribed listener");
   };
 }
 
