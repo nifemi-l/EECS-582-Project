@@ -1,0 +1,65 @@
+/* PROLOGUE
+File name: _layout.tsx
+Description: Define the shared household layout for the household-scoped routes.
+             Hoists the ViewToggle into /household/[id] so it persists while switching
+             between the graphics and list views for the same household.
+             Keeps navigation and shared UI scoped to the active household id.
+Programmers: Logan Smith
+Creation date: 3/18/26
+Revision date: N/A
+Preconditions: A valid household ID is present in the route parameters
+Postconditions: Renders the shared household view toggle and the matched child route
+Errors: None
+Side effects: None
+Invariants: None
+Known faults: None
+*/
+
+// Slot renders the matched household child route with no extra stack wrapper
+import { Slot, useLocalSearchParams, usePathname, router } from "expo-router";
+// Basic React Native building blocks for the shared household shell
+import { StyleSheet, View } from "react-native";
+// Shared toggle bar between the 3D and list views
+import ViewToggle from "../../../components/ViewToggle";
+
+export default function HouseholdLayout() {
+  // Read the household id from the dynamic route so toggle navigation stays in the same household
+  const { id } = useLocalSearchParams<{ id: string }>();
+  // Determine the current household sub-route so we know which segment is active
+  const pathname = usePathname();
+  const isList = pathname === `/household/${id}/list`; // true on the list screen, false on graphics
+  const active = isList ? "list" : "3d"; // which toggle segment to highlight
+
+  function handleToggle(next: "3d" | "list") {
+    // Keep navigation scoped to the active household when switching between views
+    if (!id) return;
+
+    if (next === "list") {
+      router.replace({
+        pathname: "/household/[id]/list",
+        params: { id },
+      });
+    } else {
+      router.replace({
+        pathname: "/household/[id]/graphics",
+        params: { id },
+      });
+    }
+  }
+
+  return (
+    // Shared household shell: one toggle for both graphics and list routes
+    <View style={styles.container}>
+      {/* Household layout owns the toggle for /household/[id]/graphics and /household/[id]/list */}
+      <ViewToggle active={active} onChange={handleToggle} />
+      {/* Slot swaps in the matched household route's component below the toggle */}
+      <Slot />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+});

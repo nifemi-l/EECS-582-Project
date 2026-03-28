@@ -12,23 +12,77 @@ Invariants: None
 Known faults: Login not storing data until backend database is established.
 */
 
-
+// Imports 
 import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-native";
-import { router } from "expo-router";
-import { useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useState, useEffect } from "react";
+import { saveToken } from "../utils/authStorage";
 
 // Local state for the email and password text boxes
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const { registered } = useLocalSearchParams();
+
+  // Show success message if redirected from registration
+  useEffect(() => {
+    if (registered === "true") {
+      Alert.alert("Success", "Account created successfully. Please log in.");
+    }
+  }, [registered]);
 
   // Runs when the user presses the Sign In button
-  function handleLogin() {
-    // TEMP AUTH LOGIC
-    // Later: send email/password to backend and verify
-    // For now: always allow login and go to home screen
+  async function handleLogin() {
+    if (!email || !password) {
+      Alert.alert("Missing fields", "Please enter your email and password.");
+      return;
+    }
 
-    router.replace("/home");
+    try {
+      const response = await fetch("http://localhost:8000/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: password,
+        }),
+      });
+
+      // Parse the JSON response from the server, which should contain a token if login is successful
+      const data = await response.json();
+
+      if (!response.ok) {
+        Alert.alert("Login Failed", data.error || "Invalid credentials");
+        return;
+      }
+
+      // Extract the token from the response data
+      const token = data.token;
+
+      // If no token is returned, show an error message
+      if (!token) {
+        Alert.alert("Login Failed", "No token returned");
+        return;
+      }
+
+      // Store the token securely (mobile: SecureStore, web: AsyncStorage)
+      try {
+        await saveToken(token);
+        // DEBUG: Alert to confirm token is saved before navigating
+        Alert.alert("Debug", "Token saved! Redirecting to home...");
+      } catch (e) {
+        Alert.alert("Error", "Failed to store authentication token.");
+        return;
+      }
+
+      // Successful login
+      router.replace("/home");
+
+    } catch (error: any) {
+      Alert.alert("Network Error", error.message);
+    }
   }
 
   return (
