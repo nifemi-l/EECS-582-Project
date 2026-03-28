@@ -19,6 +19,7 @@ Known faults: None
 from flask import Flask
 from db.auth.auth import auth_bp
 from db.household.household import household_bp
+from routes import routes_bp
 from flask_cors import CORS
 
 # Initialize Flask app and configure CORS
@@ -27,6 +28,7 @@ CORS(app)
 
 # Register blueprints for route handling
 app.register_blueprint(auth_bp, url_prefix="/auth")
+app.register_blueprint(routes_bp, url_prefix="/api")
 app.register_blueprint(household_bp, url_prefix="/household")
 
 # Main entry point to start the Flask server
