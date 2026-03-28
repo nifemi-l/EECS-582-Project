@@ -16,7 +16,7 @@ Known faults: Login not storing data until backend database is established.
 import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState, useEffect } from "react";
-import { saveToken } from "./authStorage";
+import { saveToken } from "../utils/authStorage";
 
 // Local state for the email and password text boxes
 export default function LoginScreen() {

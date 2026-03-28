@@ -1,0 +1,36 @@
+/* PROLOGUE
+File name: edit+api.ts
+Description: Route containing behavior for /api/household/edit endpoint, proxying to Flask backend.
+Programmer: Delroy Wright
+Creation date: 3/11/26
+Preconditions: A client is running and has requested to edit a household
+Postconditions: A response from the Flask server is returned to the client.
+*/
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const household_id = body.household_id || body.id;
+
+    if (!household_id) {
+        return Response.json({ ok: false, error: "household_id is required" }, { status: 400 });
+    }
+
+    const backendData = {
+        household_name: body.household_name || body.name
+    };
+
+    const response = await fetch(`http://localhost:8000/api/household/${household_id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(backendData)
+    });
+
+    const data = await response.json();
+    return Response.json(data, { status: response.status });
+  } catch (error) {
+    return Response.json({ ok: false, error: "Failed to connect to backend" }, { status: 500 });
+  }
+}

@@ -17,7 +17,7 @@ Known faults: None
 import { useEffect } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
-import { getToken } from "./authStorage";
+import { getToken } from "../utils/authStorage";
 
 export default function Index() {
   useEffect(() => {

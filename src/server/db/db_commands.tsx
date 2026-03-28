@@ -87,7 +87,7 @@ export async function add_task(new_feature_id: number, existing_task_name: strin
  */
 export async function add_account_role(account_id: number, household_id: number, role: string) {
     await sql`
-        INSERT INTO AccountRole (account_id, household_id, role)
+        INSERT INTO HouseholdMember (account_id, household_id, role)
         VALUES (${account_id}, ${household_id}, ${role})
     `;
 }
@@ -155,7 +155,7 @@ export async function get_tasks_by_feature_id(feature_id: number) {
 export async function get_account_roles_by_account_id(account_id: number) {
     const roles = await sql`
         SELECT household_id, role
-        FROM AccountRole
+        FROM HouseholdMember
         WHERE account_id = ${account_id}
     `;
     return roles;
@@ -165,7 +165,7 @@ export async function get_account_roles_by_account_id(account_id: number) {
 export async function get_account_roles_by_household_id(household_id: number) {
     const roles = await sql`
         SELECT account_id, role
-        FROM AccountRole
+        FROM HouseholdMember
         WHERE household_id = ${household_id}
     `;
     return roles;

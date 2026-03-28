@@ -4,7 +4,7 @@
     "slug": "client",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./app/assets/images/icon.png",
     "scheme": "client",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -14,9 +14,9 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./app/assets/images/android-icon-foreground.png",
+        "backgroundImage": "./app/assets/images/android-icon-background.png",
+        "monochromeImage": "./app/assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
@@ -31,7 +31,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./app/assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -43,7 +43,7 @@
       [
         "expo-asset",
         {
-          "assets": ["./assets/shaders/main.vert", "./assets/shaders/main.frag", "./assets/shaders/billboard.vert", "./assets/shaders/billboard.frag"]
+          "assets": ["./app/assets/shaders/main.vert", "./app/assets/shaders/main.frag", "./app/assets/shaders/billboard.vert", "./app/assets/shaders/billboard.frag"]
         }
       ],
       "expo-secure-store"
