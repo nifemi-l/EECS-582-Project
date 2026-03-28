@@ -445,7 +445,7 @@ function EditWindow() {
           <Card
             mode='contained'
           >
-            <Card.Title title={"Feature: (" + selectedFeature.x + ", " + selectedFeature.y + ", " + selectedFeature.z + ")"}/>
+            <Card.Title title={"Feature: " + house.features.indexOf(selectedFeature)}/>
             <Card.Actions>
               <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}><MaterialCommunityIcons name='arrow-left'/></Button>
               <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}><MaterialCommunityIcons name='arrow-right'/></Button>
