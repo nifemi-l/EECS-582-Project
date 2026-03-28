@@ -27,6 +27,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@react-navigation/elements';
 import { Button, PaperProvider, Card } from 'react-native-paper';
 
+// Define possible move directions in the xz plane
+enum MoveDirection {
+  POS_X,
+  NEG_X,
+  POS_Z,
+  NEG_Z
+}
+
 // Define tools to use for different house features
 enum Tool {
   TOOL_FEATURE,
@@ -154,12 +162,38 @@ function checkValidBlockAndRemove(cellX: number, cellY: number, cellZ: number) {
   return success;
 }
 
-// A function to add a block to the household at a certain position
-function addBlock(cellX: number, cellY: number, cellZ: number) {
+// Check if a block already exists in a cell without removing
+function checkCellFree(cellX: number, cellY: number, cellZ: number) {
+  // Iterate over the features and see if something is in the provided cell. If so, we know it is not free
+  for (let i = 0; i < house.features.length; i++) {
+    if (house.features[i].x == cellX && house.features[i].y == cellY && house.features[i].z == cellZ) {
+      return false;
+    } 
+  }
+  return true;
+}
+
+
+// See if a cell is within the bounds of the grid
+function checkCellInBounds(cellX: number, cellY: number, cellZ: number) {
   // Disallow invalid block positions. For a grid of size 10,10 we allow range [-5, 4] in the xz directions. We lock to the xz plane (y=0)
   const halfGridWidth = Math.floor(grid.width / 2);
   const halfGridHeight = Math.floor(grid.height / 2);
   if ((cellX < 0 - halfGridWidth || cellX >= halfGridWidth) || Math.abs(cellY) > 0 || (cellZ < 0 - halfGridHeight || cellZ >= halfGridHeight)) {
+    return false;
+  }
+  return true;
+}
+
+// A wrapper function to check if a cell is both free and within the grid
+function checkValidCell(cellX: number, cellY: number, cellZ: number) {
+  return checkCellInBounds(cellX, cellY, cellZ) && checkCellFree(cellX, cellY, cellZ);
+}
+
+// A function to add a block to the household at a certain position
+function addBlock(cellX: number, cellY: number, cellZ: number) {
+  // Ensure our cell position is in bounds
+  if (!checkCellInBounds(cellX, cellY, cellZ)) {
     return;
   }
 
@@ -413,6 +447,12 @@ function EditWindow() {
           >
             <Card.Title title={"Feature: (" + selectedFeature.x + ", " + selectedFeature.y + ", " + selectedFeature.z + ")"}/>
             <Card.Actions>
+              <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}><MaterialCommunityIcons name='arrow-left'/></Button>
+              <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}><MaterialCommunityIcons name='arrow-right'/></Button>
+              <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.POS_Z)}}><MaterialCommunityIcons name='arrow-up'/></Button>
+              <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.NEG_Z)}}><MaterialCommunityIcons name='arrow-down'/></Button>
+            </Card.Actions>
+            <Card.Actions>
               <Button onPress={() => {}}>Set interval</Button>
               <Button onPress={() => {selectedFeature.chores.forEach((c) => {c.decayValue = 1;})}}>Mark complete!</Button>
             </Card.Actions>
@@ -642,6 +682,45 @@ class Household {
     const floorFeature = new Feature(floorMatrix, FEATURE_GREY, [0, -1, 0]); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
     floorFeature.chores = []; // reset chores so no healthbar
     this.features[0] = floorFeature;
+   }
+   
+   // Moves the selected edit feature one cell over based on the input direction
+   moveSelectedFeatureByOne(dir: MoveDirection) {
+    // Ensure we have a feature selected
+    if (!selectedEditFeature) {
+      console.error("Attempting to move null feature.");
+      return;
+    }
+
+    // Apply movement. First, check if the proposed move would be within bounds. Then, apply updates to the model matrices and XYZ values.
+    switch (dir) {
+      case MoveDirection.POS_X:
+        if (checkValidCell(selectedEditFeature.x + 1, selectedEditFeature.y, selectedEditFeature.z)) {
+          selectedEditFeature.x += 1;
+          GLM.mat4.translate(selectedEditFeature.modelMatrix, selectedEditFeature.modelMatrix, [1, 0, 0]);
+        }
+        break;
+      case MoveDirection.NEG_X:
+        if (checkValidCell(selectedEditFeature.x - 1, selectedEditFeature.y, selectedEditFeature.z)) {
+          selectedEditFeature.x -= 1;
+          GLM.mat4.translate(selectedEditFeature.modelMatrix, selectedEditFeature.modelMatrix, [-1, 0, 0]);
+        }
+        break;
+      case MoveDirection.POS_Z:
+        if (checkValidCell(selectedEditFeature.x, selectedEditFeature.y, selectedEditFeature.z + 1)) {
+          selectedEditFeature.z += 1;
+          GLM.mat4.translate(selectedEditFeature.modelMatrix, selectedEditFeature.modelMatrix, [0, 0, 1]);
+        }
+        break;
+      case MoveDirection.NEG_Z:
+        if (checkValidCell(selectedEditFeature.x, selectedEditFeature.y, selectedEditFeature.z - 1)) {
+          selectedEditFeature.z -= 1;
+          GLM.mat4.translate(selectedEditFeature.modelMatrix, selectedEditFeature.modelMatrix, [0, 0, -1]);
+        }
+        break;
+      default:
+        console.error("Unknown direction provided when requesting a feature move.");
+    }
    }
 
    constructor() {
