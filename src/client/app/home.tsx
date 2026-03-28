@@ -400,6 +400,13 @@ function EditWindow() {
   const [isEditing, setIsEditing] = useState(false);
   // get the currently selected edit feature
   const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
+  // Set the chore selected for our feature
+  const [selectedChore, setSelectedChore] = useState(0);
+
+  // Reset selectedChore index if needed
+  if ((selectedFeature !== null && selectedChore >= selectedFeature.chores.length)) {
+    setSelectedChore(0);
+  }
 
   return (
     <View 
@@ -424,6 +431,7 @@ function EditWindow() {
             currentTool = isEditing ? Tool.TOOL_FEATURE : Tool.TOOL_EDIT_FEATURE;
             selectedEditFeature = null; // should handle updating selectedFeature through callbacks
             setIsEditing(!isEditing); 
+            setSelectedChore(0);
           }}>
           <MaterialCommunityIcons name='wrench' color={isEditing ? "rgb(255, 0, 0)": "rgb(47, 47, 255)"}/>
           <Text>  {isEditing ? "View" : "Edit" }</Text>
@@ -452,10 +460,25 @@ function EditWindow() {
               <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.POS_Z)}}><MaterialCommunityIcons name='arrow-up'/></Button>
               <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.NEG_Z)}}><MaterialCommunityIcons name='arrow-down'/></Button>
             </Card.Actions>
-            <Card.Actions>
-              <Button onPress={() => {}}>Set interval</Button>
-              <Button onPress={() => {selectedFeature.chores.forEach((c) => {c.decayValue = 1;})}}>Mark complete!</Button>
-            </Card.Actions>
+            {/* Display chore cycle button if needed */}
+            {selectedFeature.chores.length > 1 ? (
+              <Card.Actions style={{justifyContent:"center"}}>
+                <Button onPress={() => {setSelectedChore((selectedChore + 1) % selectedFeature.chores.length)}}>Cycle chore: Selected {selectedChore}</Button>
+              </Card.Actions>
+            ) : null}
+            {/* Display two options depending on if we're using a multi-chore feature or not */}
+            {selectedFeature.chores.length > 1 ? (
+              <Card.Actions>
+                <Button onPress={() => {}}>Set interval</Button>
+                <Button onPress={() => {selectedFeature.chores[selectedChore].decayValue = 1;}}>Mark complete!</Button>
+              </Card.Actions>
+            ) : (
+              <Card.Actions>
+                <Button onPress={() => {}}>Set interval</Button>
+                <Button onPress={() => {selectedFeature.chores[0].decayValue = 1;}}>Mark complete!</Button>
+              </Card.Actions>
+            )}
+
           </Card>
         ) : isEditing && !selectedFeature ? (
           <Text style={{color: "red"}}>Select a feature to edit</Text>
