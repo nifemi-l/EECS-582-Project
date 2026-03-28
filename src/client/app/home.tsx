@@ -293,7 +293,7 @@ function screenToWorldCoords(screenX: number, screenY: number) {
   // We'll treat front as position 0 and back as position 1 since front is usually smaller
   const dir = GLM.vec3.fromValues(back[0] - front[0], back[1] - front[1], back[2] - front[2]);
   if (Math.abs(dir[1]) <= 0.000001) { // check against a very small value to handle floating point error
-    console.log("Failing, unable to calculate a ray.")
+    console.error("Failing, unable to calculate a ray.")
     return null;
   }  
   const t = -1.0 * front[1] / dir[1];
@@ -1332,7 +1332,7 @@ function drawFrame(time: number) {
     // Now, draw all the healthbars if we can calculate the correct inverse view matrix to position them (I think we always can)
     const inverseResult = GLM.mat4.invert(inverseView, cam.viewMatrix);
     if (!inverseResult) {
-      console.log("Unable to calculate inverse view matrix.");
+      console.error("Unable to calculate inverse view matrix.");
     } else {
       // Begin the new shader program specific to billboards
       gl.useProgram(bbShaderProgram);
