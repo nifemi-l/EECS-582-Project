@@ -28,7 +28,6 @@ export default class Feature {
     icon: string; // for compatibility
 
     constructor(feature_name: string, household_id: number, feature_type: string = "", x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline") {
-        //TODO: get id from database
         this.feature_name = feature_name;
         this.name = feature_name;
         this.household_id = household_id;
@@ -36,7 +35,8 @@ export default class Feature {
         this.x_pos = x;
         this.y_pos = y;
         this.z_pos = z;
-        this.id = 0;
+        // Use the id from the database so we can reference this feature in API calls
+        this.id = feature_id;
         this.tasks = [];
         this.icon = icon;
     }
