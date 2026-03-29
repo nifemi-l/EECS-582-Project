@@ -134,10 +134,7 @@ function TaskRow({
         <Text style={styles.taskName} numberOfLines={1}>
           {task.name}
         </Text>
-        {/* Tapping the health bar also marks the task complete */}
-        <Pressable onPress={() => onCompleteTask(task.id)}>
-          <HealthBar task={task} />
-        </Pressable>
+        <HealthBar task={task} />
       </View>
 
       {/* Green check button to mark task as done (resets the health bar to 100%) */}
