@@ -28,7 +28,7 @@ import { LayoutChangeEvent, Platform, Pressable, View, useWindowDimensions } fro
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@react-navigation/elements';
-import { Button, PaperProvider, Card } from 'react-native-paper';
+import { Button, PaperProvider, Card, Menu, TextInput } from 'react-native-paper';
 
 // Import server classes
 import Task from "../../../data/task";
@@ -410,6 +410,10 @@ function EditWindow() {
   const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
   // Set the chore selected for our feature
   const [selectedChore, setSelectedChore] = useState(0);
+  // Store: Are we changing the interval yet?
+  const [showIntervalMenu, setShowIntervalMenu] = useState(false);
+  // The frequency update value we want to store for updates
+  const [newFrequency, setNewFrequency] = useState("");
 
   // Reset selectedChore index if needed
   if ((selectedFeature !== null && selectedChore >= selectedFeature.tasks.length)) {
@@ -461,7 +465,7 @@ function EditWindow() {
           <Card
             mode='contained'
           >
-            <Card.Title title={"Feature: " + house.renderableFeatures.indexOf(selectedFeature)}/>
+            <Card.Title title={selectedFeature.feature_name}/>
             <Card.Actions>
               <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}><MaterialCommunityIcons name='arrow-left'/></Button>
               <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}><MaterialCommunityIcons name='arrow-right'/></Button>
@@ -474,24 +478,30 @@ function EditWindow() {
                 <Button onPress={() => {setSelectedChore((selectedChore + 1) % selectedFeature.tasks.length)}}>Cycle chore: Selected {selectedChore}</Button>
               </Card.Actions>
             ) : null}
-            {/* Display two options depending on if we're using a multi-chore feature or not */}
-            {selectedFeature.tasks.length > 1 ? (
               <Card.Actions>
-                <Button onPress={() => {}}>Set interval</Button>
+                {/* The menu for updating intervals */}
+                <Menu
+                  visible={isEditing && selectedFeature !== null && showIntervalMenu}
+                  onDismiss={() => {setShowIntervalMenu(false); setNewFrequency("0")}}
+                  anchor={<Button onPress={() => {setShowIntervalMenu(true)}}>Set interval</Button>}
+                >
+                  <TextInput label="The interval in days..." mode="outlined" value={newFrequency} keyboardType='numeric'
+                    onChangeText={(t) => {
+                      // Convert our input to a number, check if it is not a number, then apply changes if we have valid input
+                      const fixed = Number(t);
+                      if (!Number.isNaN(fixed)) {
+                        selectedFeature.tasks[selectedChore].changeFrequency(fixed)}
+                        setNewFrequency(t);
+                      }
+                    }>
+                  </TextInput>
+                </Menu>
                 <Button onPress={() => {selectedFeature.tasks[selectedChore].finishTask();}}>Mark complete!</Button>
               </Card.Actions>
-            ) : (
-              <Card.Actions>
-                <Button onPress={() => {}}>Set interval</Button>
-                <Button onPress={() => {selectedFeature.tasks[0].finishTask();}}>Mark complete!</Button>
-              </Card.Actions>
-            )}
-
           </Card>
         ) : isEditing && !selectedFeature ? (
           <Text style={{color: "red"}}>Select a feature to edit</Text>
         ) : null }
-       
     </View>
   );
 }
@@ -646,16 +656,16 @@ class RenderableFeature extends Feature {
     // Do the same for the material (basically what should the object look like color-wise).
     this.material = mat || FEATURE_ORANGE;
 
-   // Default chore list
-   this.addTask(new Task("Mock Task", 0 , 1));
+    // Default chore list
+    this.addTask(new Task("Mock Task", 0 , 1));
 
-   // Defaults to origin in super if not provided (note: assumes valid input)
-   this.x_pos = x || 0;
-   this.y_pos = y || 0;
-   this.z_pos = z || 0;
+    // Defaults to origin in super if not provided (note: assumes valid input)
+    this.x_pos = x || 0;
+    this.y_pos = y || 0;
+    this.z_pos = z || 0;
 
-   // Default to visibile
-   this.visible = true;
+    // Default to visibile
+    this.visible = true;
    }
 }
 
