@@ -35,7 +35,6 @@ const SENSORS: SensorBadgeProps[] = [
   { icon: "thermometer", value: "72°F", label: "Temperature" }, // temp reading
   { icon: "water-percent", value: "45%", label: "Humidity" }, // humidity reading
   { icon: "gauge", value: "1013", label: "Pressure" }, // pressure reading
-  { icon: "white-balance-sunny", value: "800", label: "Light" }, // light level
   { icon: "volume-high", value: "30dB", label: "Noise" }, // noise level
 ];
 

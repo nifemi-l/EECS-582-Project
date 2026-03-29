@@ -1,10 +1,11 @@
 /*
 File name: ddl.sql
 Description: SQL file containing the DDL for the project database
-Programmers: Blake Carlson, Logan Smith
+Programmers: Blake Carlson, Logan Smith, Nifemi Lawal
 Creation Date: 2/15/2026
 Revision date:
     - 3/19/26: Added Household Relation
+    - 3/29/26: Added icon columns to Feature and Task tables
 Preconditions: N/A
 Postconditions: Create the base structure of the database with the tables, attributes, and data types
 Errors: None
@@ -117,7 +118,10 @@ CREATE TABLE IF NOT EXISTS Feature (
         Make floats */
     x_pos FLOAT NOT NULL,
     y_pos FLOAT NOT NULL,
-    z_pos FLOAT NOT NULL
+    z_pos FLOAT NOT NULL,
+    /* MaterialCommunityIcons name shown in the list view for this feature/room
+        Defaults to the generic home icon if not specified */
+    icon VARCHAR(50) DEFAULT 'home-outline'
 );
 
 /*
@@ -145,7 +149,11 @@ CREATE TABLE IF NOT EXISTS Task (
             Ex: doing my personal laundry shouldn't be public to everyone in the house
     */
     visibility VARCHAR(20) CHECK (visibility IN ('private', 'household')) NOT NULL,
-    created_by_account_id INTEGER REFERENCES Account(account_id) ON DELETE SET NULL
+    /* Account id for the account that created the task */
+    created_by_account_id INTEGER REFERENCES Account(account_id) ON DELETE SET NULL,
+    /* MaterialCommunityIcons name shown next to the task in the list view
+        Defaults to the clipboard icon if not specified */
+    icon VARCHAR(50) DEFAULT 'clipboard-text-outline'
 );
 
 

@@ -1,8 +1,9 @@
 /* PROLOGUE
 File name: list.tsx
 Description: A list view for managing household tasks grouped by location/room.
-             Supports local persistence via AsyncStorage, task presets, icon pickers,
-             and frequency selection when adding tasks or sections.
+             Connected to the Flask/PostgreSQL backend via api.ts (data/api.ts) loads features
+             and tasks from the DB on mount, and all mutations (add, delete, rename,
+             complete) hit the server then update local state optimistically.
 Programmer: Nifemi Lawal
 Creation date: 2/6/26
 Revision date:
@@ -11,10 +12,12 @@ Revision date:
              expanded add-task card with icon picker / frequency pills / presets,
              location icon picker for new sections; restore TaskRow comments
   - 3/8/26: Use server classes for consistency
-Preconditions: household.ts must export storage helpers and preset constants
-Postconditions: Renders an interactive, persisted task list organized by location
-Errors: None. Will always render successfully; storage failures are logged silently
-Side effects: Reads/writes AsyncStorage on mount and on every mutation
+  - 3/29/26: Replace AsyncStorage with Flask API calls, add mark-complete button,
+             read household id from route params
+Preconditions: Flask server running on localhost:8000 with the household's data in the DB
+Postconditions: Renders an interactive task list that stays in sync with the database
+Errors: Shows error state with retry button if API is unreachable
+Side effects: Makes HTTP requests to the Flask backend on every mutation
 Invariants: None
 Known faults: None
 */
@@ -39,35 +42,37 @@ import {
 } from "react-native";
 // Material design icons
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+// Need this to grab the household id from the URL (e.g. /household/3/list)
+import { useLocalSearchParams } from "expo-router";
 
 // Import server classes
 import Task from "../../../data/task";
-import Household from "../../../data/household";
 import Feature from "../../../data/feature";
 
 // Import data helpers, types, presets, and storage utilities
 import {
-  MOCK_HOUSEHOLD,
   FREQUENCY_PRESETS,
   LOCATION_ICONS,
   TASK_ICONS,
   TASK_PRESETS,
   healthPercent,
   healthColor,
-  saveFeatures,
-  loadFeatures,
 } from "../../../data/householdUtils";
 
-// Accent color and background color constants
+// API functions for talking to the Flask backend
+// Aliased with "api" prefix so they don't clash with handler names in this file
+import {
+  fetchHouseholdFeatures,
+  createFeature as apiCreateFeature,
+  updateFeature as apiUpdateFeature,
+  deleteFeature as apiDeleteFeature,
+  createTask as apiCreateTask,
+  deleteTask as apiDeleteTask,
+  completeTask as apiCompleteTask,
+} from "../../../data/api";
+
 const ACCENT = "#4169E1";
 const BG = "#f0f2f5";
-
-// Counter for generating unique IDs
-let nextId = 1000;
-function generateId(prefix = "t") {
-    nextId += 1;
-    return `${prefix}-gen-${nextId}`;
-}
 
 // Health bar component that shows how "healthy" a task is as a colored bar
 function HealthBar({ task }: { task: Task }) {
@@ -95,11 +100,13 @@ function TaskRow({
     isSelected,
     onToggleSelect,
     onDeleteTask,
+    onCompleteTask,
 }: {
     task: Task;
     isSelected: boolean;
     onToggleSelect: (id: number) => void;
     onDeleteTask: (id: number) => void;
+    onCompleteTask: (id: number) => void;
 }) {
   return (
     <View style={[styles.taskRow, isSelected && styles.taskRowSelected]}>
@@ -129,6 +136,19 @@ function TaskRow({
         </Text>
         <HealthBar task={task} />
       </View>
+
+      {/* Green check button to mark task as done (resets the health bar to 100%) */}
+      <Pressable
+        onPress={() => onCompleteTask(task.id)}
+        hitSlop={8}
+        style={styles.completeBtn}
+      >
+        <MaterialCommunityIcons
+          name="check-circle-outline"
+          size={20}
+          color="#4caf50"
+        />
+      </Pressable>
 
       <Pressable
         onPress={() => onDeleteTask(task.id)}
@@ -338,6 +358,7 @@ function AddTaskCard({
 }
 
 // A collapsible group of tasks under one feature/room
+// onCompleteTask is passed down to each TaskRow so tapping the check button works
 function FeatureGroup({
   feature,
   selectedIds,
@@ -347,6 +368,7 @@ function FeatureGroup({
   onAddTask,
   onRenameFeature,
   onDeleteFeature,
+  onCompleteTask,
 }: {
   feature: Feature;
   selectedIds: Set<number>;
@@ -356,6 +378,7 @@ function FeatureGroup({
   onAddTask: (featureId: number, name: string, icon: string, freqDays: number) => void;
   onRenameFeature: (featureId: number, newName: string) => void;
   onDeleteFeature: (featureId: number) => void;
+  onCompleteTask: (taskId: number) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(feature.name);
@@ -478,6 +501,7 @@ function FeatureGroup({
                   isSelected={selectedIds.has(task.id)}
                   onToggleSelect={onToggleSelect}
                   onDeleteTask={(taskId) => onDeleteTask(feature.id, taskId)}
+                  onCompleteTask={onCompleteTask}
                 />
               ))}
             </View>
@@ -562,35 +586,63 @@ function AddSectionRow({
   );
 }
 
-// Main screen component that ties everything together
+// Main list screen (connected to the database via the Flask API) 
 export default function ListScreen() {
+  // Grab the household id from the route (e.g. /household/3/list -> id = "3")
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const householdId = Number(id) || 1; // fallback to 1 if somehow missing
+
   const [features, setFeatures] = useState<Feature[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-  // load saved data on mount
-  useEffect(() => {
-    loadFeatures().then((saved) => {
-      if (saved && saved.length > 0) {
-        setFeatures(saved);
-      } else {
-        setFeatures(
-          Array.from(MOCK_HOUSEHOLD.features).map((loc) => {
-             // We cast to any to avoid lose-methods error on state update
-             // but since we don't use methods in the UI, this is fine.
-             return { ...loc, tasks: Array.from(loc.tasks) } as any;
-          })
-        );
-      }
-      setLoaded(true);
-    });
-  }, []);
+  // Fetch all features + tasks from the server and map them into our local class instances
+  const loadFromApi = useCallback(() => {
+    setError(null);
+    fetchHouseholdFeatures(householdId)
+      .then((data: any[]) => {
+        // Convert the raw JSON objects into Feature/Task class instances
+        // so the health bar math and other methods still work
+        const mapped = data.map((f: any) => {
+          const feat = new Feature(
+            f.feature_name,
+            f.household_id,
+            f.feature_type || "",
+            f.x_pos, f.y_pos, f.z_pos,
+            f.feature_id,
+            f.icon || "home-outline"
+          );
+          feat.tasks = (f.tasks || []).map((t: any) => {
+            const task = new Task(
+              t.task_name,
+              t.feature_id,
+              t.frequency_days,
+              t.icon || "clipboard-text-outline",
+              t.visibility || "household",
+              t.created_by_account_id,
+              t.task_id
+            );
+            // Parse the ISO date string back into a Date object for health calculations
+            task.last_completed = t.last_completed ? new Date(t.last_completed) : null;
+            return task;
+          });
+          return feat;
+        });
+        setFeatures(mapped);
+        setLoaded(true);
+      })
+      .catch((e) => {
+        console.error("Failed to load features:", e);
+        setError("Could not load data from server.");
+        setLoaded(true);
+      });
+  }, [householdId]);
 
-  // save to storage whenever features change
+  // Load data from the API when the component mounts (or if householdId changes)
   useEffect(() => {
-    if (!loaded) return;
-    saveFeatures(features);
-  }, [features, loaded]);
+    loadFromApi();
+  }, [loadFromApi]);
 
   const handleToggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
@@ -601,8 +653,11 @@ export default function ListScreen() {
     });
   }, []);
 
+  // Delete all selected tasks at once (fires off delete requests in parallel)
   const handleDeleteSelected = useCallback(
     (featureId: number) => {
+      const toDelete = Array.from(selectedIds);
+      Promise.all(toDelete.map((taskId) => apiDeleteTask(taskId).catch(console.error)));
       setFeatures((prev) =>
         prev.map((loc) => {
           if (loc.id !== featureId) return loc;
@@ -617,8 +672,10 @@ export default function ListScreen() {
     [selectedIds]
   );
 
+  // Delete a single task (tell the server first, then remove from local state)
   const handleDeleteTask = useCallback(
     (featureId: number, taskId: number) => {
+      apiDeleteTask(taskId).catch(console.error);
       setFeatures((prev) =>
         prev.map((loc) => {
           if (loc.id !== featureId) return loc;
@@ -638,18 +695,46 @@ export default function ListScreen() {
     []
   );
 
+  // Add a new task (POST to the server and wait for the task_id before adding to state)
+  // We need the real DB id so deletes and completes work later
   const handleAddTask = useCallback(
     (featureId: number, name: string, icon: string, freqDays: number) => {
-      const newTask: Task = new Task(
-        name,
-        featureId,
-        freqDays,
-        icon
-      );
+      const now = new Date();
+      apiCreateTask({
+        feature_id: featureId,
+        task_name: name,
+        frequency_days: freqDays,
+        icon,
+        visibility: "household",
+        last_completed: now.toISOString(),
+      })
+        .then(({ task_id }) => {
+          const newTask = new Task(name, featureId, freqDays, icon);
+          // Use the id the database gave us so future operations reference the right row
+          newTask.id = task_id;
+          // Mirror the last_completed sent to the server so the health bar starts at 100%
+          newTask.last_completed = now;
+          setFeatures((prev) =>
+            prev.map((loc) =>
+              loc.id === featureId
+                ? ({ ...loc, tasks: [...Array.from(loc.tasks), newTask] } as any)
+                : loc
+            )
+          );
+        })
+        .catch(console.error);
+    },
+    []
+  );
+
+  // Rename a feature/section (update on the server and locally at the same time)
+  const handleRenameFeature = useCallback(
+    (featureId: number, newName: string) => {
+      apiUpdateFeature(featureId, { feature_name: newName }).catch(console.error);
       setFeatures((prev) =>
         prev.map((loc) =>
           loc.id === featureId
-            ? ({ ...loc, tasks: [...Array.from(loc.tasks), newTask] } as any)
+            ? ({ ...loc, name: newName, feature_name: newName } as any)
             : loc
         )
       );
@@ -657,29 +742,42 @@ export default function ListScreen() {
     []
   );
 
-  const handleRenameFeature = useCallback(
-    (featureId: number, newName: string) => {
-      setFeatures((prev) =>
-        prev.map((loc) => (loc.id === featureId ? ({ ...loc, name: newName } as any) : loc))
-      );
-    },
-    []
-  );
-
+  // Delete a feature and all its tasks (cascade delete happens in the DB)
   const handleDeleteFeature = useCallback((featureId: number) => {
+    apiDeleteFeature(featureId).catch(console.error);
     setFeatures((prev) => prev.filter((loc) => loc.id !== featureId));
   }, []);
 
-  const handleAddFeature = useCallback((name: string, icon: string) => {
-    const newLoc: Feature = new Feature(
-      name,
-      MOCK_HOUSEHOLD.household_id,
-      "",
-      0, 0, 0,
-      nextId++, // mock id
-      icon
+  // Add a new section/feature (POST to the server and use the returned id)
+  const handleAddFeature = useCallback(
+    (name: string, icon: string) => {
+      apiCreateFeature({
+        household_id: householdId,
+        feature_name: name,
+        icon,
+      })
+        .then(({ feature_id }) => {
+          const newLoc = new Feature(name, householdId, "", 0, 0, 0, feature_id, icon);
+          setFeatures((prev) => [...prev, newLoc]);
+        })
+        .catch(console.error);
+    },
+    [householdId]
+  );
+
+  // Mark a task as done (tell the server, then update last_completed locally)
+  // so the health bar immediately jumps to 100% without needing a full reload
+  const handleCompleteTask = useCallback((taskId: number) => {
+    apiCompleteTask(taskId).catch(console.error);
+    const now = new Date();
+    setFeatures((prev) =>
+      prev.map((loc) => ({
+        ...loc,
+        tasks: Array.from(loc.tasks).map((t) =>
+          t.id === taskId ? { ...t, last_completed: now } : t
+        ),
+      } as any))
     );
-    setFeatures((prev) => [...prev, newLoc]);
   }, []);
 
   if (!loaded) {
@@ -690,10 +788,21 @@ export default function ListScreen() {
     );
   }
 
+  if (error) {
+    return (
+      <View style={[styles.root, { justifyContent: "center", alignItems: "center" }]}>
+        <Text style={[styles.subtitle, { color: "#f44336" }]}>{error}</Text>
+        <Pressable onPress={loadFromApi} style={{ marginTop: 12 }}>
+          <Text style={{ color: ACCENT, fontWeight: "600" }}>Retry</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.root}>
       <View style={styles.titleBar}>
-        <Text style={styles.title}>{MOCK_HOUSEHOLD.name}</Text>
+        <Text style={styles.title}>Household</Text>
         <Text style={styles.subtitle}>
           {features.length} section{features.length !== 1 ? "s" : ""} ·{" "}
           {features.reduce((n, l) => n + Array.from(l.tasks).length, 0)} tasks
@@ -716,6 +825,7 @@ export default function ListScreen() {
             onAddTask={handleAddTask}
             onRenameFeature={handleRenameFeature}
             onDeleteFeature={handleDeleteFeature}
+            onCompleteTask={handleCompleteTask}
           />
         ))}
 
@@ -858,6 +968,10 @@ const styles = StyleSheet.create({
         fontWeight: "500",
         color: "#333",
         marginBottom: 4,
+    },
+    completeBtn: {
+        padding: 6,
+        marginLeft: 4,
     },
     taskDeleteBtn: {
         padding: 6,

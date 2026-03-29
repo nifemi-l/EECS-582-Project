@@ -81,26 +81,28 @@ def add_account(account_name: str, hashed_password: str, email: str):
     conn.commit()
     return account_id
 
-def add_feature( household_id, feature_name, feature_type, x_pos, y_pos, z_pos):
+    # Ex: add_feature(1, "Kitchen", "room", 0, 0, 0, "silverware-fork-knife")
+    # icon param is optional, defaults to the generic home icon
+def add_feature(household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon='home-outline'):
     with conn.cursor() as cursor:
         cursor.execute("""
-            INSERT INTO Feature (household_id, feature_name, feature_type, x_pos, y_pos, z_pos)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO Feature (household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING feature_id
-        """, (household_id, feature_name, feature_type, x_pos, y_pos, z_pos,))
+        """, (household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon))
         feature_id = cursor.fetchone()[0]
     conn.commit()
-    # Return the feature id
     return feature_id
 
 
-def add_task(feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id):
+# icon param is optional, defaults to clipboard icon
+def add_task(feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id, icon='clipboard-text-outline'):
     with conn.cursor() as cursor:
         cursor.execute("""
-            INSERT INTO Task (feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO Task (feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id, icon)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING task_id
-        """, (feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id,))
+        """, (feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id, icon))
         task_id = cursor.fetchone()[0]
     conn.commit()
     return task_id
@@ -185,6 +187,19 @@ def is_account_in_household(account_id, household_id):
         """, (account_id, household_id))
         result = cursor.fetchone()
     return bool(result)
+
+# Resolve a task_id to its household_id by joining through Feature
+# Used by routes to check household membership before mutating a task
+def get_household_id_for_task(task_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT f.household_id
+            FROM Task t
+            JOIN Feature f ON t.feature_id = f.feature_id
+            WHERE t.task_id = %s
+        """, (task_id,))
+        row = cursor.fetchone()
+    return row[0] if row else None
 
 # Retrieve household summaries for a member account
 def get_households_for_account(account_id):
@@ -318,10 +333,48 @@ def get_household_tasks(household_id):
         tasks = cursor.fetchall()
     return tasks
 
+# Get all features for a household, and nest each feature's tasks inside it as a list of dicts
+# This is the main query the list view uses on load -- gives us everything we need in one call
+# Returns a list like: [{ "feature_id": 1, "feature_name": "Kitchen", ..., "tasks": [{ ... }, ...] }, ...]
+def get_features_with_tasks(household_id):
+    features = get_household_features(household_id)
+    result = []
+    for f in features:
+        # Map the raw tuple columns to a dict so the route can jsonify it easily
+        feature_dict = {
+            "feature_id": f[0],
+            "household_id": f[1],
+            "feature_name": f[2],
+            "feature_type": f[3],
+            "x_pos": f[4],
+            "y_pos": f[5],
+            "z_pos": f[6],
+            "icon": f[7] if len(f) > 7 else "home-outline",
+            "tasks": []
+        }
+        # Grab all tasks that belong to this feature
+        tasks = get_tasks_by_feature_id(f[0])
+        for t in tasks:
+            # Convert last_completed to ISO string so JSON serialization doesn't choke on datetime
+            feature_dict["tasks"].append({
+                "task_id": t[0],
+                "feature_id": t[1],
+                "task_name": t[2],
+                "frequency_days": t[3],
+                "last_completed": t[4].isoformat() if t[4] else None,
+                "visibility": t[5],
+                "created_by_account_id": t[6],
+                "icon": t[7] if len(t) > 7 else "clipboard-text-outline",
+            })
+        result.append(feature_dict)
+    return result
+
 """
 Functions for updating data
 """
 
+# Mark a task as completed right now -- sets last_completed to current UTC time
+# Called when the user taps the check button on a task in the list view
 def update_task_last_comp_time(task_id):
     with conn.cursor() as cursor:
         cursor.execute("""
@@ -329,6 +382,7 @@ def update_task_last_comp_time(task_id):
             SET last_completed = %s
             WHERE task_id = %s
         """, (datetime.now(timezone.utc), task_id,))
+    conn.commit()
 
 
 # Update the last login time for an account
@@ -341,14 +395,40 @@ def update_account_last_login(account_id: int):
         """, (datetime.now(timezone.utc), account_id,))
     conn.commit()
 
-# Update feature coordinates
-def update_feature(feature_id, x_pos, y_pos, z_pos):
+# Update any combination of feature fields (only the params passed in get changed)
+# This way the list view can rename a feature without touching positions, and
+# the 3D view can move a feature without touching the name
+def update_feature(feature_id, feature_name=None, feature_type=None, x_pos=None, y_pos=None, z_pos=None, icon=None):
+    # Build the SET clause dynamically based on which args were actually provided
+    sets = []
+    params = []
+    if feature_name is not None:
+        sets.append("feature_name = %s")
+        params.append(feature_name)
+    if feature_type is not None:
+        sets.append("feature_type = %s")
+        params.append(feature_type)
+    if x_pos is not None:
+        sets.append("x_pos = %s")
+        params.append(x_pos)
+    if y_pos is not None:
+        sets.append("y_pos = %s")
+        params.append(y_pos)
+    if z_pos is not None:
+        sets.append("z_pos = %s")
+        params.append(z_pos)
+    if icon is not None:
+        sets.append("icon = %s")
+        params.append(icon)
+    if not sets:
+        return
+    # feature_id goes at the end for the WHERE clause
+    params.append(feature_id)
     with conn.cursor() as cursor:
-        cursor.execute("""
-            UPDATE Feature
-            SET x_pos = %s, y_pos = %s, z_pos = %s
-            WHERE feature_id = %s
-        """, (x_pos, y_pos, z_pos, feature_id,))
+        cursor.execute(
+            f"UPDATE Feature SET {', '.join(sets)} WHERE feature_id = %s",
+            tuple(params)
+        )
     conn.commit()
 
 
@@ -389,13 +469,21 @@ def update_household(household_id, household_name):
         """, (household_name, household_id,))
     conn.commit()
 
-def update_task(task_id, task_name, frequency_days, visibility):
+# Update task details (name, frequency, visibility, and icon are optional so we don't overwrite them if not provided)
+def update_task(task_id, task_name, frequency_days, visibility, icon=None):
     with conn.cursor() as cursor:
-        cursor.execute("""
-            UPDATE Task
-            SET task_name = %s, frequency_days = %s, visibility = %s
-            WHERE task_id = %s
-        """, (task_name, frequency_days, visibility, task_id,))
+        if icon is not None:
+            cursor.execute("""
+                UPDATE Task
+                SET task_name = %s, frequency_days = %s, visibility = %s, icon = %s
+                WHERE task_id = %s
+            """, (task_name, frequency_days, visibility, icon, task_id))
+        else:
+            cursor.execute("""
+                UPDATE Task
+                SET task_name = %s, frequency_days = %s, visibility = %s
+                WHERE task_id = %s
+            """, (task_name, frequency_days, visibility, task_id))
     conn.commit()
 
 def update_account(account_id, account_name, email):
