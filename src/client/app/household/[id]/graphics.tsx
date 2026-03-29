@@ -6,9 +6,10 @@ Creation date: 2/15/26
 Revision date: 
   - 2/15/26: Move graphical context and related code from index.tsx to here. Add comments. 
   - 2/23/26: Add a grid on the xz-axis, the ability to pan and tap, and convert taps from screen to world coordinates
-  - 3/1/26: Add a floor to the house model, features spawn on click with type options, healthbars shown per task per feature
+  - 3/1/26: Add a floor to the house model, features spawn on click with type options, healthbars shown per chore per feature
   - 3/18/26: Renamed to graphics.tsx to allow for new home page (post log-in)
   - 3/18/26: Changed dependency locations to match restructure.
+  - 3/28/26: Add remove feature, walls with visibility changes, edit mode and edit menu, floor resize, zoom
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -18,7 +19,7 @@ Known faults: None
 */
 
 // Import required components
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { Asset } from 'expo-asset';
 import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
@@ -26,22 +27,46 @@ import * as GLM from 'gl-matrix';
 import { LayoutChangeEvent, Platform, Pressable, View, useWindowDimensions } from "react-native";
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Text } from '@react-navigation/elements';
+import { Button, PaperProvider, Card, Menu, TextInput } from 'react-native-paper';
 
 // Import server classes
 import Task from "../../../data/task";
 import Feature from "../../../data/feature";
 import Household from "../../../data/household";
 
+// Define possible move directions in the xz plane
+enum MoveDirection {
+  POS_X,
+  NEG_X,
+  POS_Z,
+  NEG_Z
+}
+
+// Define tools to use for different house features
+enum Tool {
+  TOOL_FEATURE,
+  TOOL_WALL,
+  TOOL_GRID,
+  TOOL_EDIT_FEATURE
+}
+let currentTool = Tool.TOOL_FEATURE;
+
 // Define the near and far clips for the projection matrix
 const NEAR_CLIP = 0.1;
 const FAR_CLIP = 100.0;
+
+// Define min and max world scaling
+const MIN_WORLD_SCALE = 0.1;
+const MAX_WORLD_SCALE = 6.0;
 
 // See https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture for gesture handler details
 // Also define global variables to store this data and update each frame
 let panVelocityX = 0;
 let panLastX = 0 
 let panVelocityY = 0;
-let panLastY = 0 
+let panLastY = 0; 
+let panYDir = 0;
 
 // A helper function to update the velocity of the pan. We multiply the delta by a constant speed value
 function updateVelocityPan(dx: number, dy: number) {
@@ -57,6 +82,7 @@ const handlePan = Gesture.Pan()
   .onStart(() => {
     panLastX = 0;
     panLastY = 0;
+    panYDir = 0;
   })
 
   // Handle gesture updates and calculate the difference between frames, then update the velocity
@@ -67,12 +93,16 @@ const handlePan = Gesture.Pan()
     const deltaY = event.translationY - panLastY;
     panLastY = event.translationY;
 
+    // store the direction of our y movement
+    panYDir = deltaY > 0 ? 1 : -1;
+
     updateVelocityPan(deltaX, deltaY);
   })
 
   // When we let go of the drag, we no longer want to rotate so we set the rotation value to 0
   .onEnd(() => {
     updateVelocityPan(0, 0);
+    panYDir = 0;
   });
 
 // Handle screen taps (on web, clicks)
@@ -88,36 +118,107 @@ const handleTap = Gesture.Tap() // Handle the tap gesture
       } else {
         // We have successfully found a world position from our tap, so figure out what cell we're in
         const tappedCell = cellFromCoords(worldPos[0], worldPos[2]);
-        // Add the matrix to House
-        addBlock(tappedCell[0], 0, tappedCell[1]);
+        // Add to House or select depending on tool
+        if (isUsingEditTool()) {
+          findAndSetSelectedFeature(tappedCell[0], 0, tappedCell[1]);
+        } else {
+          addBlock(tappedCell[0], 0, tappedCell[1]);
+        }
       }
     }
   })
 
-// Select a random material from the materials list
-function selectRandomMaterial() {
-  const index = Math.floor(Math.random() * FEATURE_COLORS.length)
-  return FEATURE_COLORS[index];
+// This needs to be a function so that we can dynamically change the tool
+function isUsingEditTool() {
+  return currentTool === Tool.TOOL_EDIT_FEATURE;
 }
 
-// A function to add a block to the household at a certain position
-function addBlock(cellX: number, cellY: number, cellZ: number) {
+// Given coordinates, select the feature in the house lists
+function findAndSetSelectedFeature(cellX: number, cellY: number, cellZ: number) {
+  // iterate through house features. We do it in the order x, z, y since y should always be constant so far (we only support the xz plane)
+  // There should also only ever be one feature that matches
+  for (let i = 0; i < house.renderableFeatures.length; i++) {
+    if (house.renderableFeatures[i].x_pos != cellX || house.renderableFeatures[i].z_pos != cellZ || house.renderableFeatures[i].y_pos != cellY) {
+      continue;
+    } else {
+      // if this is already selected, deselect. Otherwise, select it
+      if (selectedEditFeature === house.renderableFeatures[i]) {
+        setSelectedEditFeature(null);
+      } else {
+        setSelectedEditFeature(house.renderableFeatures[i]);
+      }
+    }
+  }
+}
+
+// Check if a block already exists on the cell - check against all existing cells. If it does, remove what's there
+function checkValidBlockAndRemove(cellX: number, cellY: number, cellZ: number) {
+  // copy array to new array, without the removed element. We'll do this as we iterate. If we find one to remove, set the result bool
+  let success = true;
+  let copyArray = []; 
+  for (let i = 0; i < house.renderableFeatures.length; i++) {
+    if (house.renderableFeatures[i].x_pos == cellX && house.renderableFeatures[i].y_pos == cellY && house.renderableFeatures[i].z_pos == cellZ) {
+      // We've found a feature not to keep
+      success = false;
+    } else {
+      // We've found a feature we want to keep
+      copyArray.push(house.renderableFeatures[i]);
+    }
+  }
+  // update house array and return success or not
+  house.renderableFeatures = copyArray;
+  return success;
+}
+
+// Check if a block already exists in a cell without removing
+function checkCellFree(cellX: number, cellY: number, cellZ: number) {
+  // Iterate over the features and see if something is in the provided cell. If so, we know it is not free
+  for (let i = 0; i < house.renderableFeatures.length; i++) {
+    if (house.renderableFeatures[i].x_pos == cellX && house.renderableFeatures[i].y_pos == cellY && house.renderableFeatures[i].z_pos == cellZ) {
+      return false;
+    } 
+  }
+  return true;
+}
+
+
+// See if a cell is within the bounds of the grid
+function checkCellInBounds(cellX: number, cellY: number, cellZ: number) {
   // Disallow invalid block positions. For a grid of size 10,10 we allow range [-5, 4] in the xz directions. We lock to the xz plane (y=0)
   const halfGridWidth = Math.floor(grid.width / 2);
   const halfGridHeight = Math.floor(grid.height / 2);
   if ((cellX < 0 - halfGridWidth || cellX >= halfGridWidth) || Math.abs(cellY) > 0 || (cellZ < 0 - halfGridHeight || cellZ >= halfGridHeight)) {
+    return false;
+  }
+  return true;
+}
+
+// A wrapper function to check if a cell is both free and within the grid
+function checkValidCell(cellX: number, cellY: number, cellZ: number) {
+  return checkCellInBounds(cellX, cellY, cellZ) && checkCellFree(cellX, cellY, cellZ);
+}
+
+// A function to add a block to the household at a certain position
+function addBlock(cellX: number, cellY: number, cellZ: number) {
+  // Ensure our cell position is in bounds
+  if (!checkCellInBounds(cellX, cellY, cellZ)) {
+    return;
+  }
+
+  // Ensure we haven't already placed a block here. If we have, remove it 
+  if (!checkValidBlockAndRemove(cellX, cellY, cellZ)) {
     return;
   }
 
   const newModelMatrix = GLM.mat4.create(); // create a new transform 
   GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
   const newMaterial: Material = currentDrawingColor;
-  const newFeature = new RenderableFeature("test", house.household_id , newModelMatrix, newMaterial); // this is the new feature object we're adding
-  // randomly add a second task for demo purposes
+  const newFeature = new RenderableFeature("f:" + cellX + cellY + cellZ, house.household_id, newModelMatrix, newMaterial, cellX, cellY, cellZ); // this is the new feature object we're adding
+  // randomly add a second chore for demo purposes
   if (Math.round(Math.random()) == 0) {
-    newFeature.tasks.push(new Task("test", newFeature.id, 1, undefined, undefined, null, 9 ));
+    newFeature.addTask(new Task("Test Task", newFeature.id, 1));
   }
-  house.features.add(newFeature); // add the feature to the house
+  house.renderableFeatures.push(newFeature); // add the feature to the house
 }
 
 // A helper function to retrieve the cell that was clicked from a given position on the xz plane
@@ -200,7 +301,7 @@ function screenToWorldCoords(screenX: number, screenY: number) {
   // We'll treat front as position 0 and back as position 1 since front is usually smaller
   const dir = GLM.vec3.fromValues(back[0] - front[0], back[1] - front[1], back[2] - front[2]);
   if (Math.abs(dir[1]) <= 0.000001) { // check against a very small value to handle floating point error
-    console.log("Failing, unable to calculate a ray.")
+    console.error("Failing, unable to calculate a ray.")
     return null;
   }  
   const t = -1.0 * front[1] / dir[1];
@@ -276,6 +377,131 @@ function ColorButtons() {
       >
         <MaterialCommunityIcons name={drawingColor !== FEATURE_ORANGE ? 'circle-outline' : 'circle'} size={20} color="#de8537" />
       </Pressable>
+
+      {/* Edit grid size buttons */}
+      <Pressable
+        onPress={() => {grid.resize(grid.width + 2, grid.height); house.resizeFloorFeature()}}>
+        <MaterialCommunityIcons name='arrow-right' color="#abcd" />
+      </Pressable>
+
+      <Pressable
+        onPress={() => {grid.resize(grid.width, grid.height + 2); house.resizeFloorFeature()}}>
+        <MaterialCommunityIcons name='arrow-up' color="#abcd" />
+      </Pressable>
+
+      <Pressable
+        onPress={() => {grid.resize(grid.width - 2, grid.height); house.resizeFloorFeature()}}>
+        <MaterialCommunityIcons name='arrow-left' color="#abcd" />
+      </Pressable>
+
+      <Pressable
+        onPress={() => {grid.resize(grid.width, grid.height - 2); house.resizeFloorFeature()}}>
+        <MaterialCommunityIcons name='arrow-down' color="#abcd" />
+      </Pressable>
+    </View>
+  );
+}
+
+// A window that will appear to edit feature info
+function EditWindow() {
+  // if in edit mode or not
+  const [isEditing, setIsEditing] = useState(false);
+  // get the currently selected edit feature
+  const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
+  // Set the chore selected for our feature
+  const [selectedChore, setSelectedChore] = useState(0);
+  // Store: Are we changing the interval yet?
+  const [showIntervalMenu, setShowIntervalMenu] = useState(false);
+  // The frequency update value we want to store for updates
+  const [newFrequency, setNewFrequency] = useState("");
+
+  // Reset selectedChore index if needed
+  if ((selectedFeature !== null && selectedChore >= selectedFeature.tasks.length)) {
+    setSelectedChore(0);
+  }
+
+  return (
+    <View 
+      style={{
+          flexDirection: "column",
+          alignItems: "baseline",
+          justifyContent: "flex-end",
+          position: "absolute",
+          top: 10,
+          left: 20,
+          padding: 10,
+          zIndex: 10,
+          gap: 10,
+        }}
+      >
+        {/* Edit button */}
+        <Button 
+          mode="contained" 
+          style={{backgroundColor: "white"}}
+          onPress={() => {
+            // We cannot assume isEditing changes sequentially here
+            currentTool = isEditing ? Tool.TOOL_FEATURE : Tool.TOOL_EDIT_FEATURE;
+            selectedEditFeature = null; // should handle updating selectedFeature through callbacks
+            setIsEditing(!isEditing); 
+            setSelectedChore(0);
+          }}>
+          <MaterialCommunityIcons name='wrench' color={isEditing ? "rgb(255, 0, 0)": "rgb(47, 47, 255)"}/>
+          <Text>  {isEditing ? "View" : "Edit" }</Text>
+        </Button>
+
+        {/* Context Edit Window 
+              In the menu we display:
+                - Button to mark complete
+                - Feature type
+                - Feature time remaining until 0 out of total
+                - Option to change total decay
+        */}
+
+        {/* Case 1: We are editing and have a feature selected */}
+        {/* Case 2: We are editing and no feature is selected */} 
+        {/* Case 3: We are not editing anything */}
+
+        {isEditing && selectedFeature !== null ? (
+          <Card
+            mode='contained'
+          >
+            <Card.Title title={selectedFeature.feature_name}/>
+            <Card.Actions>
+              <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}><MaterialCommunityIcons name='arrow-left'/></Button>
+              <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}><MaterialCommunityIcons name='arrow-right'/></Button>
+              <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.POS_Z)}}><MaterialCommunityIcons name='arrow-up'/></Button>
+              <Button onPress={() => {house.moveSelectedFeatureByOne(MoveDirection.NEG_Z)}}><MaterialCommunityIcons name='arrow-down'/></Button>
+            </Card.Actions>
+            {/* Display chore cycle button if needed */}
+            {selectedFeature.tasks.length > 1 ? (
+              <Card.Actions style={{justifyContent:"center"}}>
+                <Button onPress={() => {setSelectedChore((selectedChore + 1) % selectedFeature.tasks.length)}}>Cycle chore: Selected {selectedChore}</Button>
+              </Card.Actions>
+            ) : null}
+              <Card.Actions>
+                {/* The menu for updating intervals */}
+                <Menu
+                  visible={isEditing && selectedFeature !== null && showIntervalMenu}
+                  onDismiss={() => {setShowIntervalMenu(false); setNewFrequency("0")}}
+                  anchor={<Button onPress={() => {setShowIntervalMenu(true)}}>Set interval</Button>}
+                >
+                  <TextInput label="The interval in days..." mode="outlined" value={newFrequency} keyboardType='numeric'
+                    onChangeText={(t) => {
+                      // Convert our input to a number, check if it is not a number, then apply changes if we have valid input
+                      const fixed = Number(t);
+                      if (!Number.isNaN(fixed)) {
+                        selectedFeature.tasks[selectedChore].changeFrequency(fixed)}
+                        setNewFrequency(t);
+                      }
+                    }>
+                  </TextInput>
+                </Menu>
+                <Button onPress={() => {selectedFeature.tasks[selectedChore].finishTask();}}>Mark complete!</Button>
+              </Card.Actions>
+          </Card>
+        ) : isEditing && !selectedFeature ? (
+          <Text style={{color: "red"}}>Select a feature to edit</Text>
+        ) : null }
     </View>
   );
 }
@@ -298,25 +524,28 @@ export default function Index() {
   windowWidth = useWindowDimensions().width; 
   windowHeight = useWindowDimensions().height;
   return (
-    <View
-      onLayout={handleLayout}
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <GestureDetector gesture={composedGesture}>
-        <GLView style={{
-          width: "100%",
-          height: "100%"
-        }} 
-        onContextCreate={onContextCreate} 
-        />
-      </GestureDetector>
+    <PaperProvider>
+      <View
+        onLayout={handleLayout}
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <GestureDetector gesture={composedGesture}>
+          <GLView style={{
+            width: "100%",
+            height: "100%"
+          }} 
+          onContextCreate={onContextCreate} 
+          />
+        </GestureDetector>
 
-      <ColorButtons />
-    </View>
+        <EditWindow />
+        <ColorButtons />
+      </View>
+    </PaperProvider>
   );
 }
 
@@ -414,19 +643,33 @@ let currentDrawingColor = FEATURE_ORANGE;
 
 // Extended Feature class for 3D rendering
 class RenderableFeature extends Feature {
-  modelMatrix: GLM.mat4;
-  material: Material;
+   modelMatrix: GLM.mat4; // The transform of the feature in the world
+   material: Material; // How the feature looks materially
+   visible: boolean;
 
-  constructor(name: string, household_id: number, mm: GLM.mat4 | null, mat: Material | null) {
-    super(name, household_id);
+   constructor(name: string, household_id: number, mm: GLM.mat4 | null, mat: Material | null, x: number | null, y: number | null, z: number | null) {
+    super(name, household_id)
+
+    // Assign model matrix to either a provided value or a default
     this.modelMatrix = mm || GLM.mat4.create();
+
+    // Do the same for the material (basically what should the object look like color-wise).
     this.material = mat || FEATURE_ORANGE;
-    // Default task list for demo
-    this.addTask(new Task("Mock Task", 0, 1));
-  }
+
+    // Default chore list
+    this.addTask(new Task("Mock Task", 0 , 1));
+
+    // Defaults to origin in super if not provided (note: assumes valid input)
+    this.x_pos = x || 0;
+    this.y_pos = y || 0;
+    this.z_pos = z || 0;
+
+    // Default to visibile
+    this.visible = true;
+   }
 }
 
-// Extended Household class for 3D rendering
+// This is the household class. It is meant to be the primary way to store and access the currently rendered house model
 class RenderableHousehold extends Household {
    // A series of relevant variables to render the household on the screen.
    blockVertices: Float32Array; // The vertices that make up a cube (including the normals of each face)
@@ -447,8 +690,64 @@ class RenderableHousehold extends Household {
    bbHeightOffsetLoc: WebGLUniformLocation | null; // access to the height offset uniform
    bbHealthPercentLoc: WebGLUniformLocation | null; // access to the healthbar's health percent uniform
 
+   // change the size of the floor feature to match the grid
+   resizeFloorFeature() {
+    // floor feature is always the first feature in the features array
+    const floorMatrix = GLM.mat4.create();
+    GLM.mat4.scale(floorMatrix, floorMatrix, [grid.width, 0.5, grid.height]);
+    GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
+    const floorFeature = new RenderableFeature("Floor", this.household_id, floorMatrix, FEATURE_GREY, 0, -1, 0); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
+    floorFeature.tasks = []; // reset tasks so no healthbar
+    this.renderableFeatures[0] = floorFeature;
+   }
+   
+   // Moves the selected edit feature one cell over based on the input direction
+   moveSelectedFeatureByOne(dir: MoveDirection) {
+    // Ensure we have a feature selected
+    if (!selectedEditFeature) {
+      console.error("Attempting to move null feature.");
+      return;
+    }
+
+    // Apply movement. First, check if the proposed move would be within bounds. Then, apply updates to the model matrices and XYZ values.
+    switch (dir) {
+      case MoveDirection.POS_X:
+        if (checkValidCell(selectedEditFeature.x_pos + 1, selectedEditFeature.y_pos, selectedEditFeature.z_pos)) {
+          selectedEditFeature.x_pos += 1;
+          GLM.mat4.translate(selectedEditFeature.modelMatrix, selectedEditFeature.modelMatrix, [1, 0, 0]);
+        }
+        break;
+      case MoveDirection.NEG_X:
+        if (checkValidCell(selectedEditFeature.x_pos - 1, selectedEditFeature.y_pos, selectedEditFeature.z_pos)) {
+          selectedEditFeature.x_pos -= 1;
+          GLM.mat4.translate(selectedEditFeature.modelMatrix, selectedEditFeature.modelMatrix, [-1, 0, 0]);
+        }
+        break;
+      case MoveDirection.POS_Z:
+        if (checkValidCell(selectedEditFeature.x_pos, selectedEditFeature.y_pos, selectedEditFeature.z_pos + 1)) {
+          selectedEditFeature.z_pos += 1;
+          GLM.mat4.translate(selectedEditFeature.modelMatrix, selectedEditFeature.modelMatrix, [0, 0, 1]);
+        }
+        break;
+      case MoveDirection.NEG_Z:
+        if (checkValidCell(selectedEditFeature.x_pos, selectedEditFeature.y_pos, selectedEditFeature.z_pos - 1)) {
+          selectedEditFeature.z_pos -= 1;
+          GLM.mat4.translate(selectedEditFeature.modelMatrix, selectedEditFeature.modelMatrix, [0, 0, -1]);
+        }
+        break;
+      default:
+        console.error("Unknown direction provided when requesting a feature move.");
+    }
+   }
+
+   // Add a renderable feature to the renderablefeatures array. This should mirror the super's Feature array. A spot for future improvement.
+   addRenderableFeature(rf: RenderableFeature) {
+    this.renderableFeatures.push(rf);
+   }
+
    constructor(name: string) {
     super(name);
+
     // Vertices + normal vectors of a cube. Each cube has 6 faces, and each face is made up of two triangles. Each triangle has 3 vertices. 
     this.blockVertices = new Float32Array([
         -0.5, -0.5, -0.5,  0.0,  0.0, -1.0,
@@ -508,11 +807,44 @@ class RenderableHousehold extends Household {
 
     // Add a floor to the house
     const floorMatrix = GLM.mat4.create();
-    GLM.mat4.scale(floorMatrix, floorMatrix, [10, 0.5, 10]);
+    GLM.mat4.scale(floorMatrix, floorMatrix, [10, 0.5, 10]); // note implicitly depends on grid size defaulting to 10
     GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
-    const floorFeature = new RenderableFeature("Floor", this.household_id, floorMatrix, FEATURE_GREY);
+    const floorFeature = new RenderableFeature("Floor", this.household_id, floorMatrix, FEATURE_GREY, 0, -1, 0); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
     floorFeature.tasks = []; // reset tasks so no healthbar
-    this.renderableFeatures.push(floorFeature);
+    this.addRenderableFeature(floorFeature); // must be the first feature
+
+    // Add walls
+    // Left wall
+    const leftWallMatrix = GLM.mat4.create();
+    GLM.mat4.translate(leftWallMatrix, leftWallMatrix, [-5.25, 1.5, 0])
+    GLM.mat4.scale(leftWallMatrix, leftWallMatrix, [0.5, 3, 10.1]); 
+    const leftWall = new RenderableFeature("Left Wall", this.household_id, leftWallMatrix, FEATURE_GREY, -5, -1, 0)
+    leftWall.tasks = [];
+    this.addRenderableFeature(leftWall);
+
+    // Right wall
+    const rightWallMatrix = GLM.mat4.create();
+    GLM.mat4.translate(rightWallMatrix, rightWallMatrix, [5.25, 1.5, 0])
+    GLM.mat4.scale(rightWallMatrix, rightWallMatrix, [0.5, 3, 10.1]); 
+    const rightWall = new RenderableFeature("Right Wall", this.household_id, rightWallMatrix, FEATURE_GREY, 5, -1, 0)
+    rightWall.tasks = [];
+    this.addRenderableFeature(rightWall);
+
+    // Back wall
+    const backWallMatrix = GLM.mat4.create();
+    GLM.mat4.translate(backWallMatrix, backWallMatrix, [0, 1.5, -5.25])
+    GLM.mat4.scale(backWallMatrix, backWallMatrix, [10.1, 3, 0.5]); 
+    const backWall = new RenderableFeature("Back Wall", this.household_id, backWallMatrix, FEATURE_GREY, 0, -1, -5)
+    backWall.tasks = [];
+    this.addRenderableFeature(backWall);
+
+    // Front wall
+    const frontWallMatrix = GLM.mat4.create();
+    GLM.mat4.translate(frontWallMatrix, frontWallMatrix, [0, 1.5, 5.25])
+    GLM.mat4.scale(frontWallMatrix, frontWallMatrix, [10.1, 3, 0.5]); 
+    const frontWall = new RenderableFeature("Front Wall", this.household_id, frontWallMatrix, FEATURE_GREY, 0, -1, 5)
+    frontWall.tasks = [];
+    this.addRenderableFeature(frontWall);
 
     // We cannot determine the following entries without a gl context
     this.buffer = null;
@@ -529,8 +861,32 @@ class RenderableHousehold extends Household {
     this.bbHealthPercentLoc = null;
    }
 }
-let house = new RenderableHousehold("My Home"); // Create a global household object
+let house = new RenderableHousehold("default_1"); // Create a global household object
+let selectedEditFeature: RenderableFeature | null = null; // The current feature being edited in the edit window
 
+// We'll set up a listener pattern so that we can update the react UI from the GL side
+let reactListeners: ((val: any) => void)[] = []; // Store callback functions to use when state changes
+
+// A function to add a callback function to the listeners list so that we can update react when GL state changes
+function subListener(cb: ((val: any) => void)) {
+  reactListeners.push(cb);
+
+  // return an "unsubscribe" function that will remove the listener from the list
+  return () => {
+    reactListeners = reactListeners.filter((l) => l !== cb); // set the listener list to a new version filtered to just the ones that DON'T match
+  };
+}
+
+// setter so that listeners are all notified on update
+function setSelectedEditFeature(feature: RenderableFeature | null) {
+  selectedEditFeature = feature;
+  reactListeners.forEach((cb) => cb(selectedEditFeature)); // call the callback set by each listener
+}
+
+// getter for listeners
+function getSelectedEditFeature() {
+  return selectedEditFeature;
+}
 
 // This is the grid class, used to draw a grid on the screen
 class Grid {
@@ -541,6 +897,30 @@ class Grid {
   width: number;
   height: number;
   material: Material;
+
+  // For cases where we want to resize the grid
+  resize(w: number, h: number) {
+    if (w <= 1 || h <= 1) {
+      console.error("Invalid grid size given.");
+      return;
+    }
+
+    // Note: this function should not be called in the render loop
+    if (!glRef) {
+      console.error("Cannot resize grid without OpenGL context.");
+      return;
+    }
+
+    // Set member data
+    this.width = w;
+    this.height = h;
+    this.gridVertices = genGrid(this.width, this.height);
+
+    bindVAO(this.vao);
+    glRef.bindBuffer(glRef.ARRAY_BUFFER, this.buffer);
+    glRef.bufferData(glRef.ARRAY_BUFFER, grid.gridVertices, glRef.STATIC_DRAW); 
+    bindVAO(null);
+  }
 
   constructor() {
     // As above, but no need for normal data
@@ -557,7 +937,7 @@ class Grid {
     this.material = FEATURE_ORANGE;
   }
 }
-const grid = new Grid(); // Store a global grid object
+let grid = new Grid(); // Store a global grid object
 
 // This is the function called to create the WebGL context, setup extensions if needed, read and compile shaders, and do all
 // other prep work which is neccessary to initialize our renderer. 
@@ -578,7 +958,9 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   lastFrameTime = 0;
   shaderProgram = null; // I don't think this causes a memory leak as Expo should clean up resources on unmount
   bbShaderProgram = null;
+  house = new RenderableHousehold("default_2");
   cam = new Camera();
+  grid = new Grid();
 
   // Rebuild the grid if we're missing it
   if (!grid) {
@@ -822,6 +1204,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 
 // This is the function that will be called every frame to draw a frame on in the WebGL context
 const inverseView = GLM.mat4.create(); // store our inverse view matrix here to avoid re-creation every frame
+const scale = GLM.vec3.create(); // store the current scale of our view matrix
 function drawFrame(time: number) {
     // Ensure we have an OpenGL context, if not error and return
     if (!glRef) {
@@ -885,15 +1268,71 @@ function drawFrame(time: number) {
     // Prepare draw by clearing the screen and depth buffer
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration. 
+    // For the cube draw calls, we need to switch to the correct vertex at  tribute and buffer configuration. 
     // This also updates our view matrix so we can rotate the world around
     gl.useProgram(shaderProgram); // use the household shader program
     bindVAO(house.vao);
+
+    // Scale view matrix (thus scaling the world)
+    // Get the current scale
+    GLM.mat4.getScaling(scale, cam.viewMatrix);
+    // Make sure we have high enough velocity to zoom, so we don't annoyingly pan when want to zoom
+    if (Math.abs(panVelocityY) > 1.0) {
+      // scale according to y pan and y drag direction
+      // scale up = scaleAmt > 1
+      // scale down = scale amt < 1
+      const scaleAmt = panYDir < 0 ? 1 + panVelocityY * delta : 1 + panVelocityY * delta;
+
+      // Check if the proposed scale is valid (since we evenly scale, we only need to do this for the first component)
+      const testScale = scaleAmt * scale[0];
+      if (testScale > MIN_WORLD_SCALE && testScale < MAX_WORLD_SCALE) {
+        // we have a valid scale
+        GLM.mat4.scale(cam.viewMatrix, cam.viewMatrix, [scaleAmt, scaleAmt, scaleAmt]);
+      } 
+    }
+    
     GLM.mat4.rotateY(cam.viewMatrix, cam.viewMatrix, panVelocityX * delta); // Rotate the world according to the frame delta for smooth movement
     gl.uniformMatrix4fv(cam.viewLoc, false, cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
 
+    // Figure out which walls to hide - walls will be features[1-4]
+    // we need to figure out which walls have vectors pointing towards the camera
+    for (let i = 1; i <= 4; i++) {
+      // we add walls in the order left (-x), right (+x) back (+z), front (-z)
+
+      // Get the normal pointing away from the origin for each wall
+      let sideVec = GLM.vec3.create();
+      switch(i) {
+        case 1:
+          sideVec = GLM.vec3.fromValues(1, 0, 0); 
+          break;
+        case 2:
+          sideVec = GLM.vec3.fromValues(-1, 0, 0);
+          break;
+        case 3:
+          sideVec = GLM.vec3.fromValues(0, 0, 1);
+          break;
+        case 4:
+          sideVec = GLM.vec3.fromValues(0, 0, -1);
+          break;
+        }
+
+        // Calculate the camera forward vector from the view matrix
+        const cameraFwdVec = GLM.vec3.fromValues(
+          // camera forward is the third column in the view matrix
+          cam.viewMatrix[2], cam.viewMatrix[6], cam.viewMatrix[10]
+        );
+
+        // Check if the normal is facing more away from the camera or to the camera and set visibility accordingly
+        const dot = GLM.vec3.dot(sideVec, cameraFwdVec);
+        house.renderableFeatures[i].visible = dot > 0.1;
+    }
+
     // Iterate through all cubes making up our model and draw them each
     for (let i = 0; i < house.renderableFeatures.length; i++) {
+      if (!house.renderableFeatures[i].visible) {
+        // Skip invisible features
+        continue;
+      }
       gl.uniformMatrix4fv(house.modelLoc, false, house.renderableFeatures[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
       gl.uniform3fv(house.ambientLoc, house.renderableFeatures[i].material.ambient); // update lighting uniform values for the material of the object
       gl.uniform3fv(house.diffuseLoc, house.renderableFeatures[i].material.diffuse);
@@ -917,7 +1356,7 @@ function drawFrame(time: number) {
     // Now, draw all the healthbars if we can calculate the correct inverse view matrix to position them (I think we always can)
     const inverseResult = GLM.mat4.invert(inverseView, cam.viewMatrix);
     if (!inverseResult) {
-      console.log("Unable to calculate inverse view matrix.");
+      console.error("Unable to calculate inverse view matrix.");
     } else {
       // Begin the new shader program specific to billboards
       gl.useProgram(bbShaderProgram);
@@ -933,9 +1372,8 @@ function drawFrame(time: number) {
         // Get the feature position
         gl.uniformMatrix4fv(house.bbModelLoc, false, house.renderableFeatures[i].modelMatrix as Float32Array);
         for (let j = 0; j < house.renderableFeatures[i].tasks.length; j++) {
-          gl.uniform1f(house.bbHeightOffsetLoc, 0.8 + (j + 1) * 0.4); // Add an offset per task bar
-          // house.features[i].tasks[j].decayValue -= delta * 0.1; // add a decay per frame for demonstration purposes
-          gl.uniform1f(house.bbHealthPercentLoc, house.renderableFeatures[i].tasks[j].getAndSetHealthPercent()); // Set task decay / health percent
+          gl.uniform1f(house.bbHeightOffsetLoc, 0.8 + (j + 1) * 0.4); // Add an offset per chore bar
+          gl.uniform1f(house.bbHealthPercentLoc, house.renderableFeatures[i].tasks[j].getAndSetHealthPercent()); // Update the current decay value
           gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
         }
       }

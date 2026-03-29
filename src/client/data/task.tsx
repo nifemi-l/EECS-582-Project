@@ -1,10 +1,11 @@
 /* PROLOGUE
 File name: task.tsx
 Description: Class for a task (Task) attached to a particular location (Feature).
-Programmer: Delroy Wright
+Programmer: Delroy Wright, a little bit by Jack Bauer
 Creation date: 2/13/26
 Revision date: 
   - 3/8/26: Updated to match Task table in DDL, consolidated from Task
+  - 3/28/26: Add method to update task frequency
 Preconditions: A client is running and has access to the Task class.
 Postconditions: An instantiated Task class.
 Errors: None.
@@ -54,6 +55,12 @@ export default class Task {
         this.id = task_id;
         this.last_completed = null;
         this.healthPercent = 1;
+    }
+
+    // Change the frequency this task should be completed
+    changeFrequency(frequency_days: number) {
+        this.frequency_days = frequency_days;
+        this.finishTask();
     }
 
     // Updates and returns healthpercent for a task (0 to 1)
