@@ -702,19 +702,21 @@ export default function ListScreen() {
   // We need the real DB id so deletes and completes work later
   const handleAddTask = useCallback(
     (featureId: number, name: string, icon: string, freqDays: number) => {
+      const now = new Date();
       apiCreateTask({
         feature_id: featureId,
         task_name: name,
         frequency_days: freqDays,
         icon,
         visibility: "household",
+        last_completed: now.toISOString(),
       })
         .then(({ task_id }) => {
           const newTask = new Task(name, featureId, freqDays, icon);
           // Use the id the database gave us so future operations reference the right row
           newTask.id = task_id;
-          // Set last_completed to now so the health bar starts at 100%
-          newTask.last_completed = new Date();
+          // Mirror the last_completed sent to the server so the health bar starts at 100%
+          newTask.last_completed = now;
           setFeatures((prev) =>
             prev.map((loc) =>
               loc.id === featureId
