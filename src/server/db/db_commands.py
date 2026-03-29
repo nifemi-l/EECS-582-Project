@@ -188,6 +188,19 @@ def is_account_in_household(account_id, household_id):
         result = cursor.fetchone()
     return bool(result)
 
+# Resolve a task_id to its household_id by joining through Feature
+# Used by routes to check household membership before mutating a task
+def get_household_id_for_task(task_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT f.household_id
+            FROM Task t
+            JOIN Feature f ON t.feature_id = f.feature_id
+            WHERE t.task_id = %s
+        """, (task_id,))
+        row = cursor.fetchone()
+    return row[0] if row else None
+
 # Retrieve household summaries for a member account
 def get_households_for_account(account_id):
     with conn.cursor() as cursor:

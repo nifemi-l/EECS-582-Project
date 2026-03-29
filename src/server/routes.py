@@ -16,7 +16,8 @@ from db.db_commands import (
     add_household, update_household, delete_household, get_household_by_id,
     add_account, update_account, delete_account, get_account_by_id,
     add_feature, update_feature, delete_feature, get_feature_by_id,
-    get_features_with_tasks, update_task_last_comp_time
+    get_features_with_tasks, update_task_last_comp_time,
+    is_account_in_household, get_household_id_for_task
 )
 from db.auth.auth_utils import get_current_account_id
 
@@ -26,13 +27,16 @@ routes_bp = Blueprint("routes", __name__)
 # feature_type, positions, and icon are optional since the list view doesn't always send them
 @routes_bp.route("/feature", methods=["POST"])
 def create_feature():
-    _, error = get_current_account_id()
+    account_id, error = get_current_account_id()
     if error:
         return error
     data = request.get_json()
+    household_id = data.get("household_id")
+    if not is_account_in_household(account_id, household_id):
+        return jsonify({"error": "Access denied"}), 403
     try:
         feature_id = add_feature(
-            data["household_id"],
+            household_id,
             data["feature_name"],
             data.get("feature_type", ""),
             data.get("x_pos", 0),
@@ -48,9 +52,12 @@ def create_feature():
 # e.g. a rename only sends feature_name, a 3D move only sends x/y/z
 @routes_bp.route("/feature/<int:feature_id>", methods=["PUT"])
 def edit_feature(feature_id):
-    _, error = get_current_account_id()
+    account_id, error = get_current_account_id()
     if error:
         return error
+    feature = get_feature_by_id(feature_id)
+    if not feature or not is_account_in_household(account_id, feature[1]):
+        return jsonify({"error": "Access denied"}), 403
     data = request.get_json()
     try:
         update_feature(
@@ -68,9 +75,12 @@ def edit_feature(feature_id):
 
 @routes_bp.route("/feature/<int:feature_id>", methods=["DELETE"])
 def remove_feature(feature_id):
-    _, error = get_current_account_id()
+    account_id, error = get_current_account_id()
     if error:
         return error
+    feature = get_feature_by_id(feature_id)
+    if not feature or not is_account_in_household(account_id, feature[1]):
+        return jsonify({"error": "Access denied"}), 403
     try:
         delete_feature(feature_id)
         return jsonify({"message": "Feature deleted successfully"}), 200
@@ -82,9 +92,11 @@ def remove_feature(feature_id):
 # Example response: [{ "feature_id": 1, "household_id": 1, "feature_name": "Kitchen", "feature_type": "room", "x_pos": 0, "y_pos": 0, "z_pos": 0, "icon": "home-outline", "tasks": [{ "task_id": 1, "feature_id": 1, "task_name": "Clean the kitchen", "frequency_days": 7, "last_completed": null, "visibility": "household", "created_by_account_id": 1, "icon": "clipboard-text-outline" }, ...] }, ...]
 @routes_bp.route("/household/<int:household_id>/features", methods=["GET"])
 def get_household_features_route(household_id):
-    _, error = get_current_account_id()
+    account_id, error = get_current_account_id()
     if error:
         return error
+    if not is_account_in_household(account_id, household_id):
+        return jsonify({"error": "Access denied"}), 403
     try:
         features = get_features_with_tasks(household_id)
         return jsonify(features), 200
@@ -95,10 +107,13 @@ def get_household_features_route(household_id):
 # icon defaults to clipboard if not sent --> list view always sends one though
 @routes_bp.route("/task", methods=["POST"])
 def create_task():
-    _, error = get_current_account_id()
+    account_id, error = get_current_account_id()
     if error:
         return error
     data = request.get_json()
+    feature = get_feature_by_id(data.get("feature_id"))
+    if not feature or not is_account_in_household(account_id, feature[1]):
+        return jsonify({"error": "Access denied"}), 403
     try:
         task_id = add_task(
             data["feature_id"],
@@ -115,9 +130,12 @@ def create_task():
 
 @routes_bp.route("/task/<int:task_id>", methods=["PUT"])
 def edit_task(task_id):
-    _, error = get_current_account_id()
+    account_id, error = get_current_account_id()
     if error:
         return error
+    household_id = get_household_id_for_task(task_id)
+    if not household_id or not is_account_in_household(account_id, household_id):
+        return jsonify({"error": "Access denied"}), 403
     data = request.get_json()
     try:
         update_task(
@@ -132,9 +150,12 @@ def edit_task(task_id):
 
 @routes_bp.route("/task/<int:task_id>", methods=["DELETE"])
 def remove_task(task_id):
-    _, error = get_current_account_id()
+    account_id, error = get_current_account_id()
     if error:
         return error
+    household_id = get_household_id_for_task(task_id)
+    if not household_id or not is_account_in_household(account_id, household_id):
+        return jsonify({"error": "Access denied"}), 403
     try:
         delete_task(task_id)
         return jsonify({"message": "Task deleted successfully"}), 200
@@ -145,9 +166,12 @@ def remove_task(task_id):
 # The list view calls this when you tap the green check button on a task
 @routes_bp.route("/task/<int:task_id>/complete", methods=["POST"])
 def complete_task(task_id):
-    _, error = get_current_account_id()
+    account_id, error = get_current_account_id()
     if error:
         return error
+    household_id = get_household_id_for_task(task_id)
+    if not household_id or not is_account_in_household(account_id, household_id):
+        return jsonify({"error": "Access denied"}), 403
     try:
         update_task_last_comp_time(task_id)
         return jsonify({"message": "Task marked complete"}), 200
@@ -169,9 +193,11 @@ def create_household():
 
 @routes_bp.route("/household/<int:household_id>", methods=["PUT"])
 def edit_household(household_id):
-    _, error = get_current_account_id()
+    account_id, error = get_current_account_id()
     if error:
         return error
+    if not is_account_in_household(account_id, household_id):
+        return jsonify({"error": "Access denied"}), 403
     data = request.get_json()
     try:
         update_household(household_id, data["household_name"])
@@ -181,9 +207,11 @@ def edit_household(household_id):
 
 @routes_bp.route("/household/<int:household_id>", methods=["DELETE"])
 def remove_household(household_id):
-    _, error = get_current_account_id()
+    account_id, error = get_current_account_id()
     if error:
         return error
+    if not is_account_in_household(account_id, household_id):
+        return jsonify({"error": "Access denied"}), 403
     try:
         delete_household(household_id)
         return jsonify({"message": "Household deleted successfully"}), 200
@@ -193,9 +221,11 @@ def remove_household(household_id):
 # --- User/Account Routes ---
 @routes_bp.route("/user/<int:account_id>", methods=["PUT"])
 def edit_user(account_id):
-    _, error = get_current_account_id()
+    caller_id, error = get_current_account_id()
     if error:
         return error
+    if caller_id != account_id:
+        return jsonify({"error": "Access denied"}), 403
     data = request.get_json()
     try:
         update_account(account_id, data["account_name"], data["email"])
@@ -205,9 +235,11 @@ def edit_user(account_id):
 
 @routes_bp.route("/user/<int:account_id>", methods=["DELETE"])
 def remove_user(account_id):
-    _, error = get_current_account_id()
+    caller_id, error = get_current_account_id()
     if error:
         return error
+    if caller_id != account_id:
+        return jsonify({"error": "Access denied"}), 403
     try:
         delete_account(account_id)
         return jsonify({"message": "User deleted successfully"}), 200
