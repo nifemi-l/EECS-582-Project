@@ -121,7 +121,7 @@ def create_task():
             data["frequency_days"],
             data.get("last_completed"),
             data["visibility"],
-            data.get("created_by_account_id"),
+            account_id,
             data.get("icon", "clipboard-text-outline")
         )
         return jsonify({"task_id": task_id}), 201
