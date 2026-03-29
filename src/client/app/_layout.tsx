@@ -23,8 +23,14 @@ import { Slot } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 // Kept at layout level so safe-area insets are measured once and never cause a layout jump on navigation
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useEffect } from "react";
+import { Platform } from "react-native";
 
 export default function RootLayout() {
+  useEffect(() => {
+    if (Platform.OS === "web") document.title = "HomeSeeHome";
+  }, []);
+
   return (
     // Persistent wrappers: mounted once, shared across all routes
     <GestureHandlerRootView style={{ flex: 1 }}>
