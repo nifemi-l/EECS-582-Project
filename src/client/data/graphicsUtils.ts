@@ -42,9 +42,46 @@ export enum Tool {
   TOOL_EDIT_FEATURE
 }
 
-// This needs to be a function so that we can dynamically change the tool in gestures
-export function isUsingEditTool(currentTool: Tool) {
-  return currentTool === Tool.TOOL_EDIT_FEATURE;
+// Interfaces for WebGL shader locations
+// Attributes
+export interface ShaderAttributebLocations {
+    // We need to figure out where these attributes are being stored on the GPU.
+    vertLoc: number,
+    normalLoc: number
+}
+// Matrices
+export interface ShaderMatrixUniformLocations {
+      // We use three matrices to transform a model's unique position in the world into a 
+      // projected value on the screen. 
+      modelMatrix: WebGLUniformLocation | null,
+      viewMatrix: WebGLUniformLocation | null,
+      projectionMatrix: WebGLUniformLocation | null
+    }
+// Lighting
+export interface ShaderLightUniformLocations {
+    viewPosition: WebGLUniformLocation | null
+    material: {
+        ambient: WebGLUniformLocation | null,
+        diffuse: WebGLUniformLocation | null, 
+        specular: WebGLUniformLocation | null,
+        shininess: WebGLUniformLocation | null
+    },
+    light: {
+        position: WebGLUniformLocation | null,
+        ambient: WebGLUniformLocation | null,
+        diffuse: WebGLUniformLocation | null,
+        specular: WebGLUniformLocation | null,
+    }
+}
+// Billboards
+export interface ShaderBillboardUniformLocations {
+    pos: number,
+    model: WebGLUniformLocation | null,
+    view: WebGLUniformLocation | null,
+    inverseView: WebGLUniformLocation | null,
+    projection: WebGLUniformLocation | null,
+    heightOffset: WebGLUniformLocation | null,
+    healthPercent: WebGLUniformLocation | null,
 }
 
 // Define the structure of what a material should have. We follow the phong lighting model. 
@@ -98,70 +135,6 @@ export const FEATURE_COLORS = [FEATURE_RED, FEATURE_BLUE, FEATURE_GREEN, FEATURE
 // ***********************************************************
 //                  Grid & Cell Utilities
 // ***********************************************************
-
-// Given coordinates, select the feature in the house lists
-export function findAndSetSelectedFeature(cellX: number, cellY: number, cellZ: number) {
-  // iterate through house features. We do it in the order x, z, y since y should always be constant so far (we only support the xz plane)
-  // There should also only ever be one feature that matches
-  for (let i = 0; i < house.renderableFeatures.length; i++) {
-    if (house.renderableFeatures[i].x_pos != cellX || house.renderableFeatures[i].z_pos != cellZ || house.renderableFeatures[i].y_pos != cellY) {
-      continue;
-    } else {
-      // if this is already selected, deselect. Otherwise, select it
-      if (selectedEditFeature === house.renderableFeatures[i]) {
-        setSelectedEditFeature(null);
-      } else {
-        setSelectedEditFeature(house.renderableFeatures[i]);
-      }
-    }
-  }
-}
-
-// Check if a block already exists on the cell - check against all existing cells. If it does, remove what's there
-export function checkValidBlockAndRemove(cellX: number, cellY: number, cellZ: number) {
-  // copy array to new array, without the removed element. We'll do this as we iterate. If we find one to remove, set the result bool
-  let success = true;
-  let copyArray = []; 
-  for (let i = 0; i < house.renderableFeatures.length; i++) {
-    if (house.renderableFeatures[i].x_pos == cellX && house.renderableFeatures[i].y_pos == cellY && house.renderableFeatures[i].z_pos == cellZ) {
-      // We've found a feature not to keep
-      success = false;
-    } else {
-      // We've found a feature we want to keep
-      copyArray.push(house.renderableFeatures[i]);
-    }
-  }
-  // update house array and return success or not
-  house.renderableFeatures = copyArray;
-  return success;
-}
-
-// Check if a block already exists in a cell without removing
-export function checkCellFree(cellX: number, cellY: number, cellZ: number) {
-  // Iterate over the features and see if something is in the provided cell. If so, we know it is not free
-  for (let i = 0; i < house.renderableFeatures.length; i++) {
-    if (house.renderableFeatures[i].x_pos == cellX && house.renderableFeatures[i].y_pos == cellY && house.renderableFeatures[i].z_pos == cellZ) {
-      return false;
-    } 
-  }
-  return true;
-}
-
-// See if a cell is within the bounds of the grid
-export function checkCellInBounds(cellX: number, cellY: number, cellZ: number) {
-  // Disallow invalid block positions. For a grid of size 10,10 we allow range [-5, 4] in the xz directions. We lock to the xz plane (y=0)
-  const halfGridWidth = Math.floor(grid.width / 2);
-  const halfGridHeight = Math.floor(grid.height / 2);
-  if ((cellX < 0 - halfGridWidth || cellX >= halfGridWidth) || Math.abs(cellY) > 0 || (cellZ < 0 - halfGridHeight || cellZ >= halfGridHeight)) {
-    return false;
-  }
-  return true;
-}
-
-// A wrapper function to check if a cell is both free and within the grid
-export function checkValidCell(cellX: number, cellY: number, cellZ: number) {
-  return checkCellInBounds(cellX, cellY, cellZ) && checkCellFree(cellX, cellY, cellZ);
-}
 
 // A helper function to retrieve the cell that was clicked from a given position on the xz plane
 export function cellFromCoords(x: number, z: number) {
@@ -234,10 +207,10 @@ export function genGrid(width: number, height: number) {
 export async function readShaderData() {
   // Load our vertex and fragment files. 
   const [vertFile, fragFile, bbVertFile, bbFragFile] = await Asset.loadAsync([
-    require("../../../assets/shaders/main.vert"),
-    require("../../../assets/shaders/main.frag"),
-    require("../../../assets/shaders/billboard.vert"),
-    require("../../../assets/shaders/billboard.frag"),
+    require("../assets/shaders/main.vert"),
+    require("../assets/shaders/main.frag"),
+    require("../assets/shaders/billboard.vert"),
+    require("../assets/shaders/billboard.frag"),
   ]);
 
   // Ensure we have a vertex shader (at least one is required), if not throw an error
