@@ -874,7 +874,7 @@ export class RenderableHousehold extends Household {
         break;
       case MoveDirection.NEG_X:
         if (this.rdr.checkValidCell(this.rdr.selectedEditFeature.x_pos - 1, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos)) {
-          this.rdr.selectedEditFeature.x_pos += 1;
+          this.rdr.selectedEditFeature.x_pos -= 1;
           GLM.mat4.translate(this.rdr.selectedEditFeature.modelMatrix, this.rdr.selectedEditFeature.modelMatrix, [-1, 0, 0]);
         }
         break;
