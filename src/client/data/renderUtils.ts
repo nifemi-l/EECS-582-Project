@@ -547,9 +547,9 @@ export class Renderer {
     if (this.grid !== null && this.grid.vao !== null && this.grid.buffer !== null && this.grid.gridVertices !== null) {
       this.bindVAO(this.grid.vao);
       gl.uniformMatrix4fv(this.matrixUniformLocs.modelMatrix, false, this.grid.modelMatrx as Float32Array);
-      gl.uniform3fv(this.lightUniformLocs.light.ambient, this.grid.material.ambient); // update lighting uniform values for the material of the object
-      gl.uniform3fv(this.lightUniformLocs.light.diffuse, this.grid.material.diffuse);
-      gl.uniform3fv(this.lightUniformLocs.light.specular, this.grid.material.specular);
+      gl.uniform3fv(this.lightUniformLocs.material.ambient, this.grid.material.ambient); // update lighting uniform values for the material of the object
+      gl.uniform3fv(this.lightUniformLocs.material.diffuse, this.grid.material.diffuse);
+      gl.uniform3fv(this.lightUniformLocs.material.specular, this.grid.material.specular);
       gl.uniform1f(this.lightUniformLocs.material.shininess, this.grid.material.shininess);
       gl.drawArrays(gl.LINES, 0, 2 * (this.grid.width + this.grid.height + 2)); // Lines are 1 pixel thick by default. Two vertices per line. Two more lines to close the grid.
     }
