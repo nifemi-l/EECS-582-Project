@@ -18,39 +18,39 @@ Invariants: None
 Known faults: None
 */
 
+// ***********************************************************
+//                      Needed Imports
+// ***********************************************************
+
 // Import required components
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
-import { Asset } from 'expo-asset';
-import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
 import * as GLM from 'gl-matrix';
-import { LayoutChangeEvent, Platform, Pressable, View, useWindowDimensions } from "react-native";
+import { LayoutChangeEvent, Pressable, View, useWindowDimensions } from "react-native";
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@react-navigation/elements';
 import { Button, PaperProvider, Card, Menu, TextInput } from 'react-native-paper';
 
-// Import server classes
-import Task from "../../../data/task";
-import Feature from "../../../data/feature";
-import Household from "../../../data/household";
+// Import graphics utilities
+import {
+  MoveDirection, Tool, isUsingEditTool,
+  FEATURE_ORANGE, FEATURE_BLUE, FEATURE_GREEN, FEATURE_RED,
+  cellFromCoords, findAndSetSelectedFeature,
+  readShaderData
+} from "../../../data/graphicsUtils"
 
-// Define possible move directions in the xz plane
-enum MoveDirection {
-  POS_X,
-  NEG_X,
-  POS_Z,
-  NEG_Z
-}
+// Import renderer utilities
+import {
+  Camera, RenderableFeature, RenderableHousehold, 
+  Grid, screenToWorldCoords, addBlock,
+  bindVAO, createVAO
+} from "../../../data/rendererUtils"
 
-// Define tools to use for different house features
-enum Tool {
-  TOOL_FEATURE,
-  TOOL_WALL,
-  TOOL_GRID,
-  TOOL_EDIT_FEATURE
-}
-let currentTool = Tool.TOOL_FEATURE;
+
+// ***********************************************************
+//                      Constants
+// ***********************************************************
 
 // Define the near and far clips for the projection matrix
 const NEAR_CLIP = 0.1;
@@ -60,6 +60,10 @@ const FAR_CLIP = 100.0;
 const MIN_WORLD_SCALE = 0.1;
 const MAX_WORLD_SCALE = 6.0;
 
+// ***********************************************************
+//             Top Level UI / Interface Globals
+// ***********************************************************
+
 // See https://docs.swmansion.com/react-native-gesture-handler/docs/gestures/use-pan-gesture for gesture handler details
 // Also define global variables to store this data and update each frame
 let panVelocityX = 0;
@@ -68,11 +72,62 @@ let panVelocityY = 0;
 let panLastY = 0; 
 let panYDir = 0;
 
+// store screen dimensios. Window is the entire window, view is the view component that wraps the GL context
+let viewWidth = 0;
+let viewHeight = 0;
+let windowHeight = 0;
+let windowWidth = 0;
+
+// Store the current editing tool
+let currentTool = Tool.TOOL_FEATURE;
+
+// ***********************************************************
+//                      React UI PubSub System
+// ***********************************************************
+
+// We'll set up a listener pattern so that we can update the react UI from the GL side
+let reactListeners: ((val: any) => void)[] = []; // Store callback functions to use when state changes
+
+// A function to add a callback function to the listeners list so that we can update react when GL state changes
+function subListener(cb: ((val: any) => void)) {
+  reactListeners.push(cb);
+
+  // return an "unsubscribe" function that will remove the listener from the list
+  return () => {
+    reactListeners = reactListeners.filter((l) => l !== cb); // set the listener list to a new version filtered to just the ones that DON'T match
+  };
+}
+
+// setter so that listeners are all notified on update
+function setSelectedEditFeature(feature: RenderableFeature | null) {
+  selectedEditFeature = feature;
+  reactListeners.forEach((cb) => cb(selectedEditFeature)); // call the callback set by each listener
+}
+
+// getter for listeners
+function getSelectedEditFeature() {
+  return selectedEditFeature;
+}
+
+// ***********************************************************
+//                  UI / Interface Utilities
+// ***********************************************************
+
 // A helper function to update the velocity of the pan. We multiply the delta by a constant speed value
 function updateVelocityPan(dx: number, dy: number) {
   panVelocityX = dx * 0.5;
   panVelocityY = dy * 0.5;
 }
+
+// Set width and height of view on layout change
+function handleLayout(event: LayoutChangeEvent) {
+  viewWidth = event.nativeEvent.layout.width;
+  viewHeight = event.nativeEvent.layout.height;
+}
+
+// ***********************************************************
+//                      Gesture Handling
+// ***********************************************************
 
 // Define gesture handler function for panning and rotating the model
 const handlePan = Gesture.Pan()
@@ -119,7 +174,7 @@ const handleTap = Gesture.Tap() // Handle the tap gesture
         // We have successfully found a world position from our tap, so figure out what cell we're in
         const tappedCell = cellFromCoords(worldPos[0], worldPos[2]);
         // Add to House or select depending on tool
-        if (isUsingEditTool()) {
+        if (isUsingEditTool(currentTool)) {
           findAndSetSelectedFeature(tappedCell[0], 0, tappedCell[1]);
         } else {
           addBlock(tappedCell[0], 0, tappedCell[1]);
@@ -128,202 +183,13 @@ const handleTap = Gesture.Tap() // Handle the tap gesture
     }
   })
 
-// This needs to be a function so that we can dynamically change the tool
-function isUsingEditTool() {
-  return currentTool === Tool.TOOL_EDIT_FEATURE;
-}
-
-// Given coordinates, select the feature in the house lists
-function findAndSetSelectedFeature(cellX: number, cellY: number, cellZ: number) {
-  // iterate through house features. We do it in the order x, z, y since y should always be constant so far (we only support the xz plane)
-  // There should also only ever be one feature that matches
-  for (let i = 0; i < house.renderableFeatures.length; i++) {
-    if (house.renderableFeatures[i].x_pos != cellX || house.renderableFeatures[i].z_pos != cellZ || house.renderableFeatures[i].y_pos != cellY) {
-      continue;
-    } else {
-      // if this is already selected, deselect. Otherwise, select it
-      if (selectedEditFeature === house.renderableFeatures[i]) {
-        setSelectedEditFeature(null);
-      } else {
-        setSelectedEditFeature(house.renderableFeatures[i]);
-      }
-    }
-  }
-}
-
-// Check if a block already exists on the cell - check against all existing cells. If it does, remove what's there
-function checkValidBlockAndRemove(cellX: number, cellY: number, cellZ: number) {
-  // copy array to new array, without the removed element. We'll do this as we iterate. If we find one to remove, set the result bool
-  let success = true;
-  let copyArray = []; 
-  for (let i = 0; i < house.renderableFeatures.length; i++) {
-    if (house.renderableFeatures[i].x_pos == cellX && house.renderableFeatures[i].y_pos == cellY && house.renderableFeatures[i].z_pos == cellZ) {
-      // We've found a feature not to keep
-      success = false;
-    } else {
-      // We've found a feature we want to keep
-      copyArray.push(house.renderableFeatures[i]);
-    }
-  }
-  // update house array and return success or not
-  house.renderableFeatures = copyArray;
-  return success;
-}
-
-// Check if a block already exists in a cell without removing
-function checkCellFree(cellX: number, cellY: number, cellZ: number) {
-  // Iterate over the features and see if something is in the provided cell. If so, we know it is not free
-  for (let i = 0; i < house.renderableFeatures.length; i++) {
-    if (house.renderableFeatures[i].x_pos == cellX && house.renderableFeatures[i].y_pos == cellY && house.renderableFeatures[i].z_pos == cellZ) {
-      return false;
-    } 
-  }
-  return true;
-}
-
-
-// See if a cell is within the bounds of the grid
-function checkCellInBounds(cellX: number, cellY: number, cellZ: number) {
-  // Disallow invalid block positions. For a grid of size 10,10 we allow range [-5, 4] in the xz directions. We lock to the xz plane (y=0)
-  const halfGridWidth = Math.floor(grid.width / 2);
-  const halfGridHeight = Math.floor(grid.height / 2);
-  if ((cellX < 0 - halfGridWidth || cellX >= halfGridWidth) || Math.abs(cellY) > 0 || (cellZ < 0 - halfGridHeight || cellZ >= halfGridHeight)) {
-    return false;
-  }
-  return true;
-}
-
-// A wrapper function to check if a cell is both free and within the grid
-function checkValidCell(cellX: number, cellY: number, cellZ: number) {
-  return checkCellInBounds(cellX, cellY, cellZ) && checkCellFree(cellX, cellY, cellZ);
-}
-
-// A function to add a block to the household at a certain position
-function addBlock(cellX: number, cellY: number, cellZ: number) {
-  // Ensure our cell position is in bounds
-  if (!checkCellInBounds(cellX, cellY, cellZ)) {
-    return;
-  }
-
-  // Ensure we haven't already placed a block here. If we have, remove it 
-  if (!checkValidBlockAndRemove(cellX, cellY, cellZ)) {
-    return;
-  }
-
-  const newModelMatrix = GLM.mat4.create(); // create a new transform 
-  GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
-  const newMaterial: Material = currentDrawingColor;
-  const newFeature = new RenderableFeature("f:" + cellX + cellY + cellZ, house.household_id, newModelMatrix, newMaterial, cellX, cellY, cellZ); // this is the new feature object we're adding
-  // randomly add a second chore for demo purposes
-  if (Math.round(Math.random()) == 0) {
-    newFeature.addTask(new Task("Test Task", newFeature.id, 1));
-  }
-  house.renderableFeatures.push(newFeature); // add the feature to the house
-}
-
-// A helper function to retrieve the cell that was clicked from a given position on the xz plane
-function cellFromCoords(x: number, z: number) {
-  // The grid is designed so that each line marks the end of one cell from the origin. 
-  // In other words, 0 is at 0, one is after 1 unit, 2 is after 2 units, etc. So, to find the cell we're in we perform a floor.
-  // It's worth mentioning though that this creates an imbalance between the number of negative and positive cells. Positive
-  // will index at 0, negative at -1. This means that the origin cell (at 0,0) is the cell from 0 to 1 on both the x and z axes
-  // which might not be ideal. 
-  return [Math.floor(x), Math.floor(z)];
-}
-
-// A function to convert screen clicks / taps from screen coordinates to world coordinates in the renderer
-function screenToWorldCoords(screenX: number, screenY: number) {
-  // Ensure we have a valid context
-  if (!glRef || !cam.projectionMatrix || !cam.viewMatrix) {
-    console.error("Unable to convert coordinates without WebGL context.");
-    return null;
-  }
-
-  // Ensure we have valid dimensions. Window size is the size of the entire window, 
-  // view size is the specific size of the React view wrapping the GLView. In other words, this is 
-  // the size of the drawing canvas.
-  if (viewWidth == 0 || viewHeight === 0 || windowWidth === 0 || windowHeight === 0) {
-    console.error("No width or height defined.");
-    return null;
-  }
-
-  // normalize screen coordinates to normalized device coordinates [-1, 1]
-  // convert screen coords to clip space. Centered at 0,0,0. 
-  // Top left: (-1, 1, ~). Bottom right: (1, -1, ~) in NDC
-  // Top left: (0, 0), bottom right (max, max) in Screen Coordinates.
-  // After dividing screen by max, we get [0, 1] as our screen coord range
-  const normX = 2.0 * (screenX / viewWidth) - 1.0;
-  const normY = 1.0 - 2.0 * ((screenY - (windowHeight - viewHeight)) / viewHeight); // top left is 0,0 in screen coords. WebGL uses a +Y up convention, whereas screenX and Y increase as Y decreases
-
-  // get our projection * view matrix. We will then invert this to get our unprojection matrix.
-  // The unprojection matrix is what we can use to "undo" the projection * view process done in our shaders to convert the world to screen position.
-  // We just invert that "view-projection" matrix. Here, we want to go screen to world, hence "unproject".
-  const viewProjMatrix = GLM.mat4.create();
-  GLM.mat4.multiply(viewProjMatrix, cam.projectionMatrix, cam.viewMatrix);
-  const unprojectionMatrix = GLM.mat4.create();
-  const unprojectionMatrixResult = GLM.mat4.invert(unprojectionMatrix, viewProjMatrix);
-  if (!unprojectionMatrixResult) {
-    console.error("Unable to calculate the inverse of the view projection matrix.");
-    return null;
-  }
-
-  // Since we clicked a point in 2D space, our result in 3D space is a line. We need to perform a raycast and see what this line intersects with.
-  // We'll define the z bounds of this line as the near and far planes of the NDC space (which is actually defined in 3D). 
-  // See: https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_model_view_projection 
-  // In NDC, the Z coordinate is between -1 and 1, with -1 being the direction that the camera is looking. 
-  const front = GLM.vec4.fromValues(normX, normY, -1, 1);
-  const back = GLM.vec4.fromValues(normX, normY, 1, 1); 
-
-  // We now multiply the screen position by the unprojection matrix to get world coordinates for both the front and back points.
-  GLM.vec4.transformMat4(front, front, unprojectionMatrix);
-  GLM.vec4.transformMat4(back, back, unprojectionMatrix);
-
-  // Now, we divide by the perspective (w) component to convert from homgenous coordinates (which use a w component to simulate depth) to cartesian coordinates
-  front[0] /= front[3];
-  front[1] /= front[3];
-  front[2] /= front[3];
-  back[0] /= back[3];
-  back[1] /= back[3];
-  back[2] /= back[3];
-
-  // Next, find where the ray intersects with the y=0 plane
-  // parametric equation of a 3D line:
-  // x = x0 + at
-  // y = y0 + bt
-  // z = z0 + ct
-  // <a, b, c> is the direction vector calculated from <x1 - x0, y1 - y0, z1 - z0>. 
-  // Since we want to find the intersection with the xz plane (y=0) we can calculate as follows:
-  // 0 = y0 + bt --> -y0/b = t
-  // z = z0 + c * (-y0 / b)
-  // x = x0 + a * (-y0 / b)
-  // This will give us our intersection point (x, 0, z) in world space. 
-  // Additionally, if b is 0 we cannot calculate a solution and must fail.
-  // We'll treat front as position 0 and back as position 1 since front is usually smaller
-  const dir = GLM.vec3.fromValues(back[0] - front[0], back[1] - front[1], back[2] - front[2]);
-  if (Math.abs(dir[1]) <= 0.000001) { // check against a very small value to handle floating point error
-    console.error("Failing, unable to calculate a ray.")
-    return null;
-  }  
-  const t = -1.0 * front[1] / dir[1];
-  const finalPos = GLM.vec3.fromValues(front[0] + dir[0] * t, 0, front[2] + dir[2] * t);
-
-  return finalPos;
-}
-
-// store screen dimensios. Window is the entire window, view is the view component that wraps the GL context
-let viewWidth = 0;
-let viewHeight = 0;
-let windowHeight = 0;
-let windowWidth = 0;
-
-// Set width and height of view on layout change
-function handleLayout(event: LayoutChangeEvent) {
-  viewWidth = event.nativeEvent.layout.width;
-  viewHeight = event.nativeEvent.layout.height;
-}
 
 // Use a composed gesture to allow for both pan and tap gestures. It is exclusive in that we can't use them both
 const composedGesture = Gesture.Exclusive(handlePan, handleTap);
+
+// ***********************************************************
+//                      JSX And UI
+// ***********************************************************
 
 // The color selection buttons at the bottom of the screen
 function ColorButtons() {
@@ -549,395 +415,25 @@ export default function Index() {
   );
 }
 
+// ***********************************************************
+//                      Renderer
+// ***********************************************************
+
 let glRef: ExpoWebGLRenderingContext | null = null; // A global way to access the single WebGL context created on launch
 let shaderProgram: WebGLProgram | null = null; // The currently used GPU shader program
 let bbShaderProgram: WebGLProgram | null = null; // The shader program for billboards
 let lastFrameTime = 0; // The time since the last frame
 let oesExt: OES_vertex_array_object | null = null; // A global way to access the OES extension for WebGL 1.0 support
 let frameId: number | null = null; // the id of the current frame being drawn
-
-// A class to represent the camera object. This manages the world view matrix
-class Camera {
-  viewMatrix: GLM.mat4; // The view matrix used to setup the projection
-  viewLoc: WebGLUniformLocation | null; // The location to access and provide the view matrix data for the shaders to use
-  projectionMatrix: GLM.mat4;
-  projectionLoc: WebGLUniformLocation | null; // same as above but for the projection matrix
-
-  // Billboard values
-  bbViewLoc: WebGLUniformLocation | null; // The location to access and provide the view matrix data for the shaders to use
-  bbProjectionLoc: WebGLUniformLocation | null; // same as above but for the projection matrix
-  bbInverseViewLoc: WebGLUniformLocation | null; // for the inverse of the view
-
-  // Constructor. Initialize the viewLocation to null since we have no gl context yet, and create an identity view matrix
-  constructor() {
-    this.viewMatrix = GLM.mat4.create();
-
-    // We cannot determine these without a GL context
-    this.viewLoc = null;
-    this.projectionLoc = null;
-    this.bbViewLoc = null;
-    this.bbProjectionLoc = null;
-    this.bbInverseViewLoc = null;
-
-    // We'll use a 3 matrix system. All model data is originally input with respect for its own space as the transform. That is, all model data
-    // assumes its position origin is at 0. Obviously, when rendering multiple objects in different locations this isn't the case. 
-    // We then define a "model matrix" to store the transform data for each object relevant to its world. Then, we use a "view matrix" to shift all 
-    // world data around depending on how the camera is looking at the world (e.g. if the camera should move left, the world actually moves right).
-    // Finally, we store a projection matrix to transform this view space coordinate data into a perspective view for the screen. Here, we create 
-    // our projection and view matrix. We create our perspective matrix with a FOV of 45, aspect ratio of the WebGL context, a near clip of 0.1 and far of 100. 
-    // Then, we upload this matrix data as uniform data for use in our vertex shader as an array of values. 
-    // we'll actually set this projection matrix up during initialization
-    this.projectionMatrix = GLM.mat4.create();
-  }
-}
 let cam = new Camera(); // Our global camera value
-
-// Define the structure of what a material should have. We follow the phong lighting model. 
-// Values for all numbers but shininess should be in [0, 1]
-interface Material {
-  ambient: [number, number, number];
-  diffuse: [number, number, number];
-  specular: [number, number, number];
-  shininess: number;
-}
-
-// Define a series of colors
-const FEATURE_RED: Material = {
-  ambient: [0.21, 0.31, 0.31],
-  diffuse: [1.0, 0.0, 0.0],
-  specular: [0.5, 0.5, 0.5],
-  shininess: 32.0,
-}
-
-const FEATURE_BLUE: Material = {
-  ambient: [0.21, 0.31, 0.31],
-  diffuse: [0.0, 0.0, 1.0],
-  specular: [0.5, 0.5, 0.5],
-  shininess: 32.0,
-}
-
-const FEATURE_GREEN: Material = {
-  ambient: [0.21, 0.31, 0.31],
-  diffuse: [0.0, 1.0, 0.0],
-  specular: [0.5, 0.5, 0.5],
-  shininess: 32.0,
-}
-
-const FEATURE_ORANGE: Material = {
-  ambient: [0.21, 0.31, 0.31],
-  diffuse: [1.0, 0.6, 0.3],
-  specular: [0.5, 0.5, 0.5],
-  shininess: 32.0,
-}
-
-const FEATURE_GREY: Material = {
-  ambient: [0.21, 0.31, 0.31],
-  diffuse: [1.0, 1.0, 1.0],
-  specular: [0.5, 0.5, 0.5],
-  shininess: 32.0,
-}
-
-// We will pick from this array of colors
-const FEATURE_COLORS = [FEATURE_RED, FEATURE_BLUE, FEATURE_GREEN, FEATURE_ORANGE]
 let currentDrawingColor = FEATURE_ORANGE;
-
-// Extended Feature class for 3D rendering
-class RenderableFeature extends Feature {
-   modelMatrix: GLM.mat4; // The transform of the feature in the world
-   material: Material; // How the feature looks materially
-   visible: boolean;
-
-   constructor(name: string, household_id: number, mm: GLM.mat4 | null, mat: Material | null, x: number | null, y: number | null, z: number | null) {
-    super(name, household_id)
-
-    // Assign model matrix to either a provided value or a default
-    this.modelMatrix = mm || GLM.mat4.create();
-
-    // Do the same for the material (basically what should the object look like color-wise).
-    this.material = mat || FEATURE_ORANGE;
-
-    // Default chore list
-    this.addTask(new Task("Mock Task", 0 , 1));
-
-    // Defaults to origin in super if not provided (note: assumes valid input)
-    this.x_pos = x || 0;
-    this.y_pos = y || 0;
-    this.z_pos = z || 0;
-
-    // Default to visibile
-    this.visible = true;
-   }
-}
-
-// This is the household class. It is meant to be the primary way to store and access the currently rendered house model
-class RenderableHousehold extends Household {
-   // A series of relevant variables to render the household on the screen.
-   blockVertices: Float32Array; // The vertices that make up a cube (including the normals of each face)
-   renderableFeatures: RenderableFeature[]; // The list of feature objects in our household
-   buffer: WebGLBuffer | null; // A way to access the buffer storing cube vertex data on the GPU
-   vao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null; // A single object to store the vertex attribute data and which buffer to bind for the household
-   modelLoc: WebGLUniformLocation | null; // The location to access and provide the model matrix data for the shaders to use
-   ambientLoc: WebGLUniformLocation | null; // The location to access and provide the color material data for the shaders to use
-   diffuseLoc: WebGLUniformLocation | null; // The location to access and provide the color material data for the shaders to use
-   specularLoc: WebGLUniformLocation | null; // The location to access and provide the color material data for the shaders to use
-   shininessLoc: WebGLUniformLocation | null; // The location to access and provide the color material data for the shaders to use
-
-   // Billboard related values
-   bbBuffer: WebGLBuffer | null; // A way to access the buffer storing cube vertex data on the GPU
-   bbVertices: Float32Array; // The vertices of the billboard quad
-   bbVao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null; // A single object to store the vertex attribute data and which buffer to bind for the household
-   bbModelLoc: WebGLUniformLocation | null; // The location to access and provide the model matrix data for the shaders to use
-   bbHeightOffsetLoc: WebGLUniformLocation | null; // access to the height offset uniform
-   bbHealthPercentLoc: WebGLUniformLocation | null; // access to the healthbar's health percent uniform
-
-   // change the size of the floor feature to match the grid
-   resizeFloorFeature() {
-    // floor feature is always the first feature in the features array
-    const floorMatrix = GLM.mat4.create();
-    GLM.mat4.scale(floorMatrix, floorMatrix, [grid.width, 0.5, grid.height]);
-    GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
-    const floorFeature = new RenderableFeature("Floor", this.household_id, floorMatrix, FEATURE_GREY, 0, -1, 0); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
-    floorFeature.tasks = []; // reset tasks so no healthbar
-    this.renderableFeatures[0] = floorFeature;
-   }
-   
-   // Moves the selected edit feature one cell over based on the input direction
-   moveSelectedFeatureByOne(dir: MoveDirection) {
-    // Ensure we have a feature selected
-    if (!selectedEditFeature) {
-      console.error("Attempting to move null feature.");
-      return;
-    }
-
-    // Apply movement. First, check if the proposed move would be within bounds. Then, apply updates to the model matrices and XYZ values.
-    switch (dir) {
-      case MoveDirection.POS_X:
-        if (checkValidCell(selectedEditFeature.x_pos + 1, selectedEditFeature.y_pos, selectedEditFeature.z_pos)) {
-          selectedEditFeature.x_pos += 1;
-          GLM.mat4.translate(selectedEditFeature.modelMatrix, selectedEditFeature.modelMatrix, [1, 0, 0]);
-        }
-        break;
-      case MoveDirection.NEG_X:
-        if (checkValidCell(selectedEditFeature.x_pos - 1, selectedEditFeature.y_pos, selectedEditFeature.z_pos)) {
-          selectedEditFeature.x_pos -= 1;
-          GLM.mat4.translate(selectedEditFeature.modelMatrix, selectedEditFeature.modelMatrix, [-1, 0, 0]);
-        }
-        break;
-      case MoveDirection.POS_Z:
-        if (checkValidCell(selectedEditFeature.x_pos, selectedEditFeature.y_pos, selectedEditFeature.z_pos + 1)) {
-          selectedEditFeature.z_pos += 1;
-          GLM.mat4.translate(selectedEditFeature.modelMatrix, selectedEditFeature.modelMatrix, [0, 0, 1]);
-        }
-        break;
-      case MoveDirection.NEG_Z:
-        if (checkValidCell(selectedEditFeature.x_pos, selectedEditFeature.y_pos, selectedEditFeature.z_pos - 1)) {
-          selectedEditFeature.z_pos -= 1;
-          GLM.mat4.translate(selectedEditFeature.modelMatrix, selectedEditFeature.modelMatrix, [0, 0, -1]);
-        }
-        break;
-      default:
-        console.error("Unknown direction provided when requesting a feature move.");
-    }
-   }
-
-   // Add a renderable feature to the renderablefeatures array. This should mirror the super's Feature array. A spot for future improvement.
-   addRenderableFeature(rf: RenderableFeature) {
-    this.renderableFeatures.push(rf);
-   }
-
-   constructor(name: string) {
-    super(name);
-
-    // Vertices + normal vectors of a cube. Each cube has 6 faces, and each face is made up of two triangles. Each triangle has 3 vertices. 
-    this.blockVertices = new Float32Array([
-        -0.5, -0.5, -0.5,  0.0,  0.0, -1.0,
-        0.5, -0.5, -0.5,  0.0,  0.0, -1.0, 
-        0.5,  0.5, -0.5,  0.0,  0.0, -1.0, 
-        0.5,  0.5, -0.5,  0.0,  0.0, -1.0, 
-        -0.5,  0.5, -0.5,  0.0,  0.0, -1.0, 
-        -0.5, -0.5, -0.5,  0.0,  0.0, -1.0, 
-
-        -0.5, -0.5,  0.5,  0.0,  0.0, 1.0,
-        0.5, -0.5,  0.5,  0.0,  0.0, 1.0,
-        0.5,  0.5,  0.5,  0.0,  0.0, 1.0,
-        0.5,  0.5,  0.5,  0.0,  0.0, 1.0,
-        -0.5,  0.5,  0.5,  0.0,  0.0, 1.0,
-        -0.5, -0.5,  0.5,  0.0,  0.0, 1.0,
-
-        -0.5,  0.5,  0.5, -1.0,  0.0,  0.0,
-        -0.5,  0.5, -0.5, -1.0,  0.0,  0.0,
-        -0.5, -0.5, -0.5, -1.0,  0.0,  0.0,
-        -0.5, -0.5, -0.5, -1.0,  0.0,  0.0,
-        -0.5, -0.5,  0.5, -1.0,  0.0,  0.0,
-        -0.5,  0.5,  0.5, -1.0,  0.0,  0.0,
-
-        0.5,  0.5,  0.5,  1.0,  0.0,  0.0,
-        0.5,  0.5, -0.5,  1.0,  0.0,  0.0,
-        0.5, -0.5, -0.5,  1.0,  0.0,  0.0,
-        0.5, -0.5, -0.5,  1.0,  0.0,  0.0,
-        0.5, -0.5,  0.5,  1.0,  0.0,  0.0,
-        0.5,  0.5,  0.5,  1.0,  0.0,  0.0,
-
-        -0.5, -0.5, -0.5,  0.0, -1.0,  0.0,
-        0.5, -0.5, -0.5,  0.0, -1.0,  0.0,
-        0.5, -0.5,  0.5,  0.0, -1.0,  0.0,
-        0.5, -0.5,  0.5,  0.0, -1.0,  0.0,
-        -0.5, -0.5,  0.5,  0.0, -1.0,  0.0,
-        -0.5, -0.5, -0.5,  0.0, -1.0,  0.0,
-
-        -0.5,  0.5, -0.5,  0.0,  1.0,  0.0,
-        0.5,  0.5, -0.5,  0.0,  1.0,  0.0,
-        0.5,  0.5,  0.5,  0.0,  1.0,  0.0,
-        0.5,  0.5,  0.5,  0.0,  1.0,  0.0,
-        -0.5,  0.5,  0.5,  0.0,  1.0,  0.0,
-        -0.5,  0.5, -0.5,  0.0,  1.0,  0.0
-    ]);
-
-    this.bbVertices = new Float32Array([ // two triangles
-      -1.0, -0.15, 0.0,
-      1.0, -0.15, 0.0,
-      1.0, 0.15, 0.0,
-      -1.0, -0.15, 0.0,
-      -1.0, 0.15, 0.0,
-      1.0, 0.15, 0.0,
-    ]);
-
-    // These are as mentioned above. We initialize the WebGL specific ones to null because they need a proper WebGL context first
-    this.renderableFeatures = []; // This is variable, start with none
-
-    // Add a floor to the house
-    const floorMatrix = GLM.mat4.create();
-    GLM.mat4.scale(floorMatrix, floorMatrix, [10, 0.5, 10]); // note implicitly depends on grid size defaulting to 10
-    GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
-    const floorFeature = new RenderableFeature("Floor", this.household_id, floorMatrix, FEATURE_GREY, 0, -1, 0); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
-    floorFeature.tasks = []; // reset tasks so no healthbar
-    this.addRenderableFeature(floorFeature); // must be the first feature
-
-    // Add walls
-    // Left wall
-    const leftWallMatrix = GLM.mat4.create();
-    GLM.mat4.translate(leftWallMatrix, leftWallMatrix, [-5.25, 1.5, 0])
-    GLM.mat4.scale(leftWallMatrix, leftWallMatrix, [0.5, 3, 10.1]); 
-    const leftWall = new RenderableFeature("Left Wall", this.household_id, leftWallMatrix, FEATURE_GREY, -5, -1, 0)
-    leftWall.tasks = [];
-    this.addRenderableFeature(leftWall);
-
-    // Right wall
-    const rightWallMatrix = GLM.mat4.create();
-    GLM.mat4.translate(rightWallMatrix, rightWallMatrix, [5.25, 1.5, 0])
-    GLM.mat4.scale(rightWallMatrix, rightWallMatrix, [0.5, 3, 10.1]); 
-    const rightWall = new RenderableFeature("Right Wall", this.household_id, rightWallMatrix, FEATURE_GREY, 5, -1, 0)
-    rightWall.tasks = [];
-    this.addRenderableFeature(rightWall);
-
-    // Back wall
-    const backWallMatrix = GLM.mat4.create();
-    GLM.mat4.translate(backWallMatrix, backWallMatrix, [0, 1.5, -5.25])
-    GLM.mat4.scale(backWallMatrix, backWallMatrix, [10.1, 3, 0.5]); 
-    const backWall = new RenderableFeature("Back Wall", this.household_id, backWallMatrix, FEATURE_GREY, 0, -1, -5)
-    backWall.tasks = [];
-    this.addRenderableFeature(backWall);
-
-    // Front wall
-    const frontWallMatrix = GLM.mat4.create();
-    GLM.mat4.translate(frontWallMatrix, frontWallMatrix, [0, 1.5, 5.25])
-    GLM.mat4.scale(frontWallMatrix, frontWallMatrix, [10.1, 3, 0.5]); 
-    const frontWall = new RenderableFeature("Front Wall", this.household_id, frontWallMatrix, FEATURE_GREY, 0, -1, 5)
-    frontWall.tasks = [];
-    this.addRenderableFeature(frontWall);
-
-    // We cannot determine the following entries without a gl context
-    this.buffer = null;
-    this.vao = null;
-    this.bbBuffer = null;
-    this.bbVao = null;
-    this.modelLoc = null;
-    this.ambientLoc = null;
-    this.diffuseLoc = null;
-    this.specularLoc = null;
-    this.shininessLoc = null;
-    this.bbModelLoc = null;
-    this.bbHeightOffsetLoc = null;
-    this.bbHealthPercentLoc = null;
-   }
-}
 let house = new RenderableHousehold("default_1"); // Create a global household object
 let selectedEditFeature: RenderableFeature | null = null; // The current feature being edited in the edit window
-
-// We'll set up a listener pattern so that we can update the react UI from the GL side
-let reactListeners: ((val: any) => void)[] = []; // Store callback functions to use when state changes
-
-// A function to add a callback function to the listeners list so that we can update react when GL state changes
-function subListener(cb: ((val: any) => void)) {
-  reactListeners.push(cb);
-
-  // return an "unsubscribe" function that will remove the listener from the list
-  return () => {
-    reactListeners = reactListeners.filter((l) => l !== cb); // set the listener list to a new version filtered to just the ones that DON'T match
-  };
-}
-
-// setter so that listeners are all notified on update
-function setSelectedEditFeature(feature: RenderableFeature | null) {
-  selectedEditFeature = feature;
-  reactListeners.forEach((cb) => cb(selectedEditFeature)); // call the callback set by each listener
-}
-
-// getter for listeners
-function getSelectedEditFeature() {
-  return selectedEditFeature;
-}
-
-// This is the grid class, used to draw a grid on the screen
-class Grid {
-  gridVertices: Float32Array | null; // Store the vertices that make up the grid
-  modelMatrx: GLM.mat4; // Store the transform data of the grid
-  buffer: WebGLBuffer | null; // Access the GPU buffer where the grid vertex data is uploaded
-  vao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null; // Store a descriptor of the proper vertex attribute format and related buffer
-  width: number;
-  height: number;
-  material: Material;
-
-  // For cases where we want to resize the grid
-  resize(w: number, h: number) {
-    if (w <= 1 || h <= 1) {
-      console.error("Invalid grid size given.");
-      return;
-    }
-
-    // Note: this function should not be called in the render loop
-    if (!glRef) {
-      console.error("Cannot resize grid without OpenGL context.");
-      return;
-    }
-
-    // Set member data
-    this.width = w;
-    this.height = h;
-    this.gridVertices = genGrid(this.width, this.height);
-
-    bindVAO(this.vao);
-    glRef.bindBuffer(glRef.ARRAY_BUFFER, this.buffer);
-    glRef.bufferData(glRef.ARRAY_BUFFER, grid.gridVertices, glRef.STATIC_DRAW); 
-    bindVAO(null);
-  }
-
-  constructor() {
-    // As above, but no need for normal data
-    this.width = 10;
-    this.height = 10;
-    this.gridVertices = genGrid(this.width, this.height);
-    
-    // As in Household, we initialize what we can but set to null whatever needs a WebGL context first
-    this.modelMatrx = GLM.mat4.create();
-    this.buffer = null;
-    this.vao = null;
-
-    // Select the grid's color / material settings
-    this.material = FEATURE_ORANGE;
-  }
-}
 let grid = new Grid(); // Store a global grid object
+
+// ***********************************************************
+//                      Renderer Init
+// ***********************************************************
 
 // This is the function called to create the WebGL context, setup extensions if needed, read and compile shaders, and do all
 // other prep work which is neccessary to initialize our renderer. 
@@ -1202,7 +698,11 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
   console.log("Context initialized.");
 }
 
+// ***********************************************************
+//                      Render Loop
+// ***********************************************************
 // This is the function that will be called every frame to draw a frame on in the WebGL context
+
 const inverseView = GLM.mat4.create(); // store our inverse view matrix here to avoid re-creation every frame
 const scale = GLM.vec3.create(); // store the current scale of our view matrix
 function drawFrame(time: number) {
@@ -1383,139 +883,4 @@ function drawFrame(time: number) {
     // End frame and then request a new animation frame with this same method (recursive)
     gl.endFrameEXP();
     frameId = window.requestAnimationFrame(drawFrame);
-}
-
-// Generate the vertices that would comrpise a grid based on a width and height value centered at 0 on the xz axis. 
-function genGrid(width: number, height: number) {
-  // Ensure valid width & height
-  if (width <= 0 || height <= 0) {
-    console.error("Invalid grid parameters.");
-    return null;
-  }
-
-  // Each vertex has 3 position elements. Each line has two vertices, so 6 elements per line.
-  // We start at -(width / 2), increasing by 1, until (width / 2) in the x direction, and then again in the z direction.
-  const numLines = width + height + 2; // add two lines to close in the grid
-  const numVertices = numLines * 6;
-
-  // Store our vertices as a flat array
-  let verts = new Float32Array(numVertices);
-
-  // First half of verts is width lines
-  // Draw all the lines in a z direction moving across the x axis
-  for (let i = 0; i <= width; i++) {
-    // x position goes from 0 - width / 2 to 0 + width / 2. z position is from 0 - height / 2 to 0 + height / 2
-    
-    // line 1 - x, y, z
-    verts[i * 6 + 0] = i - width / 2;
-    verts[i * 6 + 1] = 0.0;
-    verts[i * 6 + 2] = 0 - height / 2;
-
-    // line 2 - x, y, z
-    verts[i * 6 + 3] = i - width / 2;
-    verts[i * 6 + 4] = 0.0;
-    verts[i * 6 + 5] = 0 + height / 2;
-  }
-
-  // Second half of verts is height lines
-  // Draw all the lines in the x direction moving across the z axis
-  for (let i = width + 1; i < numLines; i++) {
-    // x position goes from 0 - width / 2 to 0 + width / 2. z position is from 0 - height / 2 to 0 + height / 2
-    
-    // line 1 - x, y, z
-    verts[i * 6 + 0] = 0 - width / 2;
-    verts[i * 6 + 1] = 0.0;
-    verts[i * 6 + 2] = i - 1 - height / 2 - width;
-
-    // line 2 - x, y, z
-    verts[i * 6 + 3] = 0 + width / 2;
-    verts[i * 6 + 4] = 0.0;
-    verts[i * 6 + 5] = i - 1 - height / 2 - width;
-  }
-
-  return verts as Float32Array;
-}
-
-// Since WebGL 1.0 and 2.0 create vertex array objects (explained above) differently, we need a wrapper function. 
-function createVAO() {
-  // Ensure we have a WebGL context
-  if (!glRef) {
-    console.error("No gl context.");
-    return null;
-  }
-
-  if (!oesExt) {
-    // WebGL 2.0 - we do not have the OES extension and support VAOs natively
-    return glRef.createVertexArray();
-  } else {
-    // WebGL 1.0 - we do have the OES extension to support VAOs but we do not have support for VAOs natively
-    return oesExt.createVertexArrayOES();
-  }
-}
-
-// Since WebGL 1.0 and 2.0 bind vertex array objects (explained above) differently, we need a wrapper function. 
-// Note that it is possible to bind a null VAO, this just clears whatever VAO is currently bound. 
-function bindVAO(vao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null) {
-  // Ensure we have a WebGL context
-  if (!glRef) {
-    console.error("No gl context.");
-    return null;
-  }
-
-  if (!oesExt) {
-    // WebGL 2.0 - we do not have the OES extension and support VAOs natively
-    return glRef.bindVertexArray(vao);
-  } else {
-    // WebGL 1.0 - we do have the OES extension to support VAOs but we do not have support for VAOs natively
-    return oesExt.bindVertexArrayOES(vao);
-  }
-}
-
-// Read shader data from a .vert or .frag file (for vertex or fragment shaders), then return that file
-// as a single string for later use in WebGL. I have no idea why they designed it this way, but WebGL wants
-// a string. 
-async function readShaderData() {
-  // Load our vertex and fragment files. 
-  const [vertFile, fragFile, bbVertFile, bbFragFile] = await Asset.loadAsync([
-    require("../../../assets/shaders/main.vert"),
-    require("../../../assets/shaders/main.frag"),
-    require("../../../assets/shaders/billboard.vert"),
-    require("../../../assets/shaders/billboard.frag"),
-  ]);
-
-  // Ensure we have a vertex shader (at least one is required), if not throw an error
-  if (!vertFile.localUri) {
-    throw new URIError("Unable to find vertex shader.");
-  }
-
-  // Ensure we have a fragment shader (at least one is required), if not throw an error
-  if (!fragFile.localUri) {
-    throw new URIError("Unable to find fragment shader.");
-  }
-
-  // Ensure we have out billboard vertex shader, if not throw an error
-  if (!bbVertFile.localUri) {
-    throw new URIError("Unable to find billboard vertex shader.");
-  }
-
-  // Ensure we have out billboard fragment shader, if not throw an error
-  if (!bbFragFile.localUri) {
-    throw new URIError("Unable to find billboard fragment shader.");
-  }
-
-  // Web and mobile bundle files differently. On web, we fetch it using a URL as if we were fetching an external resource.
-  // On mobile, we can just read the file since it is bundled with the application. Once read, return the file data as text / string data.
-  if (Platform.OS === 'web') {
-    const vertSrc = await (await fetch(vertFile.localUri)).text(); // .text() is a promise, like fetch, hence the double await
-    const fragSrc = await (await fetch(fragFile.localUri)).text();
-    const bbVertSrc = await (await fetch(bbVertFile.localUri)).text();
-    const bbFragSrc = await (await fetch(bbFragFile.localUri)).text();
-    return [vertSrc, fragSrc, bbVertSrc, bbFragSrc]
-  } else {
-    const vertSrc = await readAsStringAsync(vertFile.localUri);
-    const fragSrc = await readAsStringAsync(fragFile.localUri);
-    const bbVertSrc = await readAsStringAsync(bbVertFile.localUri);
-    const bbFragSrc = await readAsStringAsync(bbFragFile.localUri);
-    return [vertSrc, fragSrc, bbVertSrc, bbFragSrc];
-  }
 }
