@@ -5,7 +5,7 @@ Programmer: Jack Bauer
 Creation date: 3/29/26
 Revision date: 
   - No revisions yet
-Preconditions: None
+Preconditions: A proper draw / render loop is created outside of this file (Renderer does not contain its own loop, instead it has the pieces)
 Postconditions: None
 Errors: None
 Side effects: None
@@ -47,7 +47,7 @@ const MIN_WORLD_SCALE = 0.1;
 const MAX_WORLD_SCALE = 6.0;
 
 // ***********************************************************
-//                       Renderer Classes
+//                       Renderer Class
 // ***********************************************************
 
 // Store details needed for a functional renderer
@@ -779,6 +779,10 @@ export class Renderer {
     return this.checkCellInBounds(cellX, cellY, cellZ) && this.checkCellFree(cellX, cellY, cellZ);
   }
 }
+
+// ***********************************************************
+//                       Helper Classes
+// ***********************************************************
 
 // A class to represent the camera object. This manages the world view matrix
 export class Camera {
