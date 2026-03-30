@@ -1,9 +1,10 @@
 /* PROLOGUE
 File name: login.tsx
 Description: Provide a login screen UI that accepts user credentials and navigates to the home page
-Programmer: Logan Smith
+Programmers: Logan Smith, Nifemi Lawal
 Creation date: 2/14/26
-Revision date: N/A
+Revision date:
+  - 3/29/26: Replace hardcoded localhost URL with EXPO_PUBLIC_API_URL env variable
 Preconditions: A React application requesting the login screen route ("/login")
 Postconditions: A login screen component is ready for rendering; on sign-in, user is navigated to /home
 Errors: None
@@ -17,6 +18,8 @@ import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-nativ
 import { router, useLocalSearchParams } from "expo-router";
 import { useState, useEffect } from "react";
 import { saveToken } from "../utils/authStorage";
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 // Local state for the email and password text boxes
 export default function LoginScreen() {
@@ -39,7 +42,7 @@ export default function LoginScreen() {
     }
 
     try {
-      const response = await fetch("http://localhost:8000/auth/login", {
+      const response = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

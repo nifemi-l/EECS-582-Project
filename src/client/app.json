@@ -23,7 +23,7 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png",
+      "favicon": "./assets/images/icons8-home-filled-outline-32.png",
       "bundler": "metro"
     },
     "plugins": [
