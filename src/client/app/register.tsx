@@ -1,9 +1,10 @@
 /* PROLOGUE
 File name: register.tsx
 Description: Provide a registration screen UI that collects username, email, and password verification for account creation
-Programmer: Logan Smith
+Programmers: Logan Smith, Nifemi Lawal
 Creation date: 2/14/26
-Revision date: N/A
+Revision date:
+  - 3/29/26: Replace hardcoded localhost URL with EXPO_PUBLIC_API_URL env variable
 Preconditions: A React application requesting the register screen route ("/register")
 Postconditions: A registration screen component is ready for rendering; successful registration flow can route back to login (temporary)
 Errors: None
@@ -17,6 +18,8 @@ import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-nativ
 import { router } from "expo-router";
 import { useState } from "react";
 import { saveToken } from "../utils/authStorage";
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function RegisterScreen() {
 
@@ -44,7 +47,7 @@ export default function RegisterScreen() {
 
     try {
       // Send a request to create the user's account in the backend
-      const response = await fetch("http://localhost:8000/auth/register", {
+      const response = await fetch(`${API_URL}/auth/register`, {
         method: "POST",
         headers: {
           // Send login credentials as JSON
@@ -68,7 +71,7 @@ export default function RegisterScreen() {
       }
 
       // After successful registration, auto-login to keep user in auth state
-      const loginResponse = await fetch("http://localhost:8000/auth/login", {
+      const loginResponse = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: {
           // Send login credentials as JSON
