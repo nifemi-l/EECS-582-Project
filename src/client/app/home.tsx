@@ -1,9 +1,10 @@
 /* PROLOGUE
 File name: home.tsx
 Description: Post-login home screen where users can create or join households
-Programmers: Logan Smith
+Programmers: Logan Smith, Nifemi Lawal
 Creation date: 3/18/26
-Revision date: N/A
+Revision date:
+  - 3/29/26: Replace hardcoded localhost URL with EXPO_PUBLIC_API_URL env variable
 Preconditions: User is authenticated before reaching this screen
 Postconditions: Renders either an empty state or a list of households the user belongs to
 Errors: None
@@ -19,6 +20,8 @@ import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { getToken } from "../utils/authStorage";
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 // The local Household model shape used by HomeScreen state and rendering
 const HOUSEHOLD_ORDER_KEY = "household_order";
@@ -83,7 +86,7 @@ export default function HomeScreen() {
 
       try {
         // Request the current user's households from the backend
-        const response = await fetch("http://localhost:8000/household/mine", {
+        const response = await fetch(`${API_URL}/household/mine`, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
@@ -194,7 +197,7 @@ export default function HomeScreen() {
 
     try {
       // Send the create household request to the backend
-      const response = await fetch("http://localhost:8000/household/create", {
+      const response = await fetch(`${API_URL}/household/create`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -259,7 +262,7 @@ export default function HomeScreen() {
 
     try {
       // Send the join request to the backend with the invite code
-      const response = await fetch("http://localhost:8000/household/join", {
+      const response = await fetch(`${API_URL}/household/join`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

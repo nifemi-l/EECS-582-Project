@@ -1,11 +1,15 @@
 /* PROLOGUE
 File name: edit+api.ts
 Description: Route containing behavior for /api/feature/edit endpoint, proxying to Flask backend.
-Programmer: Delroy Wright
+Programmers: Delroy Wright, Nifemi Lawal
 Creation date: 3/11/26
+Revision date:
+  - 3/29/26: Replace hardcoded localhost URL with EXPO_PUBLIC_API_URL env variable
 Preconditions: A client is running and has requested to edit a feature
 Postconditions: A response from the Flask server is returned to the client.
 */
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export async function POST(req: Request) {
   try {
@@ -24,7 +28,7 @@ export async function POST(req: Request) {
         z_pos: body.z_pos
     };
 
-    const response = await fetch(`http://localhost:8000/api/feature/${feature_id}`, {
+    const response = await fetch(`${API_URL}/api/feature/${feature_id}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",

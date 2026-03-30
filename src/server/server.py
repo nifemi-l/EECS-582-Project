@@ -2,11 +2,12 @@
 PROLOGUE
 File name: main.py
 Description: Entry point for the Flask backend server; initializes the Flask app, configures middleware (CORS), and registers route blueprints (authentication endpoints).
-Programmer: Logan Smith
+Programmers: Logan Smith, Nifemi Lawal
 Creation date: 3/1/26
 Revision date:
     - 3/1/26: Added the authentication route
     - 3/19/26: Added the household route
+    - 3/29/26: Restrict CORS to seehome.app origin
 Preconditions: Python environment is configured with required dependencies; .env contains valid DB credentials; auth blueprint exists in server/db/auth/auth.py.
 Postconditions: Flask server is started and listening on the configured host/port; API endpoints (e.g., /auth/*) are available to client requests.
 Errors: Server may fail to start if dependencies are missing, port is in use, or route modules raise import/runtime errors.
@@ -24,7 +25,9 @@ from flask_cors import CORS
 
 # Initialize Flask app and configure CORS
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/*": {"origins": ["https://seehome.app"]}
+})
 
 # Register blueprints for route handling
 app.register_blueprint(auth_bp, url_prefix="/auth")

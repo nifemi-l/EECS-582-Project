@@ -13,8 +13,9 @@ Revision date:
              location icon picker for new sections; restore TaskRow comments
   - 3/8/26: Use server classes for consistency
   - 3/29/26: Replace AsyncStorage with Flask API calls, add mark-complete button,
-             read household id from route params
-Preconditions: Flask server running on localhost:8000 with the household's data in the DB
+             read household id from route params; replace hardcoded localhost URL
+             with EXPO_PUBLIC_API_URL env variable
+Preconditions: Flask server reachable at EXPO_PUBLIC_API_URL with the household's data in the DB
 Postconditions: Renders an interactive task list that stays in sync with the database
 Errors: Shows error state with retry button if API is unreachable
 Side effects: Makes HTTP requests to the Flask backend on every mutation

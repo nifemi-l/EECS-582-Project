@@ -6,18 +6,20 @@ Description: Helper functions for making API calls to the Flask backend.
              All requests attach a JWT Bearer token from authStorage for authentication.
 Programmer: Nifemi Lawal
 Creation date: 3/29/26
-Preconditions: Flask server must be running on localhost:8000; user must be logged in
+Revision date:
+  - 3/29/26: Replace hardcoded localhost URL with EXPO_PUBLIC_API_URL env variable
+Preconditions: Flask server must be reachable at EXPO_PUBLIC_API_URL; user must be logged in
 Postconditions: Returns parsed JSON from the server or throws on failure
 Errors: Throws an Error with the HTTP status if the response is not ok
 Side effects: None (all side effects happen on the server)
 Invariants: None
-Known faults: Hardcoded to localhost, won't work on a real device without changing the URL
+Known faults: None
 */
 
 import { getToken } from "../utils/authStorage";
 
-// Base URL for the Flask backend (all routes are under /api)
-const API_BASE = "http://localhost:8000/api";
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const API_BASE = `${API_URL}/api`;
 
 // Build headers with the stored JWT token attached; throws if no token is found
 async function authHeaders(withBody = false): Promise<Record<string, string>> {
