@@ -32,6 +32,7 @@ import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@react-navigation/elements';
 import { Button, PaperProvider, Card, Menu, TextInput } from 'react-native-paper';
+import { useLocalSearchParams } from "expo-router";
 
 // Import graphics utilities
 import {
@@ -44,6 +45,11 @@ import {
 import {
   RenderableFeature, Renderer
 } from "../../../data/renderUtils"
+
+// Import local api utilities
+import { fetchHouseholdFeatures } from "../../../data/api";
+import Feature from "../../../data/feature";
+import Task from "../../../data/task";
 
 
 // ***********************************************************
@@ -394,6 +400,49 @@ function EditWindow() {
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
 // the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
 export default function Index() {
+    // From list.tsx (thanks Nifemi)
+  const { id } = useLocalSearchParams<{ id: string }>(); // get parameter from route
+  const householdId = Number(id) || 1;
+
+  // Reload the features of our housewhenever the household ID changes.
+  // Also mostly from list.tsx (thanks again Nifemi)
+  useEffect(() => {
+    fetchHouseholdFeatures(householdId)
+      .then((data: any[]) => {
+              // Convert the raw JSON objects into Feature/Task class instances
+              // so the health bar math and other methods still work
+              const mapped = data.map((f: any) => {
+                const feat = new Feature(
+                  f.feature_name,
+                  f.household_id,
+                  f.feature_type || "",
+                  f.x_pos, f.y_pos, f.z_pos,
+                  f.feature_id,
+                  f.icon || "home-outline"
+                );
+                feat.tasks = (f.tasks || []).map((t: any) => {
+                  const task = new Task(
+                    t.task_name,
+                    t.feature_id,
+                    t.frequency_days,
+                    t.icon || "clipboard-text-outline",
+                    t.visibility || "household",
+                    t.created_by_account_id,
+                    t.task_id
+                  );
+                  // Parse the ISO date string back into a Date object for health calculations
+                  task.last_completed = t.last_completed ? new Date(t.last_completed) : null;
+                  return task;
+                });
+                return feat;
+              });
+              rdr.setFeatures(householdId, mapped);
+            })
+      .catch((e) => {
+        console.error("Failed to fetch features for household", householdId, e);
+      });
+  }, [householdId]);
+
   // On component unmount, cancel our rendering loop
   useEffect(() => {
     return () => {
@@ -422,7 +471,7 @@ export default function Index() {
             width: "100%",
             height: "100%"
           }} 
-          onContextCreate={onContextCreate} 
+          onContextCreate={onContextCreate}
           />
         </GestureDetector>
 
@@ -444,7 +493,6 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 
   // Start drawing frames. This is a recursive animation function
   drawFrame(rdr.lastFrameTime);
-  console.log("Context initialized.");
 }
 
 // ***********************************************************
@@ -463,6 +511,11 @@ function drawFrame(time: number) {
     if (!rdr.checkReadyToDraw()) {
       console.error("Draw not ready.");
       return;
+    }
+
+    // Update the renderable features if necessary (e.g. they've changed since last frame because we've fetched from the database)
+    if (rdr.featuresDirty) {
+      rdr.updateFeatures();
     }
 
     // Check time and update frame time to get a delta for animation

@@ -29,10 +29,10 @@ import Household from "./household";
 // Import graphics utilities
 import {
   MoveDirection, Material, genGrid, readShaderData,
-  FEATURE_ORANGE, FEATURE_GREY,
+  FEATURE_ORANGE, FEATURE_GREY, FEATURE_BLUE,
   ShaderLightUniformLocations, ShaderBillboardUniformLocations,
-  ShaderAttributebLocations, ShaderMatrixUniformLocations
-} from "./graphicsUtils" 
+  ShaderAttributebLocations, ShaderMatrixUniformLocations,
+} from "./graphicsUtils";
 
 // ***********************************************************
 //                      Constants
@@ -49,6 +49,10 @@ const MAX_WORLD_SCALE = 6.0;
 // ***********************************************************
 //                       Renderer Class
 // ***********************************************************
+// IMPORTANT NOTES:
+// -- renderable features in house depend on feature 0 being the floor, and 1-4 being the 4 walls of the house. 
+// -- this class depends on a render loop being defined externally. It only provides the pieces of that loop. 
+// -- this class depends on feature data being loaded into it externally. 
 
 // Store details needed for a functional renderer
 export class Renderer {
@@ -78,15 +82,39 @@ export class Renderer {
   house: RenderableHousehold; // The displayed household 
   selectedEditFeature: RenderableFeature | null; // The current feature being edited in the edit window
   grid: Grid; // Store a global grid object
-  currentDrawingColor: Material;
+  currentDrawingColor: Material; // the current color used for drawing our objects
+  featuresDirty: boolean; // flag so we know if we need to apply feature updates or not
+  features: Feature[]; // store the fetched feature list for our household
 
   // log error function
   logError() {
     console.log(this.glRef?.getError());
   }
 
+  ///////////////////////
+  ///  Init Routines  ///
+  ///////////////////////
+
+  // Called to load the needed features from an external database. Once they've been fetched, we call this method to 
+  // apply the updated list. 
+  setFeatures(householdID: number, features: Feature[]) {
+    this.featuresDirty = true; // mark the feature list as dirty so we know to update before drawing next
+    this.features = []; // empty the features array
+    features.forEach((f) => {this.features.push(f)}) // manually copy the features over
+    this.house.id = householdID; // NOTE: at some point we need to get all the household details
+  }
+
   // Called when a GL context is created - NOT at construction time. 
   async init(gl: ExpoWebGLRenderingContext) {
+    // Reset everything so it works when navigating back to the graphics page. Descriptions are above.
+    this.glRef = gl;
+    this.lastFrameTime = 0;
+    this.shaderProgram = null; // I don't think this causes a memory leak as Expo should clean up resources on unmount
+    this.bbShaderProgram = null;
+    this.house = new RenderableHousehold(this, "default_2");
+    this.cam = new Camera();
+    this.grid = new Grid(this);
+
     // Read the text of the shader files. We later pass shader data as a string, so we need the actual shader files in a 
     // string representation for later use. We still split them into their own files though because it's easier to manage.
     const [vertData, fragData, bbVertData, bbFragData] = await readShaderData();
@@ -97,15 +125,6 @@ export class Renderer {
     // as this functionality is only native in WebGL 2.0. To make things more annoying, often this functionality is NOT available in WebGL 2.0 
     // contexts. So, it's stupid, but we have to support both. This getExtension(...) call will either return an object or null.
     this.oesExt = gl.getExtension('OES_vertex_array_object'); 
-
-    // Reset everything so it works when navigating back to this page. Descriptions are above.
-    this.glRef = gl;
-    this.lastFrameTime = 0;
-    this.shaderProgram = null; // I don't think this causes a memory leak as Expo should clean up resources on unmount
-    this.bbShaderProgram = null;
-    this.house = new RenderableHousehold(this, "default_2");
-    this.cam = new Camera();
-    this.grid = new Grid(this);
 
     // Rebuild the grid if we're missing it
     if (!this.grid) {
@@ -306,9 +325,10 @@ export class Renderer {
     GLM.mat4.perspective(this.cam.projectionMatrix, (45 * Math.PI / 180), gl.drawingBufferWidth / gl.drawingBufferHeight, NEAR_CLIP, FAR_CLIP);
     gl.uniformMatrix4fv(this.matrixUniformLocs.projectionMatrix, false, this.cam.projectionMatrix as Float32Array);
 
-    // Move the camera up, back, and turn it a little to the origin
+    // Move the camera up, back, and turn it a little to the origin, rotate a little to the left to show 2 walls
     GLM.mat4.rotateX(this.cam.viewMatrix, this.cam.viewMatrix, 40 * Math.PI / 180);
-    GLM.mat4.translate(this.cam.viewMatrix, this.cam.viewMatrix, [0.0, -8.0, -11.0]);
+    GLM.mat4.translate(this.cam.viewMatrix, this.cam.viewMatrix, [0.0, -12.0, -16]);
+    GLM.mat4.rotateY(this.cam.viewMatrix, this.cam.viewMatrix, 45 * Math.PI / 180);
     gl.uniformMatrix4fv(this.matrixUniformLocs.viewMatrix, false, this.cam.viewMatrix as Float32Array);
 
     // Setup lighting data. We'll just use placeholder values for now. Ambient simulates the basic lighting that just "exists", 
@@ -323,6 +343,7 @@ export class Renderer {
     gl.uniform3fv(this.lightUniformLocs.light.specular, [1.0, 1.0, 1.0]);
 
     this.initialized = true;
+    console.log("Context initialized.");
   }
 
   constructor() {
@@ -343,16 +364,51 @@ export class Renderer {
     this.lastFrameTime = 0;
     this.currentDrawingColor = FEATURE_ORANGE;
     this.initialized = false;
+    this.features = [];
+    this.featuresDirty = false;
 
     // These will be set as needed
     this.frameId = null;
     this.selectedEditFeature = null;
+
+    console.log("Renderer constructed.");
   }
 
   ///////////////////////
   ///  Draw Routines  ///
   ///////////////////////
   // NOTE: The actual render loop is not in this file. Instead, these are a series of helpers
+
+  // Copy from the renderer's list of features to the house's list of RenderableFeatures
+  updateFeatures() {
+    // Remove all renderable features EXCEPT the floor and 4 walls (features at indices [0, 4])
+    const length = this.house.renderableFeatures.length;
+    for (let i = length - 1; i > 4; i--) {
+      this.house.renderableFeatures.pop();
+    }
+
+    // Update the renderable features
+    this.features.forEach((f) => {
+      // Prepare the appropriate model matrix
+      const transform = GLM.mat4.create();
+      GLM.mat4.translate(transform, transform, [f.x_pos + 0.5, f.y_pos + 0.5, f.z_pos + 0.5]); // The 0.5s account for the difference between the cell center and edges
+
+      // Select the correct material depending on the type
+      let mat = FEATURE_ORANGE;
+      switch(f.feature_type) {
+        case "room":
+          mat = FEATURE_BLUE;
+        case "":
+        default:
+          mat = FEATURE_ORANGE;
+      } 
+
+      // Add the feature for rendering
+      this.house.renderableFeatures.push(new RenderableFeature(f.name, f.household_id, transform, mat, f.x_pos, f.y_pos, f.z_pos));
+      this.featuresDirty = false;
+      console.log("Features updated.");
+    });
+  }
 
   // Return true if a frame has the data it needs to draw and is able to draw, flase otherwise
   checkReadyToDraw() {
@@ -503,7 +559,7 @@ export class Renderer {
 
         // Check if the normal is facing more away from the camera or to the camera and set visibility accordingly
         const dot = GLM.vec3.dot(sideVec, cameraFwdVec);
-        this.house.renderableFeatures[i].visible = dot > 0.1;
+        this.house.renderableFeatures[i].visible = dot > 0;
     }
   }
 
@@ -528,7 +584,7 @@ export class Renderer {
       gl.uniform3fv(this.lightUniformLocs.material.diffuse, this.house.renderableFeatures[i].material.diffuse);
       gl.uniform3fv(this.lightUniformLocs.material.specular, this.house.renderableFeatures[i].material.specular);
       gl.uniform1f(this.lightUniformLocs.material.shininess, this.house.renderableFeatures[i].material.shininess);
-      gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yiels 6 faces * 6 vertices for 36 vertices to draw.
+      gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yields 6 faces * 6 vertices for 36 vertices to draw.
     }
   }
 

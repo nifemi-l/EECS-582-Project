@@ -240,12 +240,14 @@ export async function readShaderData() {
     const fragSrc = await (await fetch(fragFile.localUri)).text();
     const bbVertSrc = await (await fetch(bbVertFile.localUri)).text();
     const bbFragSrc = await (await fetch(bbFragFile.localUri)).text();
+    console.log("Shaders fetched.");
     return [vertSrc, fragSrc, bbVertSrc, bbFragSrc]
   } else {
     const vertSrc = await readAsStringAsync(vertFile.localUri);
     const fragSrc = await readAsStringAsync(fragFile.localUri);
     const bbVertSrc = await readAsStringAsync(bbVertFile.localUri);
     const bbFragSrc = await readAsStringAsync(bbFragFile.localUri);
+    console.log("Shaders read.");
     return [vertSrc, fragSrc, bbVertSrc, bbFragSrc];
   }
 }
