@@ -5,11 +5,16 @@ Programmer: Jack Bauer
 Creation date: 3/29/26
 Revision date: 
   - No revisions yet
-Preconditions: A proper draw / render loop is created outside of this file (Renderer does not contain its own loop, instead it has the pieces)
+Preconditions: 
+  - A proper draw / render loop is created outside of this file (Renderer does not contain its own loop, instead it has the pieces)
+  - For the order of features in a renderable household's renderable features, the following are required:
+    --> index 0 being the floor
+    --> indices 1-4 being the 4 walls of the house. 
+  - The renderer depends on feature data being loaded into it from an external source. 
 Postconditions: None
 Errors: None
-Side effects: None
-Invariants: None
+Side effects: API requests may be made to the external server in order to manage the creation, updating, and deletion of features, tasks, and households 
+Invariants: See "Constants"
 Known faults: None
 */
 
@@ -35,7 +40,10 @@ import {
 } from "./graphicsUtils";
 
 // Import API utilities
-import { updateFeature, updateTask, deleteFeature } from "./api";
+import { 
+  createFeature as apiCreateFeature, deleteFeature as apiDeleteFeature,
+  createTask as apiCreateTask
+} from "./api";
 
 // ***********************************************************
 //                      Constants
@@ -56,7 +64,7 @@ const MAX_PLACE_ATTEMPTS = 10;
 //                       Renderer Class
 // ***********************************************************
 // IMPORTANT NOTES:
-// -- renderable features in house depend on feature 0 being the floor, and 1-4 being the 4 walls of the house. 
+// -- this class and others depend on feature 0 being the floor, and 1-4 being the 4 walls of the house. 
 // -- this class depends on a render loop being defined externally. It only provides the pieces of that loop. 
 // -- this class depends on feature data being loaded into it externally. 
 
@@ -117,7 +125,7 @@ export class Renderer {
     this.lastFrameTime = 0;
     this.shaderProgram = null; // I don't think this causes a memory leak as Expo should clean up resources on unmount
     this.bbShaderProgram = null;
-    this.house = new RenderableHousehold(this, "default_2");
+    this.house = new RenderableHousehold(this, "RENDERER_HOUSE_2");
     this.cam = new Camera();
     this.grid = new Grid(this);
 
@@ -365,7 +373,7 @@ export class Renderer {
 
     // These can safely be set at construction time
     this.grid = new Grid(this);
-    this.house = new RenderableHousehold(this, "default_1");
+    this.house = new RenderableHousehold(this, "RENDERER_HOUSE_1");
     this.cam = new Camera();
     this.lastFrameTime = 0;
     this.currentDrawingColor = FEATURE_ORANGE;
@@ -725,9 +733,14 @@ export class Renderer {
       return;
     }
 
+    // Create the transform
     const newModelMatrix = GLM.mat4.create(); // create a new transform 
     GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
+
+    // Create the material / type
     const newMaterial: Material = this.currentDrawingColor;
+
+    // Create the feature object
     const newFeature = new RenderableFeature("f:" + cellX + cellY + cellZ, this.house.household_id, 0, newModelMatrix, newMaterial, cellX, cellY, cellZ); // this is the new feature object we're adding
     // randomly add a second chore for demo purposes
     if (Math.round(Math.random()) == 0) {
@@ -736,7 +749,40 @@ export class Renderer {
       newFeature.addTask(new Task("Test Task", newFeature.id, 1));
       newFeature.addTask(new Task("Test Task", newFeature.id, 2));
     }
-    this.house.renderableFeatures.push(newFeature); // add the feature to the house
+
+    // Update the remote server
+    try {
+      // Create the feature on the server
+      const featureID = await apiCreateFeature({
+        household_id: this.house.id,
+        feature_name: "f:" + cellX + cellY + cellZ,
+        x_pos: cellX,
+        y_pos: cellY,
+        z_pos: cellZ
+      });
+
+      // Now create the tasks on the server
+      newFeature.tasks.forEach((t) => {
+        const now = new Date();
+        apiCreateTask({
+          feature_id: featureID.feature_id,
+          task_name: "No name yet",
+          frequency_days: 1, // Default to daily task
+          visibility: "household",
+          last_completed: now.toISOString(), 
+        }).then((id) => {
+          // Update task ids
+          t.id = id.task_id;
+          t.last_completed = now;
+        }).catch((e) => {
+          console.error("Unable to add task.", e);
+        })});
+
+      // If the remote server was successful, add the feature for drawing
+      this.house.renderableFeatures.push(newFeature); // add the feature to the house
+    } catch (e) {
+      console.error("Unable to create feature.", e);
+    }
   }
 
   // A function to convert screen clicks / taps from screen coordinates to world coordinates in the renderer
@@ -845,7 +891,7 @@ export class Renderer {
         cellFree = false;
         try {
           // Delete on the server
-          await deleteFeature(f.id);
+          await apiDeleteFeature(f.id);
           removed = true;
         } catch (e) {
           // Note, if we fail we don't need to copy the feature over because we're not updating the feature array anyway
