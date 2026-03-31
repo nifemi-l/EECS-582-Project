@@ -403,8 +403,11 @@ export class Renderer {
           mat = FEATURE_ORANGE;
       } 
 
-      // Add the feature for rendering
-      this.house.renderableFeatures.push(new RenderableFeature(f.name, f.household_id, transform, mat, f.x_pos, f.y_pos, f.z_pos));
+      // Create the feature for rendering
+      const rf = new RenderableFeature(f.name, f.household_id, transform, mat, f.x_pos, f.y_pos, f.z_pos, f.tasks)
+      this.house.renderableFeatures.push(rf); // add to RenderableFeatures
+
+      // Done with update routine
       this.featuresDirty = false;
       console.log("Features updated.");
     });
@@ -702,10 +705,13 @@ export class Renderer {
     const newModelMatrix = GLM.mat4.create(); // create a new transform 
     GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
     const newMaterial: Material = this.currentDrawingColor;
-    const newFeature = new RenderableFeature("f:" + cellX + cellY + cellZ, this.house.household_id, newModelMatrix, newMaterial, cellX, cellY, cellZ); // this is the new feature object we're adding
+    const newFeature = new RenderableFeature("f:" + cellX + cellY + cellZ, this.house.household_id, newModelMatrix, newMaterial, cellX, cellY, cellZ, null); // this is the new feature object we're adding
     // randomly add a second chore for demo purposes
     if (Math.round(Math.random()) == 0) {
       newFeature.addTask(new Task("Test Task", newFeature.id, 1));
+    } else {
+      newFeature.addTask(new Task("Test Task", newFeature.id, 1));
+      newFeature.addTask(new Task("Test Task", newFeature.id, 2));
     }
     this.house.renderableFeatures.push(newFeature); // add the feature to the house
   }
@@ -867,7 +873,7 @@ export class RenderableFeature extends Feature {
    material: Material; // How the feature looks materially
    visible: boolean;
 
-   constructor(name: string, household_id: number, mm: GLM.mat4 | null, mat: Material | null, x: number | null, y: number | null, z: number | null) {
+   constructor(name: string, household_id: number, mm: GLM.mat4 | null, mat: Material | null, x: number | null, y: number | null, z: number | null, tasks: Task[] | null) {
     super(name, household_id)
 
     // Assign model matrix to either a provided value or a default
@@ -876,8 +882,8 @@ export class RenderableFeature extends Feature {
     // Do the same for the material (basically what should the object look like color-wise).
     this.material = mat || FEATURE_ORANGE;
 
-    // Default chore list
-    this.addTask(new Task("Mock Task", 0 , 1));
+    // Add chore list
+    this.tasks = tasks || [];
 
     // Defaults to origin in super if not provided (note: assumes valid input)
     this.x_pos = x || 0;
@@ -911,7 +917,7 @@ export class RenderableHousehold extends Household {
     const floorMatrix = GLM.mat4.create();
     GLM.mat4.scale(floorMatrix, floorMatrix, [this.rdr.grid.width, 0.5, this.rdr.grid.height]);
     GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
-    const floorFeature = new RenderableFeature("Floor", this.household_id, floorMatrix, FEATURE_GREY, 0, -1, 0); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
+    const floorFeature = new RenderableFeature("Floor", this.household_id, floorMatrix, FEATURE_GREY, 0, -1, 0, null); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
     floorFeature.tasks = []; // reset tasks so no healthbar
     this.renderableFeatures[0] = floorFeature;
    }
@@ -1025,8 +1031,7 @@ export class RenderableHousehold extends Household {
     const floorMatrix = GLM.mat4.create();
     GLM.mat4.scale(floorMatrix, floorMatrix, [10, 0.5, 10]); // note implicitly depends on grid size defaulting to 10
     GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
-    const floorFeature = new RenderableFeature("Floor", this.household_id, floorMatrix, FEATURE_GREY, 0, -1, 0); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
-    floorFeature.tasks = []; // reset tasks so no healthbar
+    const floorFeature = new RenderableFeature("Floor", this.household_id, floorMatrix, FEATURE_GREY, 0, -1, 0, null); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
     this.addRenderableFeature(floorFeature); // must be the first feature
 
     // Add walls
@@ -1034,32 +1039,28 @@ export class RenderableHousehold extends Household {
     const leftWallMatrix = GLM.mat4.create();
     GLM.mat4.translate(leftWallMatrix, leftWallMatrix, [-5.25, 1.5, 0])
     GLM.mat4.scale(leftWallMatrix, leftWallMatrix, [0.5, 3, 10.1]); 
-    const leftWall = new RenderableFeature("Left Wall", this.household_id, leftWallMatrix, FEATURE_GREY, -5, -1, 0)
-    leftWall.tasks = [];
+    const leftWall = new RenderableFeature("Left Wall", this.household_id, leftWallMatrix, FEATURE_GREY, -5, -1, 0, null)
     this.addRenderableFeature(leftWall);
 
     // Right wall
     const rightWallMatrix = GLM.mat4.create();
     GLM.mat4.translate(rightWallMatrix, rightWallMatrix, [5.25, 1.5, 0])
     GLM.mat4.scale(rightWallMatrix, rightWallMatrix, [0.5, 3, 10.1]); 
-    const rightWall = new RenderableFeature("Right Wall", this.household_id, rightWallMatrix, FEATURE_GREY, 5, -1, 0)
-    rightWall.tasks = [];
+    const rightWall = new RenderableFeature("Right Wall", this.household_id, rightWallMatrix, FEATURE_GREY, 5, -1, 0, null)
     this.addRenderableFeature(rightWall);
 
     // Back wall
     const backWallMatrix = GLM.mat4.create();
     GLM.mat4.translate(backWallMatrix, backWallMatrix, [0, 1.5, -5.25])
     GLM.mat4.scale(backWallMatrix, backWallMatrix, [10.1, 3, 0.5]); 
-    const backWall = new RenderableFeature("Back Wall", this.household_id, backWallMatrix, FEATURE_GREY, 0, -1, -5)
-    backWall.tasks = [];
+    const backWall = new RenderableFeature("Back Wall", this.household_id, backWallMatrix, FEATURE_GREY, 0, -1, -5, null)
     this.addRenderableFeature(backWall);
 
     // Front wall
     const frontWallMatrix = GLM.mat4.create();
     GLM.mat4.translate(frontWallMatrix, frontWallMatrix, [0, 1.5, 5.25])
     GLM.mat4.scale(frontWallMatrix, frontWallMatrix, [10.1, 3, 0.5]); 
-    const frontWall = new RenderableFeature("Front Wall", this.household_id, frontWallMatrix, FEATURE_GREY, 0, -1, 5)
-    frontWall.tasks = [];
+    const frontWall = new RenderableFeature("Front Wall", this.household_id, frontWallMatrix, FEATURE_GREY, 0, -1, 5, null)
     this.addRenderableFeature(frontWall);
 
     // We cannot determine the following entries without a gl context
