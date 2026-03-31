@@ -27,7 +27,7 @@ Known faults: None
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
 import * as GLM from 'gl-matrix';
-import { LayoutChangeEvent, Pressable, View, useWindowDimensions } from "react-native";
+import { LayoutChangeEvent, Pressable, View, useWindowDimensions, ActivityIndicator } from "react-native";
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@react-navigation/elements';
@@ -402,6 +402,7 @@ export default function Index() {
     // From list.tsx (thanks Nifemi)
   const { id } = useLocalSearchParams<{ id: string }>(); // get parameter from route
   const householdId = Number(id) || 1;
+  const [featureFetchSuccess, setFeatureFetchSuccess] = useState(false);
 
   // Reload the features of our housewhenever the household ID changes.
   // Also mostly from list.tsx (thanks again Nifemi)
@@ -436,6 +437,7 @@ export default function Index() {
                 return feat;
               });
               rdr.setFeatures(householdId, mapped);
+              setFeatureFetchSuccess(true);
             })
       .catch((e) => {
         console.error("Failed to fetch features for household", householdId, e);
@@ -456,7 +458,8 @@ export default function Index() {
   windowWidth = useWindowDimensions().width; 
   windowHeight = useWindowDimensions().height;
   return (
-    <PaperProvider>
+    featureFetchSuccess ? (
+      <PaperProvider>
       <View
         onLayout={handleLayout}
         style={{
@@ -478,6 +481,12 @@ export default function Index() {
         <ColorButtons />
       </View>
     </PaperProvider>
+    ) : (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        {/* Display a loading bar while we wait to fetch features */}
+        <ActivityIndicator size="large" />
+      </View>
+    )
   );
 }
 
