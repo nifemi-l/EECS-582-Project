@@ -46,6 +46,9 @@ const FAR_CLIP = 100.0;
 const MIN_WORLD_SCALE = 0.1;
 const MAX_WORLD_SCALE = 6.0;
 
+// Define the maximum number of attempts before we give up on placing a feature with a bad XYZ position
+const MAX_PLACE_ATTEMPTS = 10;
+
 // ***********************************************************
 //                       Renderer Class
 // ***********************************************************
@@ -389,6 +392,22 @@ export class Renderer {
 
     // Update the renderable features
     this.features.forEach((f) => {
+      // If position is the origin, find a new position (NOTE: this is not ideal behavior, likely should have different approach)
+      let attempts = 0;
+      while (!this.checkValidCell(f.x_pos, f.y_pos, f.z_pos)) {
+        // Get a new position
+        console.warn("Adjusting feature position due to conflict. Attempt:", attempts);
+        f.x_pos = Math.floor(Math.random() * this.grid.width);
+        f.z_pos = Math.floor(Math.random() * this.grid.height);
+
+        // Ensure we don't try too hard placing the feature
+        attempts += 1;
+        if (attempts > MAX_PLACE_ATTEMPTS) {
+          console.error("Too many attempts placing a feature. Giving up.");
+          return;
+        }
+      }
+
       // Prepare the appropriate model matrix
       const transform = GLM.mat4.create();
       GLM.mat4.translate(transform, transform, [f.x_pos + 0.5, f.y_pos + 0.5, f.z_pos + 0.5]); // The 0.5s account for the difference between the cell center and edges
