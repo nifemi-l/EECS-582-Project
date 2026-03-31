@@ -34,6 +34,9 @@ import {
   ShaderAttributebLocations, ShaderMatrixUniformLocations,
 } from "./graphicsUtils";
 
+// Import API utilities
+import { updateFeature, updateTask, deleteFeature } from "./api";
+
 // ***********************************************************
 //                      Constants
 // ***********************************************************
@@ -392,13 +395,13 @@ export class Renderer {
 
     // Update the renderable features
     this.features.forEach((f) => {
-      // If position is the origin, find a new position (NOTE: this is not ideal behavior, likely should have different approach)
+      // If position is conflicting, find a new position (NOTE: this is not ideal behavior, likely should have different approach)
       let attempts = 0;
       while (!this.checkValidCell(f.x_pos, f.y_pos, f.z_pos)) {
         // Get a new position
         console.warn("Adjusting feature position due to conflict. Attempt:", attempts);
-        f.x_pos = Math.floor(Math.random() * this.grid.width);
-        f.z_pos = Math.floor(Math.random() * this.grid.height);
+        f.x_pos = Math.floor(Math.random() * this.grid.width - this.grid.width / 2);
+        f.z_pos = Math.floor(Math.random() * this.grid.height - this.grid.height / 2);
 
         // Ensure we don't try too hard placing the feature
         attempts += 1;
@@ -423,13 +426,13 @@ export class Renderer {
       } 
 
       // Create the feature for rendering
-      const rf = new RenderableFeature(f.name, f.household_id, transform, mat, f.x_pos, f.y_pos, f.z_pos, f.tasks)
+      const rf = new RenderableFeature(f.name, f.household_id, f.id, transform, mat, f.x_pos, f.y_pos, f.z_pos, f.tasks, f.feature_type, f.icon);
       this.house.renderableFeatures.push(rf); // add to RenderableFeatures
-
-      // Done with update routine
-      this.featuresDirty = false;
-      console.log("Features updated.");
     });
+
+    // Done with update routine
+    this.featuresDirty = false;
+    console.log("Features updated.");
   }
 
   // Return true if a frame has the data it needs to draw and is able to draw, flase otherwise
@@ -710,21 +713,22 @@ export class Renderer {
   }
 
   // A function to add a block to the household at a certain position
-  addBlock(cellX: number, cellY: number, cellZ: number) {
+  async addBlock(cellX: number, cellY: number, cellZ: number) {
     // Ensure our cell position is in bounds
     if (!this.checkCellInBounds(cellX, cellY, cellZ)) {
       return;
     }
 
     // Ensure we haven't already placed a block here. If we have, remove it 
-    if (!this.checkValidBlockAndRemove(cellX, cellY, cellZ)) {
+    const cellFree = await this.checkValidCellAndRemove(cellX, cellY, cellZ);
+    if (!cellFree) {
       return;
     }
 
     const newModelMatrix = GLM.mat4.create(); // create a new transform 
     GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
     const newMaterial: Material = this.currentDrawingColor;
-    const newFeature = new RenderableFeature("f:" + cellX + cellY + cellZ, this.house.household_id, newModelMatrix, newMaterial, cellX, cellY, cellZ, null); // this is the new feature object we're adding
+    const newFeature = new RenderableFeature("f:" + cellX + cellY + cellZ, this.house.household_id, 0, newModelMatrix, newMaterial, cellX, cellY, cellZ); // this is the new feature object we're adding
     // randomly add a second chore for demo purposes
     if (Math.round(Math.random()) == 0) {
       newFeature.addTask(new Task("Test Task", newFeature.id, 1));
@@ -815,22 +819,51 @@ export class Renderer {
   }
 
   // Check if a block already exists on the cell - check against all existing cells. If it does, remove what's there
-  checkValidBlockAndRemove(cellX: number, cellY: number, cellZ: number) {
+  async checkValidCellAndRemove(cellX: number, cellY: number, cellZ: number) {
     // copy array to new array, without the removed element. We'll do this as we iterate. If we find one to remove, set the result bool
-    let success = true;
-    let copyArray = []; 
+
+    /* 
+      Cases: 
+        - Case 1: the cell is occupied and we successfully delete it (feature array changes) - we do not want to add a feature in addBlock
+            --> cellFree = false, removed = true
+        - Case 2: the cell is occupied and we fail to delete it (features do not change) - we do not want to add a feature in addBlock
+            --> cellFree = false, removed = false
+        - Case 3: the cell is not occupied so we don't delete anything (features do not change) - we add a feature in addBlock
+            --> cellFree = true, removed = false
+    */
+
+    let cellFree = true;  // Have we found a feature in this cell? If the caller is addBlock, then it will not add anything assuming we have removed a block. 
+    let removed = false; // Have we removed a block? If so, we need to copy over the new features array. If not, then an error likely occurred and we keep the same array. 
+    let copyArray = [];  // Store the copy array we will build up
+
     for (let i = 0; i < this.house.renderableFeatures.length; i++) {
-      if (this.house.renderableFeatures[i].x_pos == cellX && this.house.renderableFeatures[i].y_pos == cellY && this.house.renderableFeatures[i].z_pos == cellZ) {
+      const f = this.house.renderableFeatures[i];
+
+      // Note: only applies to the first found feature in a location (there should only ever be one)
+      if (cellFree && f.x_pos == cellX && f.y_pos == cellY && f.z_pos == cellZ) {
         // We've found a feature not to keep
-        success = false;
+        cellFree = false;
+        try {
+          // Delete on the server
+          await deleteFeature(f.id);
+          removed = true;
+        } catch (e) {
+          // Note, if we fail we don't need to copy the feature over because we're not updating the feature array anyway
+          console.error("Failed to delete feature. Canceling deletion.", e);
+        } 
       } else {
         // We've found a feature we want to keep
-        copyArray.push(this.house.renderableFeatures[i]);
+        copyArray.push(f);
       }
     }
-    // update house array and return success or not
-    this.house.renderableFeatures = copyArray;
-    return success;
+
+    // update house array if we have removed an object
+    if (removed) {
+      this.house.renderableFeatures = copyArray;
+    }
+    
+    // Returns true if we have not found an object (the cell is valid), and false otherwise
+    return cellFree;
   }
 
   // Check if a block already exists in a cell without removing
@@ -892,8 +925,8 @@ export class RenderableFeature extends Feature {
    material: Material; // How the feature looks materially
    visible: boolean;
 
-   constructor(name: string, household_id: number, mm: GLM.mat4 | null, mat: Material | null, x: number | null, y: number | null, z: number | null, tasks: Task[] | null) {
-    super(name, household_id)
+   constructor(name: string, household_id: number, feature_id: number, mm?: GLM.mat4, mat?: Material, x?: number, y?: number, z?: number, tasks?: Task[], type?: string, icon?: string, ) {
+    super(name, household_id, type, x, y, z, feature_id, icon);
 
     // Assign model matrix to either a provided value or a default
     this.modelMatrix = mm || GLM.mat4.create();
@@ -936,7 +969,7 @@ export class RenderableHousehold extends Household {
     const floorMatrix = GLM.mat4.create();
     GLM.mat4.scale(floorMatrix, floorMatrix, [this.rdr.grid.width, 0.5, this.rdr.grid.height]);
     GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
-    const floorFeature = new RenderableFeature("Floor", this.household_id, floorMatrix, FEATURE_GREY, 0, -1, 0, null); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
+    const floorFeature = new RenderableFeature("Floor", this.household_id, 0, floorMatrix, FEATURE_GREY, 0, -1, 0); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
     floorFeature.tasks = []; // reset tasks so no healthbar
     this.renderableFeatures[0] = floorFeature;
    }
@@ -1050,7 +1083,7 @@ export class RenderableHousehold extends Household {
     const floorMatrix = GLM.mat4.create();
     GLM.mat4.scale(floorMatrix, floorMatrix, [10, 0.5, 10]); // note implicitly depends on grid size defaulting to 10
     GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
-    const floorFeature = new RenderableFeature("Floor", this.household_id, floorMatrix, FEATURE_GREY, 0, -1, 0, null); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
+    const floorFeature = new RenderableFeature("Floor", this.household_id, 1, floorMatrix, FEATURE_GREY, 0, -1, 0); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
     this.addRenderableFeature(floorFeature); // must be the first feature
 
     // Add walls
@@ -1058,28 +1091,28 @@ export class RenderableHousehold extends Household {
     const leftWallMatrix = GLM.mat4.create();
     GLM.mat4.translate(leftWallMatrix, leftWallMatrix, [-5.25, 1.5, 0])
     GLM.mat4.scale(leftWallMatrix, leftWallMatrix, [0.5, 3, 10.1]); 
-    const leftWall = new RenderableFeature("Left Wall", this.household_id, leftWallMatrix, FEATURE_GREY, -5, -1, 0, null)
+    const leftWall = new RenderableFeature("Left Wall", this.household_id, 2, leftWallMatrix, FEATURE_GREY, -5, -1, 0)
     this.addRenderableFeature(leftWall);
 
     // Right wall
     const rightWallMatrix = GLM.mat4.create();
     GLM.mat4.translate(rightWallMatrix, rightWallMatrix, [5.25, 1.5, 0])
     GLM.mat4.scale(rightWallMatrix, rightWallMatrix, [0.5, 3, 10.1]); 
-    const rightWall = new RenderableFeature("Right Wall", this.household_id, rightWallMatrix, FEATURE_GREY, 5, -1, 0, null)
+    const rightWall = new RenderableFeature("Right Wall", this.household_id, 3, rightWallMatrix, FEATURE_GREY, 5, -1, 0)
     this.addRenderableFeature(rightWall);
 
     // Back wall
     const backWallMatrix = GLM.mat4.create();
     GLM.mat4.translate(backWallMatrix, backWallMatrix, [0, 1.5, -5.25])
     GLM.mat4.scale(backWallMatrix, backWallMatrix, [10.1, 3, 0.5]); 
-    const backWall = new RenderableFeature("Back Wall", this.household_id, backWallMatrix, FEATURE_GREY, 0, -1, -5, null)
+    const backWall = new RenderableFeature("Back Wall", this.household_id, 4, backWallMatrix, FEATURE_GREY, 0, -1, -5)
     this.addRenderableFeature(backWall);
 
     // Front wall
     const frontWallMatrix = GLM.mat4.create();
     GLM.mat4.translate(frontWallMatrix, frontWallMatrix, [0, 1.5, 5.25])
     GLM.mat4.scale(frontWallMatrix, frontWallMatrix, [10.1, 3, 0.5]); 
-    const frontWall = new RenderableFeature("Front Wall", this.household_id, frontWallMatrix, FEATURE_GREY, 0, -1, 5, null)
+    const frontWall = new RenderableFeature("Front Wall", this.household_id, 5, frontWallMatrix, FEATURE_GREY, 0, -1, 5)
     this.addRenderableFeature(frontWall);
 
     // We cannot determine the following entries without a gl context

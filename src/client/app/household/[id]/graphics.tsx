@@ -47,10 +47,9 @@ import {
 } from "../../../data/renderUtils"
 
 // Import local api utilities
-import { fetchHouseholdFeatures } from "../../../data/api";
+import { fetchHouseholdFeatures, updateFeature, updateTask, deleteFeature } from "../../../data/api";
 import Feature from "../../../data/feature";
 import Task from "../../../data/task";
-
 
 // ***********************************************************
 //             Top Level UI / Interface Globals
@@ -355,7 +354,7 @@ function EditWindow() {
           <Card
             mode='contained'
           >
-            <Card.Title title={selectedFeature.feature_name}/>
+            <Card.Title title={selectedFeature.feature_name + "[" + selectedFeature.id + "]"}/>
             <Card.Actions>
               <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}><MaterialCommunityIcons name='arrow-left'/></Button>
               <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}><MaterialCommunityIcons name='arrow-right'/></Button>
