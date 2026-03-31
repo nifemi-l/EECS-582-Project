@@ -26,7 +26,10 @@ from flask_cors import CORS
 # Initialize Flask app and configure CORS
 app = Flask(__name__)
 CORS(app, resources={
-    r"/*": {"origins": ["https://seehome.app"]}
+    r"/*": {"origins": [
+        "https://seehome.app",
+        "https://www.seehome.app"
+    ]}
 })
 
 # Register blueprints for route handling
