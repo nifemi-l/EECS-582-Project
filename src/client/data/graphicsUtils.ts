@@ -5,7 +5,7 @@ Programmer: Jack Bauer
 Creation date: 3/29/26
 Revision date: 
   - No revisions yet
-Preconditions: None
+Preconditions: Shader paths must also be added to app.json
 Postconditions: None
 Errors: None
 Side effects: None
@@ -20,11 +20,49 @@ Known faults: None
 
 import { Asset } from 'expo-asset';
 import { readAsStringAsync } from 'expo-file-system/legacy';
+import { ExpoWebGLRenderingContext } from 'expo-gl';
 import { Platform } from 'react-native';
 import * as OBJ from 'webgl-obj-loader';
 
 // ***********************************************************
-//  Constants, Enums, and Interfaces (and related functions)
+//                 Shader constants & interfaces
+// ***********************************************************
+
+// Wrapper for shader interface
+export interface Shader {
+  name: string,
+  shader: WebGLShader
+}
+
+// Wrapper for shader data interface
+export interface ShaderData {
+  name: string,
+  data: string,
+  type: ShaderType
+}
+
+// Wrapper for shader path interface
+export interface ShaderPaths {
+  [key: string] : [any, ShaderType]
+}
+
+export enum ShaderType {
+  VERTEX,
+  FRAGMENT
+}
+
+// The shader paths for a specific shader program
+export const SHADER_BILLBOARD_PATHS: ShaderPaths = {
+  "bbVert": [require("../assets/shaders/billboard.vert"), ShaderType.VERTEX],
+  "bbFrag": [require("../assets/shaders/billboard.frag"), ShaderType.FRAGMENT]
+};
+export const SHADER_REGULAR_PATHS: ShaderPaths= {
+  "vert": [require("../assets/shaders/main.vert"), ShaderType.VERTEX],
+  "frag": [require("../assets/shaders/main.frag"), ShaderType.FRAGMENT]
+};
+
+// ***********************************************************
+//   General Enums, and Interfaces (and related functions)
 // ***********************************************************
 
 // Define possible move directions in the xz plane
@@ -203,48 +241,161 @@ export function genGrid(width: number, height: number) {
 }
 
 // ***********************************************************
+//                  Shader Utilities
+// ***********************************************************
+
+// This class will handle the creation and management of shader programs and also
+// their respective shaders
+export class ShaderProgramManager {
+  shaderPaths: ShaderPaths; // The paths to all our shader files. NOTE: They must also be included in app.json
+  _shaders: Shader[];  // Store our shaders (will be deleted after program is ready)
+  gl: ExpoWebGLRenderingContext; // a reference to the owning WebGL context
+
+  // These should be the only variables ever accessed beyond this class 
+  program: WebGLProgram; // the program our shaders are attached to
+  valid: boolean; // only true if we have loaded shaders AND linked a program
+
+  // Load and link our shader program. This needs to be called before anything else can be used
+  async loadAndLinkShaders() {
+    try {
+      this._shaders = await loadAllShaders(this.gl, this.shaderPaths);
+      linkProgram(this.gl, this.program, this._shaders);
+      detachAndDeleteShaders(this.gl, this.program, this._shaders); // clean up now unneeded resources
+      this.valid = true; // We are now ready for use
+    } catch (e) {
+      // Clean up resources on error
+      console.error("Unable to load shaders.", e);
+      detachAndDeleteShaders(this.gl, this.program, this._shaders);
+    }
+  }
+
+  // Return the related shader program
+  getProgram() {
+    return this.program;
+  }
+
+  // Return the valid state
+  isValid() {
+    return this.valid;
+  }
+
+  constructor(gl: ExpoWebGLRenderingContext, shaderProgramPathList: ShaderPaths) {
+    // Set defaults
+    this.valid = false;
+    this.shaderPaths = shaderProgramPathList;
+    this.gl = gl;
+    this._shaders = [];
+    this.program = gl.createProgram();
+  }
+}
+
+// Link shaders to a program
+function linkProgram(gl: ExpoWebGLRenderingContext, program: WebGLProgram, shaders: Shader[]) {
+  // Link shaders together into a program. A shader program tells the GPU which order of shaders to run to fill the graphics pipeline. 
+  // At a minimum, we need a vertex and fragment shader. Vertex shaders handle and transform vertex data, fragment shaders handle 
+  // the individual "fragments" created after rasterization where lines are transformed into actual pixels. We could switch to a different 
+  // program or modify this one if we wanted to use different shaders. 
+  shaders.forEach((s) => {
+    gl.attachShader(program, s.shader);
+  });
+  gl.linkProgram(program);
+  return program;
+}
+
+// Read all listed shaders, then source and compile each
+// Will throw an error on failure
+async function loadAllShaders(gl: ExpoWebGLRenderingContext, shaderFilePaths: ShaderPaths) {
+  // Read in our shader data
+  const shaderDataArray: ShaderData[] = [];
+  for (const key in shaderFilePaths) {
+    const r = await readShaderData(key, shaderFilePaths);
+    shaderDataArray.push(r);
+  }
+
+  // Source and compile shaders
+  const compileResults: (Shader | null)[] = [];
+  shaderDataArray.forEach((s) => {
+    const r = sourceAndCompileShader(gl, s);
+    compileResults.push(r);
+  });
+
+  // Check for errors. If we find any, delete all our shaders
+  const shaders: Shader[] = compileResults.filter(elem => elem !== null);
+  if (compileResults.includes(null)) {
+    throw new Error("Failure compiling shader.");
+  }
+
+  // Return if we have had success and our shaders
+  return shaders;
+}
+
+// Convert from a ShaderType to a WebGL shader type
+function getGlType(gl: ExpoWebGLRenderingContext, type: ShaderType) {
+  switch(type) {
+    case ShaderType.VERTEX:
+      return gl.VERTEX_SHADER;
+    case ShaderType.FRAGMENT:
+      return gl.FRAGMENT_SHADER;
+    default:
+      throw Error("Invalid shader type.");
+  }
+}
+
+// From a shader file read into a string (shaderDataString), source and compile the shader and then return it
+function sourceAndCompileShader(gl: ExpoWebGLRenderingContext, shaderData: ShaderData): Shader | null{
+  // Create shader. On error, clear resources, output an error, and quit
+  const shader: WebGLShader | null = gl.createShader(getGlType(gl, shaderData.type));
+  if (shader === null) {
+    console.error("Error creating shader.");
+    return null;
+  } 
+  gl.shaderSource(shader, shaderData.data); // Set the shader source code accordingly (string of shader file)
+  gl.compileShader(shader); // Compile that shader written in GLSL
+
+  // Ensure shaders are compiled correctly. Output an error if they aren't with relevant shader info, clear resources, and return. 
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    console.error("Shader failed to compile", shader);
+    gl.deleteShader(shader);
+    return null;
+  }
+
+  // Return a reference to the shader
+  return {name: shaderData.name, shader: shader};
+}
+
+// Delete all shaders provided in the shaders argument
+function detachAndDeleteShaders(gl: ExpoWebGLRenderingContext, program: WebGLProgram, shaders: Shader[]) {
+  shaders.forEach((s) => {
+    gl.deleteShader(s.shader)}
+  );
+  shaders = [];
+}
+
+// ***********************************************************
 //                  File IO Utilities
 // ***********************************************************
 
 // Read shader data from a .vert or .frag file (for vertex or fragment shaders), then return that file
 // as a single string for later use in WebGL. I have no idea why they designed it this way, but WebGL wants
 // a string. 
-export async function readShaderData() {
-  // Load our vertex and fragment files. 
-  const [vertFile, fragFile, bbVertFile, bbFragFile] = await Asset.loadAsync([
-    require("../assets/shaders/main.vert"),
-    require("../assets/shaders/main.frag"),
-    require("../assets/shaders/billboard.vert"),
-    require("../assets/shaders/billboard.frag"),
-  ]);
+// NOTE: You must add the shader to assets in app.json for this to work
+async function readShaderData(shaderName: string, shaderPaths: ShaderPaths) {
+  // Load our shader file
+  const asset = Asset.fromModule(shaderPaths[shaderName][0]);
+  await asset.downloadAsync();
 
-  // Ensure we have a vertex shader (at least one is required), if not throw an error
-  if (!vertFile.localUri) {
-    throw new URIError("Unable to find vertex shader.");
+  // Ensure we found it
+  if (!asset.localUri) {
+    throw new URIError("Unable to find shader.");
   }
 
-  // Ensure we have a fragment shader (at least one is required), if not throw an error
-  if (!fragFile.localUri) {
-    throw new URIError("Unable to find fragment shader.");
-  }
-
-  // Ensure we have out billboard vertex shader, if not throw an error
-  if (!bbVertFile.localUri) {
-    throw new URIError("Unable to find billboard vertex shader.");
-  }
-
-  // Ensure we have out billboard fragment shader, if not throw an error
-  if (!bbFragFile.localUri) {
-    throw new URIError("Unable to find billboard fragment shader.");
-  }
-
-  // Return the shader sources
-  const vertSrc = await loadToStringByPlatform(vertFile.localUri);
-  const fragSrc = await loadToStringByPlatform(fragFile.localUri);
-  const bbVertSrc = await loadToStringByPlatform(bbVertFile.localUri);
-  const bbFragSrc = await loadToStringByPlatform(bbFragFile.localUri);
-  console.log("Shaders loaded.");
-  return [vertSrc, fragSrc, bbVertSrc, bbFragSrc]
+  // Load the file into a string
+  const shader: ShaderData = {
+    name: shaderName, 
+    data: await loadToStringByPlatform(asset.localUri),
+    type: shaderPaths[shaderName][1]
+  };
+  return shader;
 }
 
 // Load from a URI to a text string

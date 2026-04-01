@@ -34,11 +34,12 @@ import Household from "./household";
 
 // Import graphics utilities
 import {
-  MoveDirection, Material, genGrid, readShaderData,
+  MoveDirection, Material, genGrid,
   FEATURE_ORANGE, FEATURE_GREY, FEATURE_BLUE,
   ShaderLightUniformLocations, ShaderBillboardUniformLocations,
   ShaderAttributebLocations, ShaderMatrixUniformLocations,
-  loadModels, drawModels, sourceModels, VAO
+  loadModels, drawModels, sourceModels, VAO,
+  ShaderProgramManager, SHADER_REGULAR_PATHS, SHADER_BILLBOARD_PATHS
 } from "./graphicsUtils";
 
 // Import API utilities
@@ -82,8 +83,6 @@ export class Renderer {
 
   // Renderer data
   glRef: ExpoWebGLRenderingContext | null; // A global way to access the single WebGL context created on launch
-  shaderProgram: WebGLProgram | null; // The currently used GPU shader program
-  bbShaderProgram: WebGLProgram | null; // The shader program for billboards
   cam: Camera; // Our global camera value
   initialized: boolean;
 
@@ -96,6 +95,12 @@ export class Renderer {
   matrixUniformLocs: ShaderMatrixUniformLocations | null;
   lightUniformLocs: ShaderLightUniformLocations | null;
   bbLocs: ShaderBillboardUniformLocations | null;
+
+  // Shader program related variables - these manage the GPU pipeline
+  mainProgramManager: ShaderProgramManager | null;
+  billboardProgramManager: ShaderProgramManager | null;
+  shaderProgram: WebGLProgram | null; // The currently used GPU shader program
+  bbShaderProgram: WebGLProgram | null; // The shader program for billboards
 
   // Application data
   house: RenderableHousehold; // The displayed household 
@@ -111,7 +116,10 @@ export class Renderer {
 
   // log error function
   logError() {
-    console.log(this.glRef?.getError());
+    if (!this.glRef) {
+      throw new Error("No WebGL reference.");
+    }
+    console.log(this.glRef.getError());
   }
 
   ///////////////////////
@@ -150,7 +158,6 @@ export class Renderer {
 
     // Read the text of the shader files. We later pass shader data as a string, so we need the actual shader files in a 
     // string representation for later use. We still split them into their own files though because it's easier to manage.
-    const [vertData, fragData, bbVertData, bbFragData] = await readShaderData();
 
     // Get the OES Vertex Array Object extension
     // This is needed because these VAOs provide very useful functionality (we don't have to define vertex array attributes
@@ -174,88 +181,14 @@ export class Renderer {
     gl.enable(gl.DEPTH_TEST); // Allow objects with further depth to be obscured by other objects
     gl.depthFunc(gl.LEQUAL); // Specify which method to use to compare depth (less than or equal)
 
-    // Create vertex shader (shape & position). On error, clear resources, output an error, and quit
-    const vert: WebGLShader | null = gl.createShader(gl.VERTEX_SHADER);
-    if (vert === null) {
-      console.error("Error creating vertex shader.");
-      gl.deleteShader(vert);
-      return;
-    } 
-    gl.shaderSource(vert, vertData); // Set the shader source code accordingly
-    gl.compileShader(vert); // Compile that shader written in GLSL
-
-    // Create fragment shader (color). On error, clear resources, output an error, and quit
-    const frag: WebGLShader | null = gl.createShader(gl.FRAGMENT_SHADER);
-    if (frag === null) {
-      console.error("Error creating fragment shader.");
-      gl.deleteShader(vert);
-      gl.deleteShader(frag);
-      return;
-    } 
-    gl.shaderSource(frag, fragData); // Set shader source code to the text read earlier
-    gl.compileShader(frag); // Compile the GLSL shader
-
-    // Create billboard vertex shader (healthbars). On error, clear resources, output an error, and quit
-    const bbVert: WebGLShader | null = gl.createShader(gl.VERTEX_SHADER);
-    if (bbVert === null) {
-      console.error("Error creating billboard vertex shader.");
-      gl.deleteShader(vert);
-      gl.deleteShader(frag);
-      gl.deleteShader(bbVert);
-      return;
-    } 
-    gl.shaderSource(bbVert, bbVertData); // Set shader source code to the text read earlier
-    gl.compileShader(bbVert); // Compile the GLSL shader
-
-    // Create billboard fragment shader (healthbars). On error, clear resources, output an error, and quit
-    const bbFrag: WebGLShader | null = gl.createShader(gl.FRAGMENT_SHADER);
-    if (bbFrag === null) {
-      console.error("Error creating billboard fragment shader.");
-      gl.deleteShader(vert);
-      gl.deleteShader(frag);
-      gl.deleteShader(bbVert);
-      gl.deleteShader(bbFrag);
-      return;
-    } 
-    gl.shaderSource(bbFrag, bbFragData); // Set shader source code to the text read earlier
-    gl.compileShader(bbFrag); // Compile the GLSL shader
-
-    // Ensure shaders are compiled correctly. Output an error if they aren't with relevant shader info, clear resources, and return. 
-    if (!gl.getShaderParameter(vert, gl.COMPILE_STATUS)) {
-      console.error("Shaders failed to compile - ", gl.getShaderInfoLog(vert), " - AND - ", gl.getShaderInfoLog(frag), " - AND - ", gl.getShaderInfoLog(bbVert), " - AND - ", gl.getShaderInfoLog(bbFrag));
-      gl.deleteShader(vert);
-      gl.deleteShader(frag);
-      gl.deleteShader(bbVert);
-      gl.deleteShader(bbFrag);
-      return;
-    }
-
-    // Link shaders together into a program. A shader program tells the GPU which order of shaders to run to fill the graphics pipeline. 
-    // At a minimum, we need a vertex and fragment shader. Vertex shaders handle and transform vertex data, fragment shaders handle 
-    // the individual "fragments" created after rasterization where lines are transformed into actual pixels. We could switch to a different 
-    // program or modify this one if we wanted to use different shaders. 
-    const program = gl.createProgram();
-    gl.attachShader(program, vert);
-    gl.attachShader(program, frag);
-    gl.linkProgram(program);
-    this.shaderProgram = program;
-
-    // Now, we create a shader program for the healthbars (bb is short for billboard)
-    const bbProgram = gl.createProgram();
-    gl.attachShader(bbProgram, bbVert);
-    gl.attachShader(bbProgram, bbFrag);
-    gl.linkProgram(bbProgram);
-    this.bbShaderProgram = bbProgram;
-
-    // Clean up resources
-    gl.detachShader(program, vert);
-    gl.detachShader(program, frag);
-    gl.detachShader(bbProgram, bbVert);
-    gl.detachShader(bbProgram, bbFrag);
-    gl.deleteShader(vert);
-    gl.deleteShader(frag);
-    gl.deleteShader(bbVert);
-    gl.deleteShader(bbFrag);
+    // Settup shader programs
+    this.mainProgramManager = new ShaderProgramManager(gl, SHADER_REGULAR_PATHS);
+    await this.mainProgramManager.loadAndLinkShaders();
+    this.shaderProgram = this.mainProgramManager.getProgram();
+    
+    this.billboardProgramManager = new ShaderProgramManager(gl, SHADER_BILLBOARD_PATHS);
+    await this.billboardProgramManager.loadAndLinkShaders();
+    this.bbShaderProgram = this.billboardProgramManager.getProgram();
 
     // Get attribute and uniform location information for the shader program. Essentially, this is get references to location information
     // so we can upload data to the GPU for shaders to use. Here, we deal with both attributes and uniforms. Uniforms are variables that are the same
@@ -403,6 +336,8 @@ export class Renderer {
     this.attribLocs = null;
     this.meshMap = null;
     this.meshVao = null;
+    this.mainProgramManager = null;
+    this.billboardProgramManager = null;
 
     // These can safely be set at construction time
     this.grid = new Grid(this);
@@ -823,7 +758,7 @@ export class Renderer {
       // If the remote server was successful, add the feature for drawing
       this.house.renderableFeatures.push(newFeature); // add the feature to the house
     } catch (e) {
-      console.error("Unable to create feature.", e);
+      console.error(`Unable to create feature for household ${this.house.household_id}.`, e);
     }
   }
 
@@ -937,7 +872,7 @@ export class Renderer {
           removed = true;
         } catch (e) {
           // Note, if we fail we don't need to copy the feature over because we're not updating the feature array anyway
-          console.error("Failed to delete feature. Canceling deletion.", e);
+          console.error(`Failed to delete feature. Canceling deletion for feature ${f.id} in household ${this.house.household_id}.`, e);
         } 
       } else {
         // We've found a feature we want to keep
