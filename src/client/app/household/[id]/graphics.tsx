@@ -24,7 +24,7 @@ Known faults: None
 // ***********************************************************
 
 // Import required components
-import React, { useEffect, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useState, useSyncExternalStore, useRef } from 'react';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
 import * as GLM from 'gl-matrix';
 import { LayoutChangeEvent, Pressable, View, useWindowDimensions, ActivityIndicator } from "react-native";
@@ -104,7 +104,7 @@ function getSelectedEditFeature() {
 }
 
 // Given coordinates, select the feature in the house lists
-export function findAndSetSelectedFeature(cellX: number, cellY: number, cellZ: number) {
+function findAndSetSelectedFeature(cellX: number, cellY: number, cellZ: number) {
   // iterate through house features. We do it in the order x, z, y since y should always be constant so far (we only support the xz plane)
   // There should also only ever be one feature that matches
   for (let i = 0; i < rdr.house.renderableFeatures.length; i++) {
@@ -148,8 +148,11 @@ function isUsingEditTool() {
 }
 
 // ***********************************************************
-//                      Gesture Handling
+//     Non-stateful Gesture Handling (for state, see Index)
 // ***********************************************************
+// NOTE: because these are defined outside the Ract state (at the top level of this file) they will always
+// retain the state they are created with. One way to address this is to use function to access external 
+// variables since the function pointers wont change. 
 
 // Define gesture handler function for panning and rotating the model
 const handlePan = Gesture.Pan()
@@ -181,34 +184,6 @@ const handlePan = Gesture.Pan()
     updateVelocityPan(0, 0);
     panYDir = 0;
   });
-
-// Handle screen taps (on web, clicks)
-const handleTap = Gesture.Tap() // Handle the tap gesture
-  .runOnJS(true) // Run on the main JS thread that the renderer runs on, not the UI thread
-  .maxDuration(250) // Limit the amount of time of taps so we can recognize more pans
-  .onFinalize((event, success) => { // When the tap event is done...
-    if (success) { 
-      // Convert our tap's position on the screen to world coordinates on the xz plane
-      const dims = getViewAndWindowDims();
-      const worldPos: GLM.vec3 | null = rdr.screenToWorldCoords(event.absoluteX, event.absoluteY, dims[0], dims[1], dims[2], dims[3]);
-      if (!worldPos) {
-        console.error("Unable to convert tap to world coordinates.");
-      } else {
-        // We have successfully found a world position from our tap, so figure out what cell we're in
-        const tappedCell = cellFromCoords(worldPos[0], worldPos[2]);
-        // Add to House or select depending on tool
-        if (isUsingEditTool()) {
-          findAndSetSelectedFeature(tappedCell[0], 0, tappedCell[1]);
-        } else {
-          rdr.addBlock(tappedCell[0], 0, tappedCell[1]);
-        }
-      }
-    }
-  })
-
-
-// Use a composed gesture to allow for both pan and tap gestures. It is exclusive in that we can't use them both
-const composedGesture = Gesture.Exclusive(handlePan, handleTap);
 
 // ***********************************************************
 //                      JSX And UI
@@ -399,7 +374,47 @@ function EditWindow() {
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
 // the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
 export default function Index() {
-    // From list.tsx (thanks Nifemi)
+  const rdrRef = useRef(rdr);
+  useEffect(() => {
+    rdrRef.current = rdr;
+  }, [rdr]);
+
+  ///////////////////////////
+  ///  Stateful Gestures  ///
+  ///////////////////////////
+
+  // Handle screen taps (on web, clicks)
+  const handleTap = Gesture.Tap() // Handle the tap gesture
+  .runOnJS(true) // Run on the main JS thread that the renderer runs on, not the UI thread
+  .maxDuration(250) // Limit the amount of time of taps so we can recognize more pans
+  .onFinalize((event, success) => { // When the tap event is done...
+    if (success) { 
+      // Convert our tap's position on the screen to world coordinates on the xz plane
+      const dims = getViewAndWindowDims();
+      const worldPos: GLM.vec3 | null = rdrRef.current.screenToWorldCoords(event.absoluteX, event.absoluteY, dims[0], dims[1], dims[2], dims[3]);
+      if (!worldPos) {
+        console.error("Unable to convert tap to world coordinates.");
+      } else {
+        // We have successfully found a world position from our tap, so figure out what cell we're in
+        const tappedCell = cellFromCoords(worldPos[0], worldPos[2]);
+        // Add to House or select depending on tool
+        if (isUsingEditTool()) {
+          findAndSetSelectedFeature(tappedCell[0], 0, tappedCell[1]);
+        } else {
+          rdrRef.current.addBlock(tappedCell[0], 0, tappedCell[1]);
+        }
+      }
+    }
+  });
+
+  // Use a composed gesture to allow for both pan and tap gestures. It is exclusive in that we can't use them both
+  const composedGesture = Gesture.Exclusive(handlePan, handleTap);
+
+  ///////////////////////////
+  ///  Index and similar  ///
+  ///////////////////////////
+
+  // From list.tsx (thanks Nifemi)
   const { id } = useLocalSearchParams<{ id: string }>(); // get parameter from route
   const householdId = Number(id) || 1;
   const [featureFetchSuccess, setFeatureFetchSuccess] = useState(false);
@@ -436,7 +451,7 @@ export default function Index() {
                 });
                 return feat;
               });
-              rdr.setFeatures(householdId, mapped);
+              rdrRef.current.setFeatures(householdId, mapped);
               setFeatureFetchSuccess(true);
             })
       .catch((e) => {
@@ -447,9 +462,9 @@ export default function Index() {
   // On component unmount, cancel our rendering loop
   useEffect(() => {
     return () => {
-      if (rdr.frameId !== null) {
-        cancelAnimationFrame(rdr.frameId);
-        rdr.frameId = null;
+      if (rdrRef.current.frameId !== null) {
+        cancelAnimationFrame(rdrRef.current.frameId);
+        rdrRef.current.frameId = null;
       }
     }
   }, []);

@@ -70,6 +70,9 @@ const MAX_PLACE_ATTEMPTS = 10;
 
 // Store details needed for a functional renderer
 export class Renderer {
+  // Debug
+  id: number;
+
   // Graphical context data
   lastFrameTime: number; // The time since the last frame
   frameId: number | null; // the id of the current frame being drawn
@@ -115,7 +118,8 @@ export class Renderer {
     this.featuresDirty = true; // mark the feature list as dirty so we know to update before drawing next
     this.features = []; // empty the features array
     features.forEach((f) => {this.features.push(f)}) // manually copy the features over
-    this.house.id = householdID; // NOTE: at some point we need to get all the household details
+    this.house.household_id = householdID; // NOTE: at some point we need to get all the household details
+    this.house.id = householdID; // for compatability
   }
 
   // Called when a GL context is created - NOT at construction time. 
@@ -125,9 +129,15 @@ export class Renderer {
     this.lastFrameTime = 0;
     this.shaderProgram = null; // I don't think this causes a memory leak as Expo should clean up resources on unmount
     this.bbShaderProgram = null;
-    this.house = new RenderableHousehold(this, "RENDERER_HOUSE_2");
+
+    // Only update these if we have to
+    if (!this.house) {
+      this.house = new RenderableHousehold(this, "RENDERER_HOUSE_2");
+      this.grid = new Grid(this);
+    }
+
+    // This needs to be updated to reset the camera
     this.cam = new Camera();
-    this.grid = new Grid(this);
 
     // Read the text of the shader files. We later pass shader data as a string, so we need the actual shader files in a 
     // string representation for later use. We still split them into their own files though because it's easier to manage.
@@ -361,6 +371,9 @@ export class Renderer {
   }
 
   constructor() {
+    // Set for debug
+    this.id = Math.round(Math.random() * 10000);
+
     // These values must be set on context create (not during construction)
     this.oesExt = null;
     this.glRef = null;
@@ -754,7 +767,7 @@ export class Renderer {
     try {
       // Create the feature on the server
       const featureID = await apiCreateFeature({
-        household_id: this.house.id,
+        household_id: this.house.household_id,
         feature_name: "f:" + cellX + cellY + cellZ,
         x_pos: cellX,
         y_pos: cellY,
