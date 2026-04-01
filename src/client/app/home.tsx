@@ -91,7 +91,6 @@ export default function HomeScreen() {
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`,
-            "Access-Control-Allow-Origin": "https://api.seehome.app"
           },
         });
 

@@ -139,6 +139,12 @@ function TaskRow({
             </Text>
         </Text>
         <HealthBar task={task} />
+        <Text style={styles.taskDueText}> 
+        Next Due: 
+            <Text style={[styles.taskDueText, { color: healthColor(task.healthPercent)}]} >
+              {task.last_completed?.toLocaleString()}
+            </Text>
+        </Text>
       </View>
 
       {/* Green check button to mark task as done (resets the health bar to 100%) */}
@@ -973,10 +979,16 @@ const styles = StyleSheet.create({
         color: "#333",
         marginBottom: 4,
     },
-    taskLastCompletedText: {
+    taskDueText :{
         fontSize: 12,
         fontWeight: "300",
         color: "#333",
+        marginBottom: 4,
+    },    
+    taskLastCompletedText: {
+        fontSize: 12,
+        fontWeight: "300",
+        color: "#555",
         marginBottom: 4,
     },
     completeBtn: {
