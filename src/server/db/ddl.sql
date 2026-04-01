@@ -6,6 +6,7 @@ Creation Date: 2/15/2026
 Revision date:
     - 3/19/26: Added Household Relation
     - 3/29/26: Added icon columns to Feature and Task tables
+    - 4/1/26: Added the Environmental Data relation for Enviro+ sensor data
 Preconditions: N/A
 Postconditions: Create the base structure of the database with the tables, attributes, and data types
 Errors: None
@@ -156,13 +157,20 @@ CREATE TABLE IF NOT EXISTS Task (
     icon VARCHAR(50) DEFAULT 'clipboard-text-outline'
 );
 
-
 /*
-Functions for adding data to the database
+Create a relation for storing the sensor data. "Environmentaldata"
+    Attributes:
+        data_id : Primary key for identifying a data sample
+        household_id : Links a data sample to the household it is a measurement for
+        temperature_C : The temperature reading from the Enviro+ sensor, in degrees Celcius
+        relative_humidity : The relative humidity reading from the Enviro+ sensor
+        recorded_at : The timestamp that the sensor readings took place at
 */
 
-
-
-/*
-Functions for retrieving specific data from the database
-*/
+CREATE TABLE IF NOT EXISTS EnvironmentalData (
+    data_id SERIAL PRIMARY KEY,
+    household_id INTEGER REFERENCES Household(household_id) ON DELETE CASCADE,
+    temperature_C FLOAT,
+    relative_humidity FLOAT,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
