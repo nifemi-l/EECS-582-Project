@@ -134,6 +134,9 @@ function TaskRow({
       <View style={styles.taskInfo}>
         <Text style={styles.taskName} numberOfLines={1}>
           {task.name}
+            <Text style={styles.taskLastCompletedText} >
+              {task.last_completed?.toLocaleString()}
+            </Text>
         </Text>
         <HealthBar task={task} />
       </View>
@@ -967,6 +970,12 @@ const styles = StyleSheet.create({
     taskName: {
         fontSize: 14,
         fontWeight: "500",
+        color: "#333",
+        marginBottom: 4,
+    },
+    taskLastCompletedText: {
+        fontSize: 12,
+        fontWeight: "300",
         color: "#333",
         marginBottom: 4,
     },
