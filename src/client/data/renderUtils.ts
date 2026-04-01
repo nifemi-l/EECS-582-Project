@@ -24,6 +24,7 @@ Known faults: None
 
 // GL & Library imports 
 import * as GLM from 'gl-matrix';
+import * as OBJ from 'webgl-obj-loader';
 import { ExpoWebGLRenderingContext } from 'expo-gl';
 
 // Import server classes
@@ -37,6 +38,7 @@ import {
   FEATURE_ORANGE, FEATURE_GREY, FEATURE_BLUE,
   ShaderLightUniformLocations, ShaderBillboardUniformLocations,
   ShaderAttributebLocations, ShaderMatrixUniformLocations,
+  loadModels, drawModels, sourceModels, VAO
 } from "./graphicsUtils";
 
 // Import API utilities
@@ -103,6 +105,10 @@ export class Renderer {
   featuresDirty: boolean; // flag so we know if we need to apply feature updates or not
   features: Feature[]; // store the fetched feature list for our household
 
+  // Model data
+  meshMap: OBJ.MeshMap | null;
+  meshVao: VAO;
+
   // log error function
   logError() {
     console.log(this.glRef?.getError());
@@ -124,6 +130,9 @@ export class Renderer {
 
   // Called when a GL context is created - NOT at construction time. 
   async init(gl: ExpoWebGLRenderingContext) {
+    // Load our models async. Will update the meshMap
+    this.meshMap = await sourceModels();
+
     // Reset everything so it works when navigating back to the graphics page. Descriptions are above.
     this.glRef = gl;
     this.lastFrameTime = 0;
@@ -256,7 +265,8 @@ export class Renderer {
     this.attribLocs = {
       // We need to figure out where these attributes are being stored on the GPU.
       vertLoc: gl.getAttribLocation(this.shaderProgram, "aVertPos"),
-      normalLoc: gl.getAttribLocation(this.shaderProgram, "aNormal")
+      normalLoc: gl.getAttribLocation(this.shaderProgram, "aNormal"),
+      texLoc: gl.getAttribLocation(this.shaderProgram, "aTexCoord")
     }
     this.matrixUniformLocs = {
       // We use three matrices to transform a model's unique position in the world into a 
@@ -305,10 +315,18 @@ export class Renderer {
     this.bindVAO(this.house.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.house.buffer);
     gl.bufferData(gl.ARRAY_BUFFER, this.house.blockVertices, gl.STATIC_DRAW);
-    gl.vertexAttribPointer(this.attribLocs.vertLoc, 3, gl.FLOAT, false, 6 * 4, 0); // 4 bytes per float * 6 floats stored per vertex = 24 bytes per vertex
     gl.enableVertexAttribArray(this.attribLocs.vertLoc);
+    gl.vertexAttribPointer(this.attribLocs.vertLoc, 3, gl.FLOAT, false, 6 * 4, 0); // 4 bytes per float * 6 floats stored per vertex = 24 bytes per vertex
+    gl.enableVertexAttribArray(this.attribLocs.normalLoc);
     gl.vertexAttribPointer(this.attribLocs.normalLoc, 3, gl.FLOAT, false, 6 * 4, 4 * 3); // 4 bytes per float * 3 floats before we get to our first set of normal data
-    gl.enableVertexAttribArray(this.attribLocs.normalLoc);  
+    gl.disableVertexAttribArray(this.attribLocs.texLoc);
+    gl.vertexAttrib2f(this.attribLocs.texLoc, 0.0, 0.0);
+    this.bindVAO(null);
+
+    // Now for models / meshes
+    this.meshVao = this.createVAO();
+    this.bindVAO(this.meshVao);
+    loadModels(gl, this.meshMap, this.attribLocs);     // Load model buffers and get them ready for rendering
     this.bindVAO(null);
 
     // Do the same for billboards
@@ -383,6 +401,8 @@ export class Renderer {
     this.bbLocs = null;
     this.matrixUniformLocs = null;
     this.attribLocs = null;
+    this.meshMap = null;
+    this.meshVao = null;
 
     // These can safely be set at construction time
     this.grid = new Grid(this);
@@ -618,6 +638,7 @@ export class Renderer {
       return;
     }
     const gl = this.glRef;
+    this.bindVAO(this.house.vao);
 
     // Iterate through all cubes making up our model and draw them each
     for (let i = 0; i < this.house.renderableFeatures.length; i++) {
@@ -632,6 +653,14 @@ export class Renderer {
       gl.uniform1f(this.lightUniformLocs.material.shininess, this.house.renderableFeatures[i].material.shininess);
       gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yields 6 faces * 6 vertices for 36 vertices to draw.
     }
+
+    // Draw models in the mesh map if we have any
+    this.bindVAO(this.meshVao);
+    if (this.meshMap !== null) {
+      drawModels(this.glRef, this.meshMap);
+    }
+
+    this.bindVAO(null); // reset state
   }
 
   // Draw the grid
@@ -717,7 +746,7 @@ export class Renderer {
 
   // Since WebGL 1.0 and 2.0 bind vertex array objects (explained above) differently, we need a wrapper function. 
   // Note that it is possible to bind a null VAO, this just clears whatever VAO is currently bound. 
-  bindVAO(vao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null) {
+  bindVAO(vao: VAO) {
     // Ensure we have a WebGL context
     if (!this.glRef) {
       console.error("No gl context.");
@@ -1012,12 +1041,12 @@ export class RenderableHousehold extends Household {
    blockVertices: Float32Array; // The vertices that make up a cube (including the normals of each face)
    renderableFeatures: RenderableFeature[]; // The list of feature objects in our household
    buffer: WebGLBuffer | null; // A way to access the buffer storing cube vertex data on the GPU
-   vao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null; // A single object to store the vertex attribute data and which buffer to bind for the household
+   vao: VAO; // A single object to store the vertex attribute data and which buffer to bind for the household
 
    // Billboard related values
    bbBuffer: WebGLBuffer | null; // A way to access the buffer storing cube vertex data on the GPU
    bbVertices: Float32Array; // The vertices of the billboard quad
-   bbVao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null; // A single object to store the vertex attribute data and which buffer to bind for the household
+   bbVao: VAO; // A single object to store the vertex attribute data and which buffer to bind for the household
 
    // Active renderer
    rdr: Renderer;
@@ -1187,7 +1216,7 @@ export class Grid {
   gridVertices: Float32Array | null; // Store the vertices that make up the grid
   modelMatrx: GLM.mat4; // Store the transform data of the grid
   buffer: WebGLBuffer | null; // Access the GPU buffer where the grid vertex data is uploaded
-  vao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null; // Store a descriptor of the proper vertex attribute format and related buffer
+  vao: VAO; // Store a descriptor of the proper vertex attribute format and related buffer
   width: number;
   height: number;
   material: Material;

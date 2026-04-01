@@ -20,7 +20,8 @@ Known faults: None
 
 import { Asset } from 'expo-asset';
 import { readAsStringAsync } from 'expo-file-system/legacy';
-import { Platform } from 'react-native'
+import { Platform } from 'react-native';
+import * as OBJ from 'webgl-obj-loader';
 
 // ***********************************************************
 //  Constants, Enums, and Interfaces (and related functions)
@@ -47,7 +48,8 @@ export enum Tool {
 export interface ShaderAttributebLocations {
     // We need to figure out where these attributes are being stored on the GPU.
     vertLoc: number,
-    normalLoc: number
+    normalLoc: number,
+    texLoc: number
 }
 // Matrices
 export interface ShaderMatrixUniformLocations {
@@ -83,6 +85,9 @@ export interface ShaderBillboardUniformLocations {
     heightOffset: WebGLUniformLocation | null,
     healthPercent: WebGLUniformLocation | null,
 }
+
+// Type to bridge webgl 1 and 2 VAOs
+export type VAO = WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null;
 
 // Define the structure of what a material should have. We follow the phong lighting model. 
 // Values for all numbers but shininess should be in [0, 1]
@@ -233,21 +238,122 @@ export async function readShaderData() {
     throw new URIError("Unable to find billboard fragment shader.");
   }
 
+  // Return the shader sources
+  const vertSrc = await loadToStringByPlatform(vertFile.localUri);
+  const fragSrc = await loadToStringByPlatform(fragFile.localUri);
+  const bbVertSrc = await loadToStringByPlatform(bbVertFile.localUri);
+  const bbFragSrc = await loadToStringByPlatform(bbFragFile.localUri);
+  console.log("Shaders loaded.");
+  return [vertSrc, fragSrc, bbVertSrc, bbFragSrc]
+}
+
+// Load from a URI to a text string
+async function loadToStringByPlatform(localUri: string) {
   // Web and mobile bundle files differently. On web, we fetch it using a URL as if we were fetching an external resource.
   // On mobile, we can just read the file since it is bundled with the application. Once read, return the file data as text / string data.
   if (Platform.OS === 'web') {
-    const vertSrc = await (await fetch(vertFile.localUri)).text(); // .text() is a promise, like fetch, hence the double await
-    const fragSrc = await (await fetch(fragFile.localUri)).text();
-    const bbVertSrc = await (await fetch(bbVertFile.localUri)).text();
-    const bbFragSrc = await (await fetch(bbFragFile.localUri)).text();
-    console.log("Shaders fetched.");
-    return [vertSrc, fragSrc, bbVertSrc, bbFragSrc]
+    return await (await fetch(localUri)).text(); // .text() is a promise, like fetch, hence the double await
   } else {
-    const vertSrc = await readAsStringAsync(vertFile.localUri);
-    const fragSrc = await readAsStringAsync(fragFile.localUri);
-    const bbVertSrc = await readAsStringAsync(bbVertFile.localUri);
-    const bbFragSrc = await readAsStringAsync(bbFragFile.localUri);
-    console.log("Shaders read.");
-    return [vertSrc, fragSrc, bbVertSrc, bbFragSrc];
+    return await readAsStringAsync(localUri);
+  }
+}
+
+// ***********************************************************
+//                  Mesh Utilities
+// ***********************************************************
+
+// Load all models and prepare them for rendering
+export async function sourceModels(): Promise<OBJ.MeshMap> {
+  // Load our mesh file
+  const [suzanneMesh] = await Asset.loadAsync([
+    require("../assets/models/Monkey.obj"),
+  ]);
+
+  // Ensure we were successful
+  if (!suzanneMesh.localUri) {
+    throw new URIError("Unable to find suzanne mesh.");
+  }
+
+  // Load the meshes into a MeshMap
+  const meshMap = await new Promise<OBJ.MeshMap>((resolve, reject) => {
+    OBJ.downloadMeshes({
+        'suzanne': suzanneMesh.localUri!,
+      }, (meshArray) => {
+        // Set the final mesh map
+        resolve(meshArray);
+      }, {});
+  });
+  
+  // Return the result
+  console.log("Models loaded.");
+  return meshMap;
+}
+
+export function loadModels(gl: WebGLRenderingContext, mm: OBJ.MeshMap | null, attribLocs: ShaderAttributebLocations) {
+  // Ensure we have stuff to load
+  if (!mm) {
+    console.log("Skipping model load, no models to draw.");
+    return;
+  }
+
+  // Enable needed attrs
+  gl.enableVertexAttribArray(attribLocs.vertLoc);
+  gl.enableVertexAttribArray(attribLocs.normalLoc);
+  gl.enableVertexAttribArray(attribLocs.texLoc);
+
+  //Initialize our buffers
+  // Note: We assume a very rigid structure of 3-3-2 floats for vertex-vertexNormal-texCoord
+  OBJ.initMeshBuffers(gl, mm.suzanne);
+  const mesh = mm.suzanne;
+
+  // Now, prep needed runtime-created variables
+  // Get our runtime-created buffers and check for errors
+  const vb: WebGLBuffer = (mesh as any).vertexBuffer;
+  const vbItemSize: number = (vb as any).itemSize;
+  const vn: WebGLBuffer = (mesh as any).normalBuffer;
+  const vnItemSize: number = (vb as any).itemSize;
+  const tx: WebGLBuffer = (mesh as any).textureBuffer;
+  const txItemSize: number = (tx as any).itemSize;
+  const ix: WebGLBuffer = (mesh as any).indexBuffer;
+  const ixItemSize: number = (ix as any).itemSize;
+  const ixLength: number = (ix as any).numItems;
+  if (!vb || !vn || !ix || !vbItemSize || !vnItemSize || !ixItemSize || !ixLength) {
+    throw Error("No buffers to draw with on model.");
+  }
+
+  // Prep buffers
+  gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+  gl.vertexAttribPointer(attribLocs.vertLoc, vbItemSize, gl.FLOAT, false, 0, 0);
+  if (!mesh.textures.length) { // In case we don't have texture coordinates...
+    gl.disableVertexAttribArray(attribLocs.texLoc);
+  } else {
+    gl.enableVertexAttribArray(attribLocs.texLoc);
+    gl.bindBuffer(gl.ARRAY_BUFFER, tx);
+    gl.vertexAttribPointer(attribLocs.texLoc, txItemSize, gl.FLOAT, false, 0, 0);
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, vn);
+  gl.vertexAttribPointer(attribLocs.normalLoc, vnItemSize, gl.FLOAT, false, 0, 0);
+}
+
+export function drawModels(gl: WebGLRenderingContext, mm: OBJ.MeshMap | null) {
+  // Ensure we have stuff to draw
+  if (!mm) {
+    console.log("Skipping model draw, no models to draw.");
+    return;
+  }
+
+  // Get our runtime-created buffers and check for errors
+  const vb: WebGLBuffer = (mm.suzanne as any).vertexBuffer;
+  const vn: WebGLBuffer = (mm.suzanne as any).normalBuffer;
+  const ix: WebGLBuffer = (mm.suzanne as any).indexBuffer;
+  const ixLength: number = (ix as any).numItems;
+  if (!vb || !vn || !ix || !ixLength) {
+    throw Error("No buffers to draw with on model.");
+  }
+
+  // Render
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ix);
+  if (ixLength > 0) {
+    gl.drawElements(gl.TRIANGLES, ixLength, gl.UNSIGNED_SHORT, 0);  
   }
 }

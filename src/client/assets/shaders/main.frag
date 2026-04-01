@@ -36,6 +36,7 @@ struct Light {
 // but are modified in the vertex shader and passed here
 varying vec3 Normal;
 varying vec3 FragPos;
+varying vec2 TexCoord;
 
 // Variables that are the same for every instance of the shader being ran
 // Lighting information, material information, and the view matrix. 

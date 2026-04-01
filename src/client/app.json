@@ -43,7 +43,10 @@
       [
         "expo-asset",
         {
-          "assets": ["./app/assets/shaders/main.vert", "./app/assets/shaders/main.frag", "./app/assets/shaders/billboard.vert", "./app/assets/shaders/billboard.frag"]
+          "assets": [
+            "./app/assets/shaders/main.vert", "./app/assets/shaders/main.frag", "./app/assets/shaders/billboard.vert", "./app/assets/shaders/billboard.frag",
+            "./app/assets/models/Monkey.obj"
+          ]
         }
       ],
       "expo-secure-store"

@@ -19,6 +19,7 @@ Known faults: None
 // and 3 normal values for each vertex. 
 attribute vec3 aVertPos;
 attribute vec3 aNormal;
+attribute vec2 aTexCoord;
 
 // The values that are the same for each instance of a shader being run during one frame.
 // These are the matrices used to transform model space to the final space shown on the screen. 
@@ -29,10 +30,12 @@ uniform mat4 uProjection; // Using a perspective projection
 // Output the final calculated model-adjusted normal values and vertex position values used by the fragment shader
 varying vec3 Normal;
 varying vec3 FragPos;
+varying vec2 TexCoord;
 
 // See https://learnopengl.com for reference
 void main() {
     gl_Position = uProjection * uView * uModel * vec4(aVertPos, 1.0); // Output the position of the vertex after being transformed
     Normal = mat3(uModel) * aNormal; // Since there is no non-uniform scaling, this is fine to calculate the vertex's normal (allowing for model transformations)
     FragPos = vec3(uModel * vec4(aVertPos, 1.0)); // Output the position of the resulting fragment after the model transformation
+    TexCoord = aTexCoord;
 }
