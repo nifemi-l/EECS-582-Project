@@ -23,6 +23,35 @@ import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext } from 'expo-gl';
 import { Platform } from 'react-native';
 import * as OBJ from 'webgl-obj-loader';
+import { FeatureType, getFeatureTypeFromString } from './feature';
+
+
+// ***********************************************************
+//                    Misc useful functions
+// ***********************************************************
+
+// log error function
+function logError(gl: ExpoWebGLRenderingContext) {
+  console.log(gl.getError());
+}
+
+// ***********************************************************
+//                 Mesh constants & interfaces
+// ***********************************************************
+
+export interface MeshPathMap {
+  [key: string]: any
+}
+
+export interface MeshVAOMap {
+  [key: string]: VAO
+}
+
+export const MESH_PATH_MAP: MeshPathMap = {
+  "monkey": require("../assets/models/Monkey.obj"),
+  "bed": require("../assets/models/bed.obj"),
+  "table": require("../assets/models/table.obj"),
+};
 
 // ***********************************************************
 //                 Shader constants & interfaces
@@ -330,7 +359,7 @@ async function loadAllShaders(gl: ExpoWebGLRenderingContext, shaderFilePaths: Sh
 }
 
 // Convert from a ShaderType to a WebGL shader type
-function getGlType(gl: ExpoWebGLRenderingContext, type: ShaderType) {
+function getGlShaderType(gl: ExpoWebGLRenderingContext, type: ShaderType) {
   switch(type) {
     case ShaderType.VERTEX:
       return gl.VERTEX_SHADER;
@@ -344,7 +373,7 @@ function getGlType(gl: ExpoWebGLRenderingContext, type: ShaderType) {
 // From a shader file read into a string (shaderDataString), source and compile the shader and then return it
 function sourceAndCompileShader(gl: ExpoWebGLRenderingContext, shaderData: ShaderData): Shader | null{
   // Create shader. On error, clear resources, output an error, and quit
-  const shader: WebGLShader | null = gl.createShader(getGlType(gl, shaderData.type));
+  const shader: WebGLShader | null = gl.createShader(getGlShaderType(gl, shaderData.type));
   if (shader === null) {
     console.error("Error creating shader.");
     return null;
@@ -413,23 +442,147 @@ async function loadToStringByPlatform(localUri: string) {
 //                  Mesh Utilities
 // ***********************************************************
 
-// Load all models and prepare them for rendering
-export async function sourceModels(): Promise<OBJ.MeshMap> {
-  // Load our mesh file
-  const [suzanneMesh] = await Asset.loadAsync([
-    require("../assets/models/Monkey.obj"),
-  ]);
+// This class will be responsibile for sourcing all mesh models upon creation, as well as 
+// handling the resulting mesh maps. 
+export class MeshManager {
+  valid: boolean;
+  meshMap: OBJ.MeshMap;
+  gl: ExpoWebGLRenderingContext;
+  meshVaoMap: MeshVAOMap;
 
-  // Ensure we were successful
-  if (!suzanneMesh.localUri) {
-    throw new URIError("Unable to find suzanne mesh.");
+  async sourceMeshes() {
+    try{
+      this.meshMap = await sourceAllModels();
+      this.valid = true;
+    } catch (e) {
+      console.error("Unable to source models.");
+    }
   }
+
+  // Must be called for every mesh. 
+  // NOTE: You must properly bind and unbind the appropriate VAO before and after this call
+  // TODO: Fix this behavior
+  prepareMesh(name: string, attribLocs: ShaderAttributebLocations) {
+    // Get our mesh from the name
+    const mesh = this.meshMap[name];
+    if (!mesh) {
+      console.error(`Could not find mesh ${name}.`)
+      return;
+    }
+
+    // Enable needed attrs
+    this.gl.enableVertexAttribArray(attribLocs.vertLoc);
+    this.gl.enableVertexAttribArray(attribLocs.normalLoc);
+    this.gl.enableVertexAttribArray(attribLocs.texLoc);
+
+    // Expand our buffers so we have what we need
+    OBJ.initMeshBuffers(this.gl, mesh);
+
+    // Now, prep needed runtime-created variables
+    // Get our runtime-created buffers and check for errors
+    const vb: WebGLBuffer = (mesh as any).vertexBuffer;
+    const vbItemSize: number = (vb as any).itemSize;
+    const vn: WebGLBuffer = (mesh as any).normalBuffer;
+    const vnItemSize: number = (vn as any).itemSize;
+    const tx: WebGLBuffer = (mesh as any).textureBuffer;
+    const txItemSize: number = (tx as any).itemSize;
+    if (!vb || !vn || !vbItemSize || !vnItemSize) {
+      throw Error("No buffers to prep with on model.");
+    }
+
+    // Prep buffers
+    // Vertex buffer
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, vb);
+    this.gl.vertexAttribPointer(attribLocs.vertLoc, vbItemSize, this.gl.FLOAT, false, 0, 0);
+
+    // Vertex normal buffer
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, vn);
+    this.gl.vertexAttribPointer(attribLocs.normalLoc, vnItemSize, this.gl.FLOAT, false, 0, 0);
+
+    // Texture buffer, if we have one
+    if (!mesh.textures.length) { // In case we don't have texture coordinates...
+      this.gl.disableVertexAttribArray(attribLocs.texLoc);
+      this.gl.vertexAttrib2f(attribLocs.texLoc, 0.0, 0.0);
+    } else {
+      this.gl.enableVertexAttribArray(attribLocs.texLoc);
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, tx);
+      this.gl.vertexAttribPointer(attribLocs.texLoc, txItemSize, this.gl.FLOAT, false, 0, 0);
+    }
+
+    // Bind index buffer as part of VAO state
+    const ix: WebGLBuffer = (mesh as any).indexBuffer;
+    if (ix) {
+      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, ix);
+    }
+  }
+
+  drawMesh(name: string) {
+    // Get our mesh from the name
+    const mesh = this.meshMap[name];
+    if (!mesh) {
+      console.error(`Could not find mesh ${name}.`)
+      return;
+    }
+
+    // Get our runtime-created index buffer and check for errors
+    const ix: WebGLBuffer = (mesh as any).indexBuffer;
+    const ixLength: number = (ix as any).numItems;
+    if (!ix || !ixLength) {
+      throw Error("No index buffer to draw with on model.");
+    }
+
+    // Render - index buffer is already bound by VAO
+    if (ixLength > 0) {
+      this.gl.drawElements(this.gl.TRIANGLES, ixLength, this.gl.UNSIGNED_SHORT, 0);  
+    }
+  }
+
+  getVaoForMesh(meshName: string) {
+    return this.meshVaoMap[meshName];
+  }
+
+  constructor(gl: ExpoWebGLRenderingContext) {
+    this.valid = false;
+    this.meshMap = {};
+    this.gl = gl;
+    this.meshVaoMap = {};
+  }
+}
+
+// Return the correct mesh for a specific type given
+export function getMeshFromType(ftStr: string) {
+  const ft = getFeatureTypeFromString(ftStr);
+
+  switch (ft) {
+    case FeatureType.BED:
+      return "Full_Size_Bed_with_White_Sheets_Black_V1";
+    case FeatureType.TABLE:
+      return "Cube";
+    case FeatureType.MONKEY:
+      return "Suzanne";
+  }
+}
+
+// Load all models and prepare them for rendering
+export async function sourceAllModels(): Promise<OBJ.MeshMap> {
+  const meshUriMap: OBJ.NameAndUrls ={}; // store our name to URI pairs 
+  for (const key in MESH_PATH_MAP) {
+    const asset = Asset.fromModule(MESH_PATH_MAP[key]);
+    await asset.downloadAsync();
+
+    // Ensure we were successful
+    if (!asset.localUri) {
+      throw new URIError("Unable to find mesh.", MESH_PATH_MAP[key]);
+    }
+
+    // Set our name to uri map
+    meshUriMap[key] = asset.localUri;
+  }
+
 
   // Load the meshes into a MeshMap
   const meshMap = await new Promise<OBJ.MeshMap>((resolve, reject) => {
-    OBJ.downloadMeshes({
-        'suzanne': suzanneMesh.localUri!,
-      }, (meshArray) => {
+    OBJ.downloadMeshes(meshUriMap, (meshArray) => {
         // Set the final mesh map
         resolve(meshArray);
       }, {});
@@ -438,73 +591,4 @@ export async function sourceModels(): Promise<OBJ.MeshMap> {
   // Return the result
   console.log("Models loaded.");
   return meshMap;
-}
-
-export function loadModels(gl: WebGLRenderingContext, mm: OBJ.MeshMap | null, attribLocs: ShaderAttributebLocations) {
-  // Ensure we have stuff to load
-  if (!mm) {
-    console.log("Skipping model load, no models to draw.");
-    return;
-  }
-
-  // Enable needed attrs
-  gl.enableVertexAttribArray(attribLocs.vertLoc);
-  gl.enableVertexAttribArray(attribLocs.normalLoc);
-  gl.enableVertexAttribArray(attribLocs.texLoc);
-
-  //Initialize our buffers
-  // Note: We assume a very rigid structure of 3-3-2 floats for vertex-vertexNormal-texCoord
-  OBJ.initMeshBuffers(gl, mm.suzanne);
-  const mesh = mm.suzanne;
-
-  // Now, prep needed runtime-created variables
-  // Get our runtime-created buffers and check for errors
-  const vb: WebGLBuffer = (mesh as any).vertexBuffer;
-  const vbItemSize: number = (vb as any).itemSize;
-  const vn: WebGLBuffer = (mesh as any).normalBuffer;
-  const vnItemSize: number = (vb as any).itemSize;
-  const tx: WebGLBuffer = (mesh as any).textureBuffer;
-  const txItemSize: number = (tx as any).itemSize;
-  const ix: WebGLBuffer = (mesh as any).indexBuffer;
-  const ixItemSize: number = (ix as any).itemSize;
-  const ixLength: number = (ix as any).numItems;
-  if (!vb || !vn || !ix || !vbItemSize || !vnItemSize || !ixItemSize || !ixLength) {
-    throw Error("No buffers to draw with on model.");
-  }
-
-  // Prep buffers
-  gl.bindBuffer(gl.ARRAY_BUFFER, vb);
-  gl.vertexAttribPointer(attribLocs.vertLoc, vbItemSize, gl.FLOAT, false, 0, 0);
-  if (!mesh.textures.length) { // In case we don't have texture coordinates...
-    gl.disableVertexAttribArray(attribLocs.texLoc);
-  } else {
-    gl.enableVertexAttribArray(attribLocs.texLoc);
-    gl.bindBuffer(gl.ARRAY_BUFFER, tx);
-    gl.vertexAttribPointer(attribLocs.texLoc, txItemSize, gl.FLOAT, false, 0, 0);
-  }
-  gl.bindBuffer(gl.ARRAY_BUFFER, vn);
-  gl.vertexAttribPointer(attribLocs.normalLoc, vnItemSize, gl.FLOAT, false, 0, 0);
-}
-
-export function drawModels(gl: WebGLRenderingContext, mm: OBJ.MeshMap | null) {
-  // Ensure we have stuff to draw
-  if (!mm) {
-    console.log("Skipping model draw, no models to draw.");
-    return;
-  }
-
-  // Get our runtime-created buffers and check for errors
-  const vb: WebGLBuffer = (mm.suzanne as any).vertexBuffer;
-  const vn: WebGLBuffer = (mm.suzanne as any).normalBuffer;
-  const ix: WebGLBuffer = (mm.suzanne as any).indexBuffer;
-  const ixLength: number = (ix as any).numItems;
-  if (!vb || !vn || !ix || !ixLength) {
-    throw Error("No buffers to draw with on model.");
-  }
-
-  // Render
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ix);
-  if (ixLength > 0) {
-    gl.drawElements(gl.TRIANGLES, ixLength, gl.UNSIGNED_SHORT, 0);  
-  }
 }

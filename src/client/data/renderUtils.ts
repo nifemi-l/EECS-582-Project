@@ -24,7 +24,6 @@ Known faults: None
 
 // GL & Library imports 
 import * as GLM from 'gl-matrix';
-import * as OBJ from 'webgl-obj-loader';
 import { ExpoWebGLRenderingContext } from 'expo-gl';
 
 // Import server classes
@@ -38,8 +37,8 @@ import {
   FEATURE_ORANGE, FEATURE_GREY, FEATURE_BLUE,
   ShaderLightUniformLocations, ShaderBillboardUniformLocations,
   ShaderAttributebLocations, ShaderMatrixUniformLocations,
-  loadModels, drawModels, sourceModels, VAO,
-  ShaderProgramManager, SHADER_REGULAR_PATHS, SHADER_BILLBOARD_PATHS
+  MeshManager, VAO, getMeshFromType,
+  ShaderProgramManager, SHADER_REGULAR_PATHS, SHADER_BILLBOARD_PATHS,
 } from "./graphicsUtils";
 
 // Import API utilities
@@ -111,16 +110,7 @@ export class Renderer {
   features: Feature[]; // store the fetched feature list for our household
 
   // Model data
-  meshMap: OBJ.MeshMap | null;
-  meshVao: VAO;
-
-  // log error function
-  logError() {
-    if (!this.glRef) {
-      throw new Error("No WebGL reference.");
-    }
-    console.log(this.glRef.getError());
-  }
+  meshManager: MeshManager | null;
 
   ///////////////////////
   ///  Init Routines  ///
@@ -139,7 +129,9 @@ export class Renderer {
   // Called when a GL context is created - NOT at construction time. 
   async init(gl: ExpoWebGLRenderingContext) {
     // Load our models async. Will update the meshMap
-    this.meshMap = await sourceModels();
+    this.meshManager = new MeshManager(gl);
+    await this.meshManager.sourceMeshes();
+    // TODO: setup meshVaoMap & setup prepareMesh pipeline with appropriate VAOs
 
     // Reset everything so it works when navigating back to the graphics page. Descriptions are above.
     this.glRef = gl;
@@ -256,12 +248,6 @@ export class Renderer {
     gl.vertexAttrib2f(this.attribLocs.texLoc, 0.0, 0.0);
     this.bindVAO(null);
 
-    // Now for models / meshes
-    this.meshVao = this.createVAO();
-    this.bindVAO(this.meshVao);
-    loadModels(gl, this.meshMap, this.attribLocs);     // Load model buffers and get them ready for rendering
-    this.bindVAO(null);
-
     // Do the same for billboards
     this.house.bbBuffer = gl.createBuffer();
     this.house.bbVao = this.createVAO();
@@ -334,10 +320,9 @@ export class Renderer {
     this.bbLocs = null;
     this.matrixUniformLocs = null;
     this.attribLocs = null;
-    this.meshMap = null;
-    this.meshVao = null;
     this.mainProgramManager = null;
     this.billboardProgramManager = null;
+    this.meshManager = null;
 
     // These can safely be set at construction time
     this.grid = new Grid(this);
@@ -469,12 +454,6 @@ export class Renderer {
       return false;
     }
 
-    // Ensure we have a proper house vertex array object (VAO), if not error and return
-    if (!this.house.vao) {
-      console.error("Invalid VAO.");
-      return false;
-    }
-
     // Ensure we have a proper house billboard buffer, if not error and return
     if (!this.house.bbBuffer) {
       console.error("Invalid billboard buffer.");
@@ -568,31 +547,38 @@ export class Renderer {
   drawFeatures() {
     // Ensure we have a matrix uniform location and a GL context
     if (!this.glRef || !this.matrixUniformLocs || !this.matrixUniformLocs.modelMatrix || !this.lightUniformLocs 
-      || !this.lightUniformLocs.material.ambient || !this.lightUniformLocs.material.diffuse || !this.lightUniformLocs.material.specular || !this.lightUniformLocs.material.shininess) {
+      || !this.lightUniformLocs.material.ambient || !this.lightUniformLocs.material.diffuse || !this.lightUniformLocs.material.specular 
+      || !this.lightUniformLocs.material.shininess || !this.meshManager) {
       console.error("Not ready to draw features.");
       return;
     }
     const gl = this.glRef;
-    this.bindVAO(this.house.vao);
 
     // Iterate through all cubes making up our model and draw them each
     for (let i = 0; i < this.house.renderableFeatures.length; i++) {
-      if (!this.house.renderableFeatures[i].visible) {
+      const f = this.house.renderableFeatures[i];
+      const fVao = !f.mesh ? this.house.vao : this.meshManager.getVaoForMesh(f.mesh); 
+
+      if (!f.visible) {
         // Skip invisible features
         continue;
       }
+
+      this.bindVAO(fVao);
+
+      // Update uniforms and draw
       gl.uniformMatrix4fv(this.matrixUniformLocs.modelMatrix, false, this.house.renderableFeatures[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
       gl.uniform3fv(this.lightUniformLocs.material.ambient, this.house.renderableFeatures[i].material.ambient); // update lighting uniform values for the material of the object
       gl.uniform3fv(this.lightUniformLocs.material.diffuse, this.house.renderableFeatures[i].material.diffuse);
       gl.uniform3fv(this.lightUniformLocs.material.specular, this.house.renderableFeatures[i].material.specular);
       gl.uniform1f(this.lightUniformLocs.material.shininess, this.house.renderableFeatures[i].material.shininess);
-      gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yields 6 faces * 6 vertices for 36 vertices to draw.
-    }
 
-    // Draw models in the mesh map if we have any
-    this.bindVAO(this.meshVao);
-    if (this.meshMap !== null) {
-      drawModels(this.glRef, this.meshMap);
+      // draw a mesh, or if no mesh exists draw a cube
+      if (!f.mesh) {
+        gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yields 6 faces * 6 vertices for 36 vertices to draw.
+      } else {
+        this.meshManager.drawMesh(f.mesh);
+      }
     }
 
     this.bindVAO(null); // reset state
@@ -947,9 +933,13 @@ export class RenderableFeature extends Feature {
    modelMatrix: GLM.mat4; // The transform of the feature in the world
    material: Material; // How the feature looks materially
    visible: boolean;
+   mesh: string | null; // if null, draw a cube
 
    constructor(name: string, household_id: number, feature_id: number, mm?: GLM.mat4, mat?: Material, x?: number, y?: number, z?: number, tasks?: Task[], type?: string, icon?: string, ) {
     super(name, household_id, type, x, y, z, feature_id, icon);
+
+    // Set up mesh if a type is provided
+    this.mesh = !type ? null : getMeshFromType(type);
 
     // Assign model matrix to either a provided value or a default
     this.modelMatrix = mm || GLM.mat4.create();
