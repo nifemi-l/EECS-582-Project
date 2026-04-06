@@ -811,9 +811,10 @@ export default function ListScreen() {
       </View>
 
       <ScrollView
-        style={styles.scroll}
+        style={[styles.scroll, styles.webScroll]}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator
+        persistentScrollbar
       >
         {features.map((loc) => (
           <FeatureGroup
@@ -844,6 +845,13 @@ const styles = StyleSheet.create({
     scroll: {
         flex: 1,
     },
+    webScroll: Platform.select({
+        web: {
+            overflowY: "scroll",
+            scrollbarGutter: "stable",
+        } as any,
+        default: {},
+    }),
     scrollContent: {
         padding: 16,
         paddingBottom: 48,
