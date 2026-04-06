@@ -31,6 +31,7 @@ type HouseholdSummary = {
   name: string; // display name shown to the user
   joinCode: string; // shareable code used to join the household
   role: "admin" | "member"; // simple placeholder role for demo purposes
+  adminName: string; // keep track of the admin name for household view
 };
 
 async function loadHouseholdOrder(): Promise<string[] | null> {
@@ -111,7 +112,8 @@ export default function HomeScreen() {
             id: String(h.household_id),
             name: h.household_name,
             joinCode: h.join_code || "",
-            role: h.created_by_account_id ? "admin" : "member", // fallback
+            role: h.role || "member",
+            adminName: h.admin_name || "Unknown",
           }));
 
           const savedOrder = await loadHouseholdOrder();
@@ -223,6 +225,7 @@ export default function HomeScreen() {
         name: household.household_name,
         joinCode: household.join_code || "",
         role: "admin",
+        adminName: household.admin_name || "You",
       };
 
       // Add the new household to the top of the local list
@@ -287,6 +290,7 @@ export default function HomeScreen() {
         name: household.household_name,
         joinCode: household.join_code || trimmed,
         role: "member",
+        adminName: household.admin_name || "Unknown",
       };
 
       // Avoid duplicate cards if the household already exists in local state
@@ -442,8 +446,7 @@ export default function HomeScreen() {
                   <View>
                     <Text style={styles.householdName}>{household.name}</Text>
                     <Text style={styles.householdMeta}>
-                      {household.role === "admin" ? "Admin" : "Member"} • Code:{" "}
-                      {household.joinCode}
+                      Admin: {household.adminName} • Code: {household.joinCode}
                     </Text>
                   </View>
                 </View>
