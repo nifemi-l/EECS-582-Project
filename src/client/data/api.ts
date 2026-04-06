@@ -90,7 +90,7 @@ export async function deleteFeature(featureId: number): Promise<void> {
   if (!res.ok) throw new Error(`Failed to delete feature: ${res.status}`);
 }
 
-// Create a new task under a feature
+// Create a new task under a featuredata
 // Defaults visibility to "household" if not specified
 // Returns the new task_id so we can track it locally
 export async function createTask(data: {
@@ -100,7 +100,7 @@ export async function createTask(data: {
   visibility?: string;
   created_by_account_id?: number | null;
   icon?: string;
-  last_completed?: string | null;
+  last_completed:  null;
 }): Promise<{ task_id: number }> {
   const res = await fetch(`${API_BASE}/task`, {
     method: "POST",

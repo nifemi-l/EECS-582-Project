@@ -57,6 +57,7 @@ import {
   TASK_ICONS,
   TASK_PRESETS,
   healthPercent,
+  daysUntilNextDue,
   healthColor,
 } from "../../../data/householdUtils";
 
@@ -133,16 +134,17 @@ function TaskRow({
 
       <View style={styles.taskInfo}>
         <Text style={styles.taskName} numberOfLines={1}>
-          {task.name}
-            <Text style={styles.taskLastCompletedText} >
-              {task.last_completed?.toLocaleString()}
-            </Text>
+            <pre style={styles.taskLastCompletedText} >
+          {task.name}  -  Last Completed: {task.last_completed === null 
+              ? "Never Complete"
+              : `${task.last_completed.toLocaleString()}`}
+            </pre>
         </Text>
         <HealthBar task={task} />
         <Text style={styles.taskDueText}> 
-        Next Due: 
+        Time Until Due: 
             <Text style={[styles.taskDueText, { color: healthColor(task.healthPercent)}]} >
-              {task.last_completed?.toLocaleString()}
+                {daysUntilNextDue(task)} days left              
             </Text>
         </Text>
       </View>
@@ -716,14 +718,14 @@ export default function ListScreen() {
         frequency_days: freqDays,
         icon,
         visibility: "household",
-        last_completed: now.toISOString(),
+        last_completed: null,
       })
         .then(({ task_id }) => {
           const newTask = new Task(name, featureId, freqDays, icon);
           // Use the id the database gave us so future operations reference the right row
           newTask.id = task_id;
           // Mirror the last_completed sent to the server so the health bar starts at 100%
-          newTask.last_completed = now;
+          newTask.last_completed = null;
           setFeatures((prev) =>
             prev.map((loc) =>
               loc.id === featureId

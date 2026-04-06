@@ -21,7 +21,8 @@ export async function POST(req: Request) {
         task_name: body.title || body.task_name,
         frequency_days: body.frequency_days || 1,
         visibility: body.visibility || 'household',
-        created_by_account_id: body.account_id
+        created_by_account_id: body.account_id,
+        last_completed: null
     };
 
     const response = await fetch(`${API_URL}/api/task`, {
