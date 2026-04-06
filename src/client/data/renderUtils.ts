@@ -687,6 +687,7 @@ export class Renderer {
         z_pos: cellZ,
         feature_type: getFeatureTypeToString(featureIndex)
       });
+      newFeature.setID(featureID.feature_id); // retroactively set the appropriate ID
 
       // Now create the tasks on the server
       newFeature.tasks.forEach((t) => {
@@ -823,6 +824,7 @@ export class Renderer {
         } catch (e) {
           // Note, if we fail we don't need to copy the feature over because we're not updating the feature array anyway
           console.error(`Failed to delete feature. Canceling deletion for feature ${f.id} in household ${this.house.household_id}.`, e);
+          console.log("Corresponding feature:", f);
         } 
       } else {
         // We've found a feature we want to keep
@@ -921,6 +923,10 @@ export class RenderableFeature extends Feature {
 
     // Default to visibile
     this.visible = true;
+   }
+
+   setID(id: number) {
+    this.id = id;
    }
 }
 
