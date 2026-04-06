@@ -4,7 +4,7 @@ Description: Provide renderer functionality to the application.
 Programmer: Jack Bauer
 Creation date: 3/29/26
 Revision date: 
-  - No revisions yet
+  - 4/6/26: Convert to use FeatureType enum & support model loading
 Preconditions: 
   - A proper draw / render loop is created outside of this file (Renderer does not contain its own loop, instead it has the pieces)
   - For the order of features in a renderable household's renderable features, the following are required:
@@ -28,7 +28,7 @@ import { ExpoWebGLRenderingContext } from 'expo-gl';
 
 // Import server classes
 import Task from "./task";
-import Feature from "./feature";
+import Feature, { FeatureType, getFeatureTypeToString } from "./feature";
 import Household from "./household";
 
 // Import graphics utilities
@@ -37,7 +37,7 @@ import {
   FEATURE_ORANGE, FEATURE_GREY, FEATURE_BLUE,
   ShaderLightUniformLocations, ShaderBillboardUniformLocations,
   ShaderAttributebLocations, ShaderMatrixUniformLocations,
-  MeshManager, VAO, getMeshFromType,
+  MeshManager, VAO, getMeshFromType, VAOManager,
   ShaderProgramManager, SHADER_REGULAR_PATHS, SHADER_BILLBOARD_PATHS,
 } from "./graphicsUtils";
 
@@ -78,7 +78,7 @@ export class Renderer {
   // Graphical context data
   lastFrameTime: number; // The time since the last frame
   frameId: number | null; // the id of the current frame being drawn
-  oesExt: OES_vertex_array_object | null; // A global way to access the OES extension for WebGL 1.0 support
+  vaoManager: VAOManager | null; // a wrapper class to help with Vertex Array Object management
 
   // Renderer data
   glRef: ExpoWebGLRenderingContext | null; // A global way to access the single WebGL context created on launch
@@ -128,10 +128,8 @@ export class Renderer {
 
   // Called when a GL context is created - NOT at construction time. 
   async init(gl: ExpoWebGLRenderingContext) {
-    // Load our models async. Will update the meshMap
-    this.meshManager = new MeshManager(gl);
-    await this.meshManager.sourceMeshes();
-    // TODO: setup meshVaoMap & setup prepareMesh pipeline with appropriate VAOs
+    // Setup our graphical VAO manager
+    this.vaoManager = new VAOManager(gl);
 
     // Reset everything so it works when navigating back to the graphics page. Descriptions are above.
     this.glRef = gl;
@@ -147,17 +145,7 @@ export class Renderer {
 
     // This needs to be updated to reset the camera
     this.cam = new Camera();
-
-    // Read the text of the shader files. We later pass shader data as a string, so we need the actual shader files in a 
-    // string representation for later use. We still split them into their own files though because it's easier to manage.
-
-    // Get the OES Vertex Array Object extension
-    // This is needed because these VAOs provide very useful functionality (we don't have to define vertex array attributes
-    // every frame). However, since we need to support WebGL 1.0 (for older Raspberry Pis), we need to pull this in as an extension
-    // as this functionality is only native in WebGL 2.0. To make things more annoying, often this functionality is NOT available in WebGL 2.0 
-    // contexts. So, it's stupid, but we have to support both. This getExtension(...) call will either return an object or null.
-    this.oesExt = gl.getExtension('OES_vertex_array_object'); 
-
+    
     // Rebuild the grid if we're missing it
     if (!this.grid) {
       console.error("No grid!");
@@ -173,7 +161,10 @@ export class Renderer {
     gl.enable(gl.DEPTH_TEST); // Allow objects with further depth to be obscured by other objects
     gl.depthFunc(gl.LEQUAL); // Specify which method to use to compare depth (less than or equal)
 
-    // Settup shader programs
+
+    // Read the text of the shader files. We later pass shader data as a string, so we need the actual shader files in a 
+    // string representation for later use. We still split them into their own files though because it's easier to manage.
+    // Setup shader programs
     this.mainProgramManager = new ShaderProgramManager(gl, SHADER_REGULAR_PATHS);
     await this.mainProgramManager.loadAndLinkShaders();
     this.shaderProgram = this.mainProgramManager.getProgram();
@@ -229,6 +220,10 @@ export class Renderer {
       healthPercent: gl.getUniformLocation(this.bbShaderProgram, "uHealthPercent"),
     }
 
+    // Load our models async. Will update the meshMap, VAOs, and prepare them all for drawing
+    this.meshManager = new MeshManager(gl, this.vaoManager);
+    await this.meshManager.initialize(this.attribLocs);
+
     // Setup our vertex buffer and attribute informations. This is how we know what information is stored where. 
     // Attributes are explained above. Basically, we send our vertex data to the GPU by storing it in a buffer. We also have to tell
     // the GPU how to interpret this data, as each vertex might contain different sets of data. For our cube, we store, for each vertex, 
@@ -236,8 +231,8 @@ export class Renderer {
     // Object or VAO. This VAO allows us to easily load in our settings for the cube and switch out for a different configuration when we want to 
     // render the grid. 
     this.house.buffer = gl.createBuffer();
-    this.house.vao = this.createVAO();
-    this.bindVAO(this.house.vao);
+    this.house.vao = this.vaoManager.createVAO();
+    this.vaoManager.bindVAO(this.house.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.house.buffer);
     gl.bufferData(gl.ARRAY_BUFFER, this.house.blockVertices, gl.STATIC_DRAW);
     gl.enableVertexAttribArray(this.attribLocs.vertLoc);
@@ -246,24 +241,24 @@ export class Renderer {
     gl.vertexAttribPointer(this.attribLocs.normalLoc, 3, gl.FLOAT, false, 6 * 4, 4 * 3); // 4 bytes per float * 3 floats before we get to our first set of normal data
     gl.disableVertexAttribArray(this.attribLocs.texLoc);
     gl.vertexAttrib2f(this.attribLocs.texLoc, 0.0, 0.0);
-    this.bindVAO(null);
+    this.vaoManager.bindVAO(null);
 
     // Do the same for billboards
     this.house.bbBuffer = gl.createBuffer();
-    this.house.bbVao = this.createVAO();
-    this.bindVAO(this.house.bbVao);
+    this.house.bbVao = this.vaoManager.createVAO();
+    this.vaoManager.bindVAO(this.house.bbVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.house.bbBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, this.house.bbVertices, gl.STATIC_DRAW);
     gl.vertexAttribPointer(this.bbLocs.pos, 3, gl.FLOAT, false, 3 * 4, 0);
     gl.enableVertexAttribArray(this.bbLocs.pos);
-    this.bindVAO(null);
+    this.vaoManager.bindVAO(null);
 
     // Do the same as above, but for the grid vertices. Note that we disable the normal attribute and default it to (0, 1, 0) always since we don't 
     // store normal data with our vertices. We'll wrap this up in another VAO for ease of use. Skip this is we have no grid vertices
     if (this.grid !== null && this.grid.gridVertices !== null) {
       const gridBuffer = gl.createBuffer();
-      const gridVao = this.createVAO();
-      this.bindVAO(gridVao);
+      const gridVao = this.vaoManager.createVAO();
+      this.vaoManager.bindVAO(gridVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, gridBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, this.grid.gridVertices, gl.STATIC_DRAW); 
       gl.vertexAttribPointer(this.attribLocs.vertLoc, 3, gl.FLOAT, false, 3 * 4, 0);
@@ -274,7 +269,7 @@ export class Renderer {
       // Set these afterwards for safety in case there's anything funky going on with the grid object
       this.grid.vao = gridVao;
       this.grid.buffer = gridBuffer;
-      this.bindVAO(null);
+      this.vaoManager.bindVAO(null);
     } else {
       console.log("Skipping grid configuration.");
     }
@@ -312,7 +307,6 @@ export class Renderer {
     this.id = Math.round(Math.random() * 10000);
 
     // These values must be set on context create (not during construction)
-    this.oesExt = null;
     this.glRef = null;
     this.shaderProgram = null;
     this.bbShaderProgram = null;
@@ -323,6 +317,7 @@ export class Renderer {
     this.mainProgramManager = null;
     this.billboardProgramManager = null;
     this.meshManager = null;
+    this.vaoManager = null;
 
     // These can safely be set at construction time
     this.grid = new Grid(this);
@@ -376,15 +371,8 @@ export class Renderer {
       const transform = GLM.mat4.create();
       GLM.mat4.translate(transform, transform, [f.x_pos + 0.5, f.y_pos + 0.5, f.z_pos + 0.5]); // The 0.5s account for the difference between the cell center and edges
 
-      // Select the correct material depending on the type
+      // Select the correct material
       let mat = FEATURE_ORANGE;
-      switch(f.feature_type) {
-        case "room":
-          mat = FEATURE_BLUE;
-        case "":
-        default:
-          mat = FEATURE_ORANGE;
-      } 
 
       // Create the feature for rendering
       const rf = new RenderableFeature(f.name, f.household_id, f.id, transform, mat, f.x_pos, f.y_pos, f.z_pos, f.tasks, f.feature_type, f.icon);
@@ -407,6 +395,12 @@ export class Renderer {
     // Ensure we have an OpenGL context, if not error and return
     if (!this.glRef) {
       console.error("Frame drawn without a WebGL context");
+      return false;
+    }
+
+    // Ensure we have a VAO Manager, if not error and return
+    if (!this.vaoManager) {
+      console.error("Frame drawn without a VAO manager");
       return false;
     }
 
@@ -548,7 +542,7 @@ export class Renderer {
     // Ensure we have a matrix uniform location and a GL context
     if (!this.glRef || !this.matrixUniformLocs || !this.matrixUniformLocs.modelMatrix || !this.lightUniformLocs 
       || !this.lightUniformLocs.material.ambient || !this.lightUniformLocs.material.diffuse || !this.lightUniformLocs.material.specular 
-      || !this.lightUniformLocs.material.shininess || !this.meshManager) {
+      || !this.lightUniformLocs.material.shininess || !this.meshManager || !this.vaoManager) {
       console.error("Not ready to draw features.");
       return;
     }
@@ -564,7 +558,7 @@ export class Renderer {
         continue;
       }
 
-      this.bindVAO(fVao);
+      this.vaoManager.bindVAO(fVao); // bind the appropriate VAO
 
       // Update uniforms and draw
       gl.uniformMatrix4fv(this.matrixUniformLocs.modelMatrix, false, this.house.renderableFeatures[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
@@ -574,14 +568,14 @@ export class Renderer {
       gl.uniform1f(this.lightUniformLocs.material.shininess, this.house.renderableFeatures[i].material.shininess);
 
       // draw a mesh, or if no mesh exists draw a cube
-      if (!f.mesh) {
+      if (!f.mesh || f.mesh === "") {
         gl.drawArrays(gl.TRIANGLES, 0, 36); // One draw call to the GPU. Our cube has 6 faces, and each face has two triangles, which yields 6 faces * 6 vertices for 36 vertices to draw.
       } else {
         this.meshManager.drawMesh(f.mesh);
       }
     }
 
-    this.bindVAO(null); // reset state
+    this.vaoManager.bindVAO(null); // reset state
   }
 
   // Draw the grid
@@ -596,21 +590,22 @@ export class Renderer {
 
     // Use our grid vertex configuration, upload the grid's model matrix to the vertex shader, and then draw a line. Each line has two vertices. 
     // Only draw if we have a proper grid setup
-    if (this.grid !== null && this.grid.vao !== null && this.grid.buffer !== null && this.grid.gridVertices !== null) {
-      this.bindVAO(this.grid.vao);
+    if (this.grid !== null && this.grid.vao !== null && this.grid.buffer !== null && this.grid.gridVertices !== null && this.vaoManager !== null) {
+      this.vaoManager.bindVAO(this.grid.vao);
       gl.uniformMatrix4fv(this.matrixUniformLocs.modelMatrix, false, this.grid.modelMatrx as Float32Array);
       gl.uniform3fv(this.lightUniformLocs.material.ambient, this.grid.material.ambient); // update lighting uniform values for the material of the object
       gl.uniform3fv(this.lightUniformLocs.material.diffuse, this.grid.material.diffuse);
       gl.uniform3fv(this.lightUniformLocs.material.specular, this.grid.material.specular);
       gl.uniform1f(this.lightUniformLocs.material.shininess, this.grid.material.shininess);
       gl.drawArrays(gl.LINES, 0, 2 * (this.grid.width + this.grid.height + 2)); // Lines are 1 pixel thick by default. Two vertices per line. Two more lines to close the grid.
+      this.vaoManager.bindVAO(null);
     }
   }
 
   // Draw health bars for features
   drawHealthbars() {
     // Ensure ready to draw
-    if (!this.glRef || !this.bbLocs) {
+    if (!this.glRef || !this.bbLocs || !this.vaoManager) {
       console.error("Not ready to draw healthbars.");
       return;
     }
@@ -624,7 +619,7 @@ export class Renderer {
       // Begin the new shader program specific to billboards
       gl.useProgram(this.bbShaderProgram);
       gl.disable(gl.DEPTH_TEST); // so the healthbars get drawn on top of everything else
-      this.bindVAO(this.house.bbVao);
+      this.vaoManager.bindVAO(this.house.bbVao);
       // Set camera uniforms. We need the inverse view matrix to easily get camera vectors for the billboards. We can calculate this once per frame since it stays the same
       // instead of calculating a ton of times in the vertex shader
       gl.uniformMatrix4fv(this.bbLocs.projection, false, this.cam.projectionMatrix as Float32Array);
@@ -648,41 +643,6 @@ export class Renderer {
   ///  Utilities  ///
   ///////////////////
 
-  // Since WebGL 1.0 and 2.0 create vertex array objects (explained above) differently, we need a wrapper function. 
-  createVAO() {
-    // Ensure we have a WebGL context
-    if (!this.glRef) {
-      console.error("No gl context.");
-      return null;
-    }
-
-    if (!this.oesExt) {
-      // WebGL 2.0 - we do not have the OES extension and support VAOs natively
-      return this.glRef.createVertexArray();
-    } else {
-      // WebGL 1.0 - we do have the OES extension to support VAOs but we do not have support for VAOs natively
-      return this.oesExt.createVertexArrayOES();
-    }
-  }
-
-  // Since WebGL 1.0 and 2.0 bind vertex array objects (explained above) differently, we need a wrapper function. 
-  // Note that it is possible to bind a null VAO, this just clears whatever VAO is currently bound. 
-  bindVAO(vao: VAO) {
-    // Ensure we have a WebGL context
-    if (!this.glRef) {
-      console.error("No gl context.");
-      return null;
-    }
-
-    if (!this.oesExt) {
-      // WebGL 2.0 - we do not have the OES extension and support VAOs natively
-      return this.glRef.bindVertexArray(vao);
-    } else {
-      // WebGL 1.0 - we do have the OES extension to support VAOs but we do not have support for VAOs natively
-      return this.oesExt.bindVertexArrayOES(vao);
-    }
-  }
-
   // A function to add a block to the household at a certain position
   async addBlock(cellX: number, cellY: number, cellZ: number) {
     // Ensure our cell position is in bounds
@@ -703,8 +663,11 @@ export class Renderer {
     // Create the material / type
     const newMaterial: Material = this.currentDrawingColor;
 
+    // Get the correct type
+    const featureIndex = Math.max(Math.abs(Math.round(((Math.random() * 10) % (Object.keys(FeatureType).length / 2) - 1))), 1); // count the number possible enum values (will not include undefined)
+
     // Create the feature object
-    const newFeature = new RenderableFeature("f:" + cellX + cellY + cellZ, this.house.household_id, 0, newModelMatrix, newMaterial, cellX, cellY, cellZ); // this is the new feature object we're adding
+    const newFeature = new RenderableFeature("f:" + cellX + cellY + cellZ, this.house.household_id, 0, newModelMatrix, newMaterial, cellX, cellY, cellZ, undefined, featureIndex); // this is the new feature object we're adding
     // randomly add a second chore for demo purposes
     if (Math.round(Math.random()) == 0) {
       newFeature.addTask(new Task("Test Task", newFeature.id, 1));
@@ -721,7 +684,8 @@ export class Renderer {
         feature_name: "f:" + cellX + cellY + cellZ,
         x_pos: cellX,
         y_pos: cellY,
-        z_pos: cellZ
+        z_pos: cellZ,
+        feature_type: getFeatureTypeToString(featureIndex)
       });
 
       // Now create the tasks on the server
@@ -933,13 +897,13 @@ export class RenderableFeature extends Feature {
    modelMatrix: GLM.mat4; // The transform of the feature in the world
    material: Material; // How the feature looks materially
    visible: boolean;
-   mesh: string | null; // if null, draw a cube
+   mesh: string | undefined; // if null, draw a cube
 
-   constructor(name: string, household_id: number, feature_id: number, mm?: GLM.mat4, mat?: Material, x?: number, y?: number, z?: number, tasks?: Task[], type?: string, icon?: string, ) {
+   constructor(name: string, household_id: number, feature_id: number, mm?: GLM.mat4, mat?: Material, x?: number, y?: number, z?: number, tasks?: Task[], type?: FeatureType, icon?: string, ) {
     super(name, household_id, type, x, y, z, feature_id, icon);
 
     // Set up mesh if a type is provided
-    this.mesh = !type ? null : getMeshFromType(type);
+    this.mesh = !type ? undefined : getMeshFromType(type);
 
     // Assign model matrix to either a provided value or a default
     this.modelMatrix = mm || GLM.mat4.create();
@@ -1157,7 +1121,7 @@ export class Grid {
     }
 
     // Note: this function should not be called in the render loop
-    if (!this.rdr.glRef) {
+    if (!this.rdr.glRef || !this.rdr.vaoManager) {
       console.error("Cannot resize grid without OpenGL context.");
       return;
     }
@@ -1167,10 +1131,10 @@ export class Grid {
     this.height = h;
     this.gridVertices = genGrid(this.width, this.height);
 
-    this.rdr.bindVAO(this.vao);
+    this.rdr.vaoManager.bindVAO(this.vao);
     this.rdr.glRef.bindBuffer(this.rdr.glRef.ARRAY_BUFFER, this.buffer);
     this.rdr.glRef.bufferData(this.rdr.glRef.ARRAY_BUFFER, this.rdr.grid.gridVertices, this.rdr.glRef.STATIC_DRAW); 
-    this.rdr.bindVAO(null);
+    this.rdr.vaoManager.bindVAO(null);
   }
 
   constructor(parentRenderer: Renderer) {

@@ -4,8 +4,8 @@ Description: Provide support and organization for a variety of graphics-related 
 Programmer: Jack Bauer
 Creation date: 3/29/26
 Revision date: 
-  - No revisions yet
-Preconditions: Shader paths must also be added to app.json
+  - 4/6/26: Support mesh loading
+Preconditions: Shader paths must also be added to app.json, VAOs must be bound properly outside drawMesh()
 Postconditions: None
 Errors: None
 Side effects: None
@@ -23,7 +23,7 @@ import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext } from 'expo-gl';
 import { Platform } from 'react-native';
 import * as OBJ from 'webgl-obj-loader';
-import { FeatureType, getFeatureTypeFromString } from './feature';
+import { FeatureType } from './feature';
 
 
 // ***********************************************************
@@ -449,19 +449,47 @@ export class MeshManager {
   meshMap: OBJ.MeshMap;
   gl: ExpoWebGLRenderingContext;
   meshVaoMap: MeshVAOMap;
+  vaoManager: VAOManager;
 
   async sourceMeshes() {
     try{
       this.meshMap = await sourceAllModels();
       this.valid = true;
+      return true;
     } catch (e) {
       console.error("Unable to source models.");
+      return false;
     }
+  }
+
+  // Call this to source and prpeare all meshes and their VAOs
+  async initialize(attribLocs: ShaderAttributebLocations) {
+    // Load our meshes into the meshMap, or return on failure
+    const sourced = await this.sourceMeshes()
+    if (!sourced) {
+      console.error("Unable to source meshes.");
+      return;
+    }
+
+    // For each mesh, prepare it and create an appropriate VAO
+    for (const name in this.meshMap) {
+      // Create and bind our VAO for this mesh
+      const vao = this.vaoManager.createVAO()
+      this.vaoManager.bindVAO(vao);
+
+      // Prepare the mesh
+      this.prepareMesh(name, attribLocs);
+
+      // Set our final vao map and reset state
+      this.vaoManager.bindVAO(null);
+      this.meshVaoMap[name] = vao;
+    }
+
+    console.log("MeshManager initialized.");
   }
 
   // Must be called for every mesh. 
   // NOTE: You must properly bind and unbind the appropriate VAO before and after this call
-  // TODO: Fix this behavior
   prepareMesh(name: string, attribLocs: ShaderAttributebLocations) {
     // Get our mesh from the name
     const mesh = this.meshMap[name];
@@ -516,7 +544,14 @@ export class MeshManager {
     }
   }
 
+  // NOTE: Depends on the proper VAOs being bound outside of this
   drawMesh(name: string) {
+    // Ensure we're valid and initialized
+    if (!this.valid) {
+      console.error("MeshManager not valid yet.");
+      return;
+    }
+
     // Get our mesh from the name
     const mesh = this.meshMap[name];
     if (!mesh) {
@@ -541,30 +576,29 @@ export class MeshManager {
     return this.meshVaoMap[meshName];
   }
 
-  constructor(gl: ExpoWebGLRenderingContext) {
+  constructor(gl: ExpoWebGLRenderingContext, vaoManager: VAOManager) {
     this.valid = false;
     this.meshMap = {};
     this.gl = gl;
     this.meshVaoMap = {};
+    this.vaoManager = vaoManager;
   }
 }
 
 // Return the correct mesh for a specific type given
-export function getMeshFromType(ftStr: string) {
-  const ft = getFeatureTypeFromString(ftStr);
-
+export function getMeshFromType(ft: FeatureType) {
   switch (ft) {
     case FeatureType.BED:
-      return "Full_Size_Bed_with_White_Sheets_Black_V1";
+      return "bed";
     case FeatureType.TABLE:
-      return "Cube";
+      return "table";
     case FeatureType.MONKEY:
-      return "Suzanne";
+      return "monkey";
   }
 }
 
 // Load all models and prepare them for rendering
-export async function sourceAllModels(): Promise<OBJ.MeshMap> {
+async function sourceAllModels(): Promise<OBJ.MeshMap> {
   const meshUriMap: OBJ.NameAndUrls ={}; // store our name to URI pairs 
   for (const key in MESH_PATH_MAP) {
     const asset = Asset.fromModule(MESH_PATH_MAP[key]);
@@ -591,4 +625,60 @@ export async function sourceAllModels(): Promise<OBJ.MeshMap> {
   // Return the result
   console.log("Models loaded.");
   return meshMap;
+}
+
+// ***********************************************************
+//              General Graphics Utilities
+// ***********************************************************
+
+// This class is intended to manage Vertex Array Object (VAO) state
+export class VAOManager {
+  gl: ExpoWebGLRenderingContext; // The GL Context reference
+  oesExt: OES_vertex_array_object | null; // A global way to access the OES extension for WebGL 1.0 support
+
+  constructor(glRef: ExpoWebGLRenderingContext) {
+    this.gl = glRef;
+
+    // Get the OES Vertex Array Object extension
+    // This is needed because these VAOs provide very useful functionality (we don't have to define vertex array attributes
+    // every frame). However, since we need to support WebGL 1.0 (for older Raspberry Pis), we need to pull this in as an extension
+    // as this functionality is only native in WebGL 2.0. To make things more annoying, often this functionality is NOT available in WebGL 2.0 
+    // contexts. So, it's stupid, but we have to support both. This getExtension(...) call will either return an object or null.
+    this.oesExt = glRef.getExtension('OES_vertex_array_object'); 
+  }
+
+  // Since WebGL 1.0 and 2.0 create vertex array objects (explained above) differently, we need a wrapper function. 
+  createVAO() {
+    // Ensure we have a WebGL context
+    if (!this.gl) {
+      console.error("No gl context.");
+      return null;
+    }
+
+    if (!this.oesExt) {
+      // WebGL 2.0 - we do not have the OES extension and support VAOs natively
+      return this.gl.createVertexArray();
+    } else {
+      // WebGL 1.0 - we do have the OES extension to support VAOs but we do not have support for VAOs natively
+      return this.oesExt.createVertexArrayOES();
+    }
+  }
+
+  // Since WebGL 1.0 and 2.0 bind vertex array objects (explained above) differently, we need a wrapper function. 
+  // Note that it is possible to bind a null VAO, this just clears whatever VAO is currently bound. 
+  bindVAO(vao: VAO) {
+    // Ensure we have a WebGL context
+    if (!this.gl) {
+      console.error("No gl context.");
+      return null;
+    }
+
+    if (!this.oesExt) {
+      // WebGL 2.0 - we do not have the OES extension and support VAOs natively
+      return this.gl.bindVertexArray(vao);
+    } else {
+      // WebGL 1.0 - we do have the OES extension to support VAOs but we do not have support for VAOs natively
+      return this.oesExt.bindVertexArrayOES(vao);
+    }
+  }
 }

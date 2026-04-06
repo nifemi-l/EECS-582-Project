@@ -17,21 +17,39 @@ Known faults: None
 import Task from "./task";
 
 export enum FeatureType {
-    BED,
-    TABLE,
-    MONKEY,
+    UNDEFINED = 0,
+    BED = 1,
+    TABLE = 2,
+    MONKEY = 3,
 }
 
 // Translate from a string feature type (as we often see in our app) to the correct enum value
 export function getFeatureTypeFromString(str: string) {
     switch (str) {
-        case "bed":
-            return FeatureType.BED;
+        case "monkey":
+            return FeatureType.MONKEY;
         case "table":
             return FeatureType.TABLE;
-        case "monkey":
+        case "bed":
+            return FeatureType.BED;
+        case "":
         default:
-            return FeatureType.MONKEY;
+            return FeatureType.UNDEFINED;
+    }
+}
+
+// Translate from a feature type to a string (as we often see in our app) to the correct enum value
+export function getFeatureTypeToString(ft?: FeatureType) {
+    switch (ft) {
+        case FeatureType.BED:
+            return "bed";
+        case FeatureType.TABLE:
+            return "table";
+        case FeatureType.MONKEY:
+            return "monkey";
+        case FeatureType.UNDEFINED:
+        default:
+            return "";
     }
 }
 
@@ -40,14 +58,14 @@ export default class Feature {
     household_id: number;
     feature_name: string;
     name: string; // for compatibility
-    feature_type: string;
+    feature_type: FeatureType;
     x_pos: number;
     y_pos: number;
     z_pos: number;
     tasks: Task[];
     icon: string; // for compatibility
 
-    constructor(feature_name: string, household_id: number, feature_type: string = "", x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline") {
+    constructor(feature_name: string, household_id: number, feature_type: FeatureType = FeatureType.UNDEFINED, x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline") {
         this.feature_name = feature_name;
         this.name = feature_name;
         this.household_id = household_id;

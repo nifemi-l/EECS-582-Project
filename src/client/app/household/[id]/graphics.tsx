@@ -11,6 +11,7 @@ Revision date:
   - 3/18/26: Changed dependency locations to match restructure.
   - 3/28/26: Add remove feature, walls with visibility changes, edit mode and edit menu, floor resize, zoom
   - 3/29/26: Major refactor (split to graphicsUtils and renderUtils)
+  - 4/6/26: Convert to use FeatureType enum & support model loading
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -47,8 +48,8 @@ import {
 } from "../../../data/renderUtils"
 
 // Import local api utilities
-import { fetchHouseholdFeatures, updateFeature, updateTask, deleteFeature } from "../../../data/api";
-import Feature from "../../../data/feature";
+import { fetchHouseholdFeatures } from "../../../data/api";
+import Feature, { getFeatureTypeFromString } from "../../../data/feature";
 import Task from "../../../data/task";
 
 // ***********************************************************
@@ -430,7 +431,7 @@ export default function Index() {
                 const feat = new Feature(
                   f.feature_name,
                   f.household_id,
-                  f.feature_type || "",
+                  getFeatureTypeFromString(f.feature_type),
                   f.x_pos, f.y_pos, f.z_pos,
                   f.feature_id,
                   f.icon || "home-outline"
@@ -525,7 +526,7 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 
 function drawFrame(time: number) {
     // Ensure we have a valid WebGL context
-    if (!rdr.glRef) {
+    if (!rdr.glRef || !rdr.vaoManager) {
       console.log("No WebGL context.");
       return;
     }
@@ -551,7 +552,7 @@ function drawFrame(time: number) {
     // For the cube draw calls, we need to switch to the correct vertex at  tribute and buffer configuration. 
     // This also updates our view matrix so we can rotate the world around
     rdr.glRef.useProgram(rdr.shaderProgram); // use the household shader program
-    rdr.bindVAO(rdr.house.vao);
+    rdr.vaoManager.bindVAO(rdr.house.vao);
 
     // Update rotation & zoom
     rdr.updateViewMatrix(panVelocityX, panVelocityY, panYDir, delta);
