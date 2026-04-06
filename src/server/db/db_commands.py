@@ -204,24 +204,41 @@ def get_household_id_for_task(task_id):
 # Retrieve household summaries for a member account
 def get_households_for_account(account_id):
     with conn.cursor() as cursor:
-        cursor.execute("""
-            SELECT h.household_id, h.household_name, h.join_code, h.created_by_account_id, h.created_at, h.updated_at
-            FROM Household h
-            JOIN HouseholdMember hm ON h.household_id = hm.household_id
-            WHERE hm.account_id = %s
-        """, (account_id,))
-        households = cursor.fetchall()
-    return [
-        {
+        query = """
+            SELECT
+                h.household_id,
+                h.household_name,
+                h.join_code,
+                hm_current.role,
+                creator.account_name,
+                h.created_at,
+                h.updated_at
+            FROM Household AS h
+            JOIN HouseholdMember AS hm_current
+                ON h.household_id = hm_current.household_id
+            LEFT JOIN Account AS creator
+                ON h.created_by_account_id = creator.account_id
+            WHERE hm_current.account_id = %s
+            ORDER BY h.household_id
+        """
+        cursor.execute(query, (account_id,))
+        rows = cursor.fetchall()
+
+    households = []
+
+    for row in rows:
+        household = {
             "household_id": row[0],
             "household_name": row[1],
             "join_code": row[2],
-            "created_by_account_id": row[3],
-            "created_at": row[4],
-            "updated_at": row[5],
+            "role": row[3],
+            "admin_name": row[4],
+            "created_at": row[5],
+            "updated_at": row[6],
         }
-        for row in households
-    ]
+        households.append(household)
+
+    return households
 
 """
 Functions for retrieving specific data from the database
