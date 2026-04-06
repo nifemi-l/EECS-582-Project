@@ -28,7 +28,37 @@ import { Platform } from "react-native";
 
 export default function RootLayout() {
   useEffect(() => {
-    if (Platform.OS === "web") document.title = "HomeSeeHome";
+    if (Platform.OS === "web") {
+      document.title = "HomeSeeHome";
+
+      // Make scrollbars larger and easier to grab on web (mostly Raspberry Pi)
+      const styleId = "global-large-scrollbar-style";
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement("style");
+        style.id = styleId;
+        style.innerHTML = `
+          * {
+            scrollbar-width: auto;
+          }
+
+          *::-webkit-scrollbar {
+            width: 18px;
+          }
+
+          *::-webkit-scrollbar-thumb {
+            background-color: rgba(0, 0, 0, 0.45);
+            border-radius: 999px;
+            border: 4px solid transparent;
+            background-clip: padding-box;
+          }
+
+          *::-webkit-scrollbar-track {
+            background-color: transparent;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+    }
   }, []);
 
   return (
