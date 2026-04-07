@@ -113,6 +113,7 @@ export class Renderer {
   currentDrawingColor: Material; // the current color used for drawing our objects
   featuresDirty: boolean; // flag so we know if we need to apply feature updates or not
   features: Feature[]; // store the fetched feature list for our household
+  highlightedFeatureID: number | null;
 
   // Model data
   meshManager: MeshManager | null;
@@ -134,6 +135,15 @@ export class Renderer {
     features.forEach((f) => {this.features.push(f)}) // manually copy the features over
     this.house.household_id = householdID; // NOTE: at some point we need to get all the household details
     this.house.id = householdID; // for compatability
+  }
+
+  setHighlightedFeature(id: number) {
+    // Don't include the walls
+    if (id >= 0) {
+      this.highlightedFeatureID = id;
+    } else {
+      this.highlightedFeatureID = null;
+    }
   }
 
   // Called when a GL context is created - NOT at construction time. 
@@ -239,6 +249,7 @@ export class Renderer {
       view: gl.getUniformLocation(this.pickProgram, "uViewMatrix"),
       projection: gl.getUniformLocation(this.pickProgram, "uProjMatrix"),
       objectID: gl.getUniformLocation(this.pickProgram, "objectID"),
+      colorMult: gl.getUniformLocation(this.shaderProgram, "uColorMult"),
     }
 
     // Load our models async. Will update the meshMap, VAOs, and prepare them all for drawing
@@ -363,6 +374,7 @@ export class Renderer {
     this.targetTexture = null;
     this.depthBuffer = null;
     this.frameBuffer = null;
+    this.highlightedFeatureID = null;
 
     // These can safely be set at construction time
     this.grid = new Grid(this);
@@ -614,23 +626,32 @@ export class Renderer {
 
       // Update uniforms and draw
       if (this.currentDrawPass === RenderPass.MAIN) {
+        // Normal object uniform updates
         gl.uniformMatrix4fv(this.matrixUniformLocs.modelMatrix, false, this.house.renderableFeatures[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
         gl.uniform3fv(this.lightUniformLocs.material.ambient, this.house.renderableFeatures[i].material.ambient); // update lighting uniform values for the material of the object
         gl.uniform3fv(this.lightUniformLocs.material.diffuse, this.house.renderableFeatures[i].material.diffuse);
         gl.uniform3fv(this.lightUniformLocs.material.specular, this.house.renderableFeatures[i].material.specular);
         gl.uniform1f(this.lightUniformLocs.material.shininess, this.house.renderableFeatures[i].material.shininess);
+        
+        // Setup the color multiplier if this object was picked
+        if (f.id === this.highlightedFeatureID) {
+          gl.uniform3fv(this.pickLocs.colorMult, [0.5, 0.5, 0.5]);
+        } else {
+          gl.uniform3fv(this.pickLocs.colorMult, [1.0, 1.0, 1.0]);
+        }
+
       } else if (this.currentDrawPass === RenderPass.PICK_OBJECT) {
         gl.uniformMatrix4fv(this.pickLocs.model, false, this.house.renderableFeatures[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
         gl.uniformMatrix4fv(this.pickLocs.view, false, this.cam.viewMatrix as Float32Array); // upload the correct view matrix for drawing
         gl.uniformMatrix4fv(this.pickLocs.projection, false, this.cam.projectionMatrix as Float32Array); // upload the correct projection matrix for drawing
 
-        // See here: https://webglfundamentals.org/webgl/lessons/webgl-picking.html
+        // See here: https://webglfundamentals.org/webgl/lessons/webgl-picking.html for more information
         // We split the objectID across 4 channels in order to support more objects than 256
         const encodedColor = [
-          ((f.id >> 0) & 0xFF) / 0xFF * 10,
-          ((f.id >> 8) & 0xFF) / 0xFF * 10,
-          ((f.id >> 16) & 0xFF) / 0xFF * 10,
-          ((f.id >> 24) & 0xFF) / 0xFF * 10,
+          ((f.id >> 0) & 0xFF) / 0xFF,
+          ((f.id >> 8) & 0xFF) / 0xFF,
+          ((f.id >> 16) & 0xFF) / 0xFF,
+          ((f.id >> 24) & 0xFF) / 0xFF,
         ];
         gl.uniform4fv(this.pickLocs.objectID, encodedColor);
       }

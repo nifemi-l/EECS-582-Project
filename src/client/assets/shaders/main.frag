@@ -44,6 +44,9 @@ uniform vec3 uViewPos;
 uniform Material uMaterial;
 uniform Light uLight;
 
+// For picked objects
+uniform vec3 uColorMult;
+
 // See https://learnopengl.com for reference
 void main() {
     // Note: for performance these (as is possible) should be moved to the vertex shader eventually
@@ -67,5 +70,5 @@ void main() {
     vec3 result = ambient + diffuse + specular;
 
     // Output our final color result for the fragment
-    gl_FragColor = vec4(result, 1.0);
+    gl_FragColor = vec4(result, 1.0) * vec4(uColorMult, 1.0);
 }

@@ -168,6 +168,7 @@ export interface ShaderPickLocations {
   view: WebGLUniformLocation | null,
   projection: WebGLUniformLocation | null,
   objectID: WebGLUniformLocation | null,
+  colorMult: WebGLUniformLocation | null,
 }
 
 // Type to bridge webgl 1 and 2 VAOs
@@ -716,12 +717,15 @@ export function resizeFramebufferAttachments(gl: ExpoWebGLRenderingContext, tgtT
   gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
 }
 
-export function getPixelFromPointOnScreen(gl: ExpoWebGLRenderingContext, x: number, y: number) {
-  // Note: this must be applied after the PICK_OBJECT RenderPass. 
+export function getPixelFromPointOnScreen(gl: ExpoWebGLRenderingContext, rawX: number, rawY: number, viewWidth: number, viewHeight: number, windowHeight: number) {
+  // We need to convert from the raw coordinates given by react to coords scaled for the gl.drawingBuffer size
+  // gl.readPixels expects a bottom-left centered coordinate system
+  const drawWidth = gl.drawingBufferWidth;
+  const drawHeight = gl.drawingBufferHeight;
+  const pixelX = Math.floor(rawX * drawWidth / viewWidth);
+  const pixelY = drawHeight - Math.floor((rawY * drawHeight / viewHeight) - (windowHeight - viewHeight) * drawHeight / viewHeight); // we need to account for the bar at the top of the screen
 
-  // See https://webglfundamentals.org/webgl/lessons/webgl-picking.html
-  const pixelX = x * gl.canvas.width;
-  const pixelY = y * gl.canvas.height;
+  // See https://webglfundamentals.org/webgl/lessons/webgl-picking.html for more information
   const data = new Uint8Array(4);
 
   // Read one pixel at our provided position - we just want to know what color it is
