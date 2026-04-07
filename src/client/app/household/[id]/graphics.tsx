@@ -39,7 +39,7 @@ import { useLocalSearchParams } from "expo-router";
 import {
   MoveDirection, Tool,
   FEATURE_ORANGE, FEATURE_BLUE, FEATURE_GREEN, FEATURE_RED,
-  cellFromCoords
+  cellFromCoords, RenderPass
 } from "../../../data/graphicsUtils"
 
 // Import renderer classes
@@ -524,15 +524,10 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 // ***********************************************************
 // This is the function that will be called every frame to draw a frame on in the WebGL context
 
+// Draw a frame including all wrapper routines
 function drawFrame(time: number) {
-    // Ensure we have a valid WebGL context
-    if (!rdr.glRef || !rdr.vaoManager) {
-      console.log("No WebGL context.");
-      return;
-    }
-
     // Ensure we're ready to draw
-    if (!rdr.checkReadyToDraw()) {
+    if (!rdr.checkReadyToDraw() || !rdr.glRef || !rdr.vaoManager) {
       console.error("Draw not ready.");
       return;
     }
@@ -546,30 +541,44 @@ function drawFrame(time: number) {
     const delta = (time - rdr.lastFrameTime) / 1000;
     rdr.lastFrameTime = time;
 
-    // Prepare draw by clearing the screen and depth buffer
-    rdr.glRef.clear(rdr.glRef.COLOR_BUFFER_BIT | rdr.glRef.DEPTH_BUFFER_BIT);
+    // Render the scene once before the acual render so that we can know which object the user is currently highlighting
+    rdr.switchRenderpass(RenderPass.PICK_OBJECT);
+    renderScene(delta);
 
-    // For the cube draw calls, we need to switch to the correct vertex at  tribute and buffer configuration. 
+    // Call the render method to actually draw all objects
+    // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration. 
     // This also updates our view matrix so we can rotate the world around
-    rdr.glRef.useProgram(rdr.shaderProgram); // use the household shader program
-    rdr.vaoManager.bindVAO(rdr.house.vao);
-
-    // Update rotation & zoom
-    rdr.updateViewMatrix(panVelocityX, panVelocityY, panYDir, delta);
-
-    // Update wall visibility according to angle
-    rdr.setWallVisibility();
-
-    // Draw the features of the house
-    rdr.drawFeatures();
-
-    // Draw the grid. 
-    rdr.drawGrid();
-
-    // Draw healthbars
-    rdr.drawHealthbars();
-
+    rdr.switchRenderpass(RenderPass.MAIN);
+    renderScene(delta);
+  
     // End frame and then request a new animation frame with this same method (recursive)
     rdr.glRef.endFrameEXP();
     rdr.frameId = window.requestAnimationFrame(drawFrame);
+}
+
+// actually call the render methods
+function renderScene(delta: number) {
+  // Ensure we have a valid WebGL context
+  if (!rdr.glRef) {
+    console.log("No WebGL context.");
+    return;
+  }
+
+  // Prepare draw by clearing the screen and depth buffer
+  rdr.glRef.clear(rdr.glRef.COLOR_BUFFER_BIT | rdr.glRef.DEPTH_BUFFER_BIT);
+
+  // Update rotation & zoom
+  rdr.updateViewMatrix(panVelocityX, panVelocityY, panYDir, delta);
+
+  // Update wall visibility according to angle
+  rdr.setWallVisibility();
+
+  // Draw the features of the house
+  rdr.drawFeatures();
+
+  // Draw the grid. 
+  rdr.drawGrid();
+
+  // Draw healthbars
+  rdr.drawHealthbars();
 }

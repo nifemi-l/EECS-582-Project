@@ -34,11 +34,12 @@ import Household from "./household";
 // Import graphics utilities
 import {
   MoveDirection, Material, genGrid,
-  FEATURE_ORANGE, FEATURE_GREY, FEATURE_BLUE,
+  FEATURE_ORANGE, FEATURE_GREY,
   ShaderLightUniformLocations, ShaderBillboardUniformLocations,
   ShaderAttributebLocations, ShaderMatrixUniformLocations,
   MeshManager, VAO, getMeshFromType, VAOManager,
   ShaderProgramManager, SHADER_REGULAR_PATHS, SHADER_BILLBOARD_PATHS,
+  SHADER_PICK_PATHS, ShaderPickLocations, RenderPass, resizeFramebufferAttachments,
 } from "./graphicsUtils";
 
 // Import API utilities
@@ -84,6 +85,7 @@ export class Renderer {
   glRef: ExpoWebGLRenderingContext | null; // A global way to access the single WebGL context created on launch
   cam: Camera; // Our global camera value
   initialized: boolean;
+  currentDrawPass: RenderPass;
 
   // Draw routine helpers
   inverseView = GLM.mat4.create(); // store our inverse view matrix here to avoid re-creation every frame
@@ -94,12 +96,15 @@ export class Renderer {
   matrixUniformLocs: ShaderMatrixUniformLocations | null;
   lightUniformLocs: ShaderLightUniformLocations | null;
   bbLocs: ShaderBillboardUniformLocations | null;
+  pickLocs: ShaderPickLocations | null;
 
   // Shader program related variables - these manage the GPU pipeline
   mainProgramManager: ShaderProgramManager | null;
   billboardProgramManager: ShaderProgramManager | null;
+  pickProgramManager: ShaderProgramManager | null;
   shaderProgram: WebGLProgram | null; // The currently used GPU shader program
   bbShaderProgram: WebGLProgram | null; // The shader program for billboards
+  pickProgram: WebGLProgram | null; // the shader program for object picking
 
   // Application data
   house: RenderableHousehold; // The displayed household 
@@ -111,6 +116,11 @@ export class Renderer {
 
   // Model data
   meshManager: MeshManager | null;
+
+  // Other pick object data
+  targetTexture: WebGLTexture | null;
+  depthBuffer: WebGLRenderbuffer | null;
+  frameBuffer: WebGLFramebuffer | null;
 
   ///////////////////////
   ///  Init Routines  ///
@@ -173,6 +183,10 @@ export class Renderer {
     await this.billboardProgramManager.loadAndLinkShaders();
     this.bbShaderProgram = this.billboardProgramManager.getProgram();
 
+    this.pickProgramManager = new ShaderProgramManager(gl, SHADER_PICK_PATHS);
+    await this.pickProgramManager.loadAndLinkShaders();
+    this.pickProgram = this.pickProgramManager.getProgram();
+
     // Get attribute and uniform location information for the shader program. Essentially, this is get references to location information
     // so we can upload data to the GPU for shaders to use. Here, we deal with both attributes and uniforms. Uniforms are variables that are the same
     // for all instances of the shader being run (as shaders are run in parallel) although they may change frame to frame. Attributes are pieces
@@ -219,10 +233,17 @@ export class Renderer {
       heightOffset: gl.getUniformLocation(this.bbShaderProgram, "uHeightOffset"),
       healthPercent: gl.getUniformLocation(this.bbShaderProgram, "uHealthPercent"),
     }
+    this.pickLocs = {
+      position: gl.getAttribLocation(this.pickProgram, "aPosition"),
+      model: gl.getUniformLocation(this.pickProgram, "uModelMatrix"),
+      view: gl.getUniformLocation(this.pickProgram, "uViewMatrix"),
+      projection: gl.getUniformLocation(this.pickProgram, "uProjMatrix"),
+      objectID: gl.getUniformLocation(this.pickProgram, "objectID"),
+    }
 
     // Load our models async. Will update the meshMap, VAOs, and prepare them all for drawing
     this.meshManager = new MeshManager(gl, this.vaoManager);
-    await this.meshManager.initialize(this.attribLocs);
+    await this.meshManager.initialize(this.attribLocs, this.pickLocs);
 
     // Setup our vertex buffer and attribute informations. This is how we know what information is stored where. 
     // Attributes are explained above. Basically, we send our vertex data to the GPU by storing it in a buffer. We also have to tell
@@ -241,6 +262,8 @@ export class Renderer {
     gl.vertexAttribPointer(this.attribLocs.normalLoc, 3, gl.FLOAT, false, 6 * 4, 4 * 3); // 4 bytes per float * 3 floats before we get to our first set of normal data
     gl.disableVertexAttribArray(this.attribLocs.texLoc);
     gl.vertexAttrib2f(this.attribLocs.texLoc, 0.0, 0.0);
+    gl.enableVertexAttribArray(this.pickLocs.position);
+    gl.vertexAttribPointer(this.pickLocs.position, 3, gl.FLOAT, false, 6 * 4, 0);
     this.vaoManager.bindVAO(null);
 
     // Do the same for billboards
@@ -274,7 +297,23 @@ export class Renderer {
       console.log("Skipping grid configuration.");
     }
 
-    // Select our shader program to use. We must always have an active shader program.
+    // Prepare pick object pass
+    this.targetTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.targetTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    // Create buffers to store our side render
+    this.depthBuffer = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthBuffer);
+    resizeFramebufferAttachments(gl, this.targetTexture, this.depthBuffer, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    this.frameBuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.frameBuffer);
+    // attach to texture
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.targetTexture, 0);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.depthBuffer);
+
+    // Select our shader program to use for the rest of initialization
     gl.useProgram(this.shaderProgram);
 
     // Set up our perspective matrix
@@ -310,14 +349,20 @@ export class Renderer {
     this.glRef = null;
     this.shaderProgram = null;
     this.bbShaderProgram = null;
+    this.pickProgram = null;
     this.lightUniformLocs = null;
     this.bbLocs = null;
     this.matrixUniformLocs = null;
     this.attribLocs = null;
+    this.pickLocs = null;
     this.mainProgramManager = null;
     this.billboardProgramManager = null;
+    this.pickProgramManager = null;
     this.meshManager = null;
     this.vaoManager = null;
+    this.targetTexture = null;
+    this.depthBuffer = null;
+    this.frameBuffer = null;
 
     // These can safely be set at construction time
     this.grid = new Grid(this);
@@ -328,6 +373,7 @@ export class Renderer {
     this.initialized = false;
     this.features = [];
     this.featuresDirty = false;
+    this.currentDrawPass = RenderPass.MAIN;
 
     // These will be set as needed
     this.frameId = null;
@@ -494,11 +540,17 @@ export class Renderer {
     GLM.mat4.rotateY(this.cam.viewMatrix, this.cam.viewMatrix, panVelocityX * delta); // Rotate the world according to the frame delta for smooth movement
     
     // Update the shader's view matrix
-    if (!this.glRef || !this.matrixUniformLocs || !this.matrixUniformLocs.viewMatrix) {
+    if (!this.glRef || !this.matrixUniformLocs || !this.matrixUniformLocs.viewMatrix || !this.pickLocs || !this.pickLocs.view) {
       console.error("Unable to set view matrix.");
       return;
     }
-    this.glRef.uniformMatrix4fv(this.matrixUniformLocs.viewMatrix, false, this.cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
+
+    // Update
+    if (this.currentDrawPass === RenderPass.MAIN) {
+      this.glRef.uniformMatrix4fv(this.matrixUniformLocs.viewMatrix, false, this.cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
+    } else if (this.currentDrawPass === RenderPass.PICK_OBJECT) {
+      this.glRef.uniformMatrix4fv(this.pickLocs.view, false, this.cam.viewMatrix as Float32Array); // Upload this new model matrix for drawing
+    }
   }
 
   // Update and switch which walls are displayed
@@ -542,7 +594,7 @@ export class Renderer {
     // Ensure we have a matrix uniform location and a GL context
     if (!this.glRef || !this.matrixUniformLocs || !this.matrixUniformLocs.modelMatrix || !this.lightUniformLocs 
       || !this.lightUniformLocs.material.ambient || !this.lightUniformLocs.material.diffuse || !this.lightUniformLocs.material.specular 
-      || !this.lightUniformLocs.material.shininess || !this.meshManager || !this.vaoManager) {
+      || !this.lightUniformLocs.material.shininess || !this.meshManager || !this.vaoManager || !this.pickLocs) {
       console.error("Not ready to draw features.");
       return;
     }
@@ -561,11 +613,31 @@ export class Renderer {
       this.vaoManager.bindVAO(fVao); // bind the appropriate VAO
 
       // Update uniforms and draw
-      gl.uniformMatrix4fv(this.matrixUniformLocs.modelMatrix, false, this.house.renderableFeatures[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
-      gl.uniform3fv(this.lightUniformLocs.material.ambient, this.house.renderableFeatures[i].material.ambient); // update lighting uniform values for the material of the object
-      gl.uniform3fv(this.lightUniformLocs.material.diffuse, this.house.renderableFeatures[i].material.diffuse);
-      gl.uniform3fv(this.lightUniformLocs.material.specular, this.house.renderableFeatures[i].material.specular);
-      gl.uniform1f(this.lightUniformLocs.material.shininess, this.house.renderableFeatures[i].material.shininess);
+      if (this.currentDrawPass === RenderPass.MAIN) {
+        gl.uniformMatrix4fv(this.matrixUniformLocs.modelMatrix, false, this.house.renderableFeatures[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
+        gl.uniform3fv(this.lightUniformLocs.material.ambient, this.house.renderableFeatures[i].material.ambient); // update lighting uniform values for the material of the object
+        gl.uniform3fv(this.lightUniformLocs.material.diffuse, this.house.renderableFeatures[i].material.diffuse);
+        gl.uniform3fv(this.lightUniformLocs.material.specular, this.house.renderableFeatures[i].material.specular);
+        gl.uniform1f(this.lightUniformLocs.material.shininess, this.house.renderableFeatures[i].material.shininess);
+      } else if (this.currentDrawPass === RenderPass.PICK_OBJECT) {
+        gl.uniformMatrix4fv(this.pickLocs.model, false, this.house.renderableFeatures[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
+        gl.uniformMatrix4fv(this.pickLocs.view, false, this.cam.viewMatrix as Float32Array); // upload the correct view matrix for drawing
+        gl.uniformMatrix4fv(this.pickLocs.projection, false, this.cam.projectionMatrix as Float32Array); // upload the correct projection matrix for drawing
+
+        // See here: https://webglfundamentals.org/webgl/lessons/webgl-picking.html
+        // We split the objectID across 4 channels in order to support more objects than 256
+        const encodedColor = [
+          ((f.id >> 0) & 0xFF) / 0xFF * 10,
+          ((f.id >> 8) & 0xFF) / 0xFF * 10,
+          ((f.id >> 16) & 0xFF) / 0xFF * 10,
+          ((f.id >> 24) & 0xFF) / 0xFF * 10,
+        ];
+        gl.uniform4fv(this.pickLocs.objectID, encodedColor);
+      }
+      else {
+        console.error("Invalid render pass.");
+        return;
+      }
 
       // draw a mesh, or if no mesh exists draw a cube
       if (!f.mesh || f.mesh === "") {
@@ -580,6 +652,11 @@ export class Renderer {
 
   // Draw the grid
   drawGrid() {
+    // Skip for non-main renders
+    if (this.currentDrawPass !== RenderPass.MAIN) {
+      return;
+    }
+
     // Ensure we're ready to draw
     if (!this.glRef || !this.matrixUniformLocs || !this.matrixUniformLocs.modelMatrix || !this.lightUniformLocs || !this.lightUniformLocs.material.ambient 
       || !this.lightUniformLocs.material.diffuse || !this.lightUniformLocs.material.shininess || !this.lightUniformLocs.material.specular) {
@@ -604,6 +681,11 @@ export class Renderer {
 
   // Draw health bars for features
   drawHealthbars() {
+    // Skip for non-main renders
+    if (this.currentDrawPass !== RenderPass.MAIN) {
+      return;
+    }
+
     // Ensure ready to draw
     if (!this.glRef || !this.bbLocs || !this.vaoManager) {
       console.error("Not ready to draw healthbars.");
@@ -642,6 +724,37 @@ export class Renderer {
   ///////////////////
   ///  Utilities  ///
   ///////////////////
+
+  // Switch which pass we're rendering
+  switchRenderpass(pass: RenderPass) {
+    if (!this.glRef || !this.vaoManager) {
+      console.error("Can't switch render pass without a GL context.");
+      return;
+    }
+    const gl = this.glRef;
+
+    // Reset state
+    this.vaoManager.bindVAO(null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    // Make the switch
+    switch (pass) {
+      case RenderPass.MAIN:
+        this.currentDrawPass = RenderPass.MAIN;
+        gl.useProgram(this.shaderProgram);
+        break;
+      case RenderPass.PICK_OBJECT:
+        this.currentDrawPass = RenderPass.PICK_OBJECT;
+        gl.useProgram(this.pickProgram);
+        gl.bindTexture(gl.TEXTURE_2D, this.targetTexture);
+        gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthBuffer);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.frameBuffer);
+        break;
+    }
+  }
 
   // A function to add a block to the household at a certain position
   async addBlock(cellX: number, cellY: number, cellZ: number) {
@@ -1066,7 +1179,7 @@ export class RenderableHousehold extends Household {
     const floorMatrix = GLM.mat4.create();
     GLM.mat4.scale(floorMatrix, floorMatrix, [10, 0.5, 10]); // note implicitly depends on grid size defaulting to 10
     GLM.mat4.translate(floorMatrix, floorMatrix, [0, -0.51, 0]); // The 0.5s account for the difference between the cell center and edges
-    const floorFeature = new RenderableFeature("Floor", this.household_id, 1, floorMatrix, FEATURE_GREY, 0, -1, 0); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
+    const floorFeature = new RenderableFeature("Floor", this.household_id, -1, floorMatrix, FEATURE_GREY, 0, -1, 0); // Set to one below for now (does not coorespond to model matrix) so we don't accidentally delete it
     this.addRenderableFeature(floorFeature); // must be the first feature
 
     // Add walls
@@ -1074,28 +1187,28 @@ export class RenderableHousehold extends Household {
     const leftWallMatrix = GLM.mat4.create();
     GLM.mat4.translate(leftWallMatrix, leftWallMatrix, [-5.25, 1.5, 0])
     GLM.mat4.scale(leftWallMatrix, leftWallMatrix, [0.5, 3, 10.1]); 
-    const leftWall = new RenderableFeature("Left Wall", this.household_id, 2, leftWallMatrix, FEATURE_GREY, -5, -1, 0)
+    const leftWall = new RenderableFeature("Left Wall", this.household_id, -2, leftWallMatrix, FEATURE_GREY, -5, -1, 0)
     this.addRenderableFeature(leftWall);
 
     // Right wall
     const rightWallMatrix = GLM.mat4.create();
     GLM.mat4.translate(rightWallMatrix, rightWallMatrix, [5.25, 1.5, 0])
     GLM.mat4.scale(rightWallMatrix, rightWallMatrix, [0.5, 3, 10.1]); 
-    const rightWall = new RenderableFeature("Right Wall", this.household_id, 3, rightWallMatrix, FEATURE_GREY, 5, -1, 0)
+    const rightWall = new RenderableFeature("Right Wall", this.household_id, -3, rightWallMatrix, FEATURE_GREY, 5, -1, 0)
     this.addRenderableFeature(rightWall);
 
     // Back wall
     const backWallMatrix = GLM.mat4.create();
     GLM.mat4.translate(backWallMatrix, backWallMatrix, [0, 1.5, -5.25])
     GLM.mat4.scale(backWallMatrix, backWallMatrix, [10.1, 3, 0.5]); 
-    const backWall = new RenderableFeature("Back Wall", this.household_id, 4, backWallMatrix, FEATURE_GREY, 0, -1, -5)
+    const backWall = new RenderableFeature("Back Wall", this.household_id, -4, backWallMatrix, FEATURE_GREY, 0, -1, -5)
     this.addRenderableFeature(backWall);
 
     // Front wall
     const frontWallMatrix = GLM.mat4.create();
     GLM.mat4.translate(frontWallMatrix, frontWallMatrix, [0, 1.5, 5.25])
     GLM.mat4.scale(frontWallMatrix, frontWallMatrix, [10.1, 3, 0.5]); 
-    const frontWall = new RenderableFeature("Front Wall", this.household_id, 5, frontWallMatrix, FEATURE_GREY, 0, -1, 5)
+    const frontWall = new RenderableFeature("Front Wall", this.household_id, -5, frontWallMatrix, FEATURE_GREY, 0, -1, 5)
     this.addRenderableFeature(frontWall);
 
     // We cannot determine the following entries without a gl context

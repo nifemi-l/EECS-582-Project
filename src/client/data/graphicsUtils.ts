@@ -57,6 +57,11 @@ export const MESH_PATH_MAP: MeshPathMap = {
 //                 Shader constants & interfaces
 // ***********************************************************
 
+export enum RenderPass {
+  MAIN,
+  PICK_OBJECT
+}
+
 // Wrapper for shader interface
 export interface Shader {
   name: string,
@@ -88,6 +93,10 @@ export const SHADER_BILLBOARD_PATHS: ShaderPaths = {
 export const SHADER_REGULAR_PATHS: ShaderPaths= {
   "vert": [require("../assets/shaders/main.vert"), ShaderType.VERTEX],
   "frag": [require("../assets/shaders/main.frag"), ShaderType.FRAGMENT]
+};
+export const SHADER_PICK_PATHS: ShaderPaths= {
+  "vert": [require("../assets/shaders/pick.vert"), ShaderType.VERTEX],
+  "frag": [require("../assets/shaders/pick.frag"), ShaderType.FRAGMENT]
 };
 
 // ***********************************************************
@@ -151,6 +160,14 @@ export interface ShaderBillboardUniformLocations {
     projection: WebGLUniformLocation | null,
     heightOffset: WebGLUniformLocation | null,
     healthPercent: WebGLUniformLocation | null,
+}
+// Pick objects
+export interface ShaderPickLocations {
+  position: number,
+  model: WebGLUniformLocation | null,
+  view: WebGLUniformLocation | null,
+  projection: WebGLUniformLocation | null,
+  objectID: WebGLUniformLocation | null,
 }
 
 // Type to bridge webgl 1 and 2 VAOs
@@ -463,7 +480,7 @@ export class MeshManager {
   }
 
   // Call this to source and prpeare all meshes and their VAOs
-  async initialize(attribLocs: ShaderAttributebLocations) {
+  async initialize(attribLocs: ShaderAttributebLocations, pickLocs: ShaderPickLocations) {
     // Load our meshes into the meshMap, or return on failure
     const sourced = await this.sourceMeshes()
     if (!sourced) {
@@ -478,7 +495,7 @@ export class MeshManager {
       this.vaoManager.bindVAO(vao);
 
       // Prepare the mesh
-      this.prepareMesh(name, attribLocs);
+      this.prepareMesh(name, attribLocs, pickLocs);
 
       // Set our final vao map and reset state
       this.vaoManager.bindVAO(null);
@@ -490,7 +507,7 @@ export class MeshManager {
 
   // Must be called for every mesh. 
   // NOTE: You must properly bind and unbind the appropriate VAO before and after this call
-  prepareMesh(name: string, attribLocs: ShaderAttributebLocations) {
+  prepareMesh(name: string, attribLocs: ShaderAttributebLocations, pickLocs: ShaderPickLocations) {
     // Get our mesh from the name
     const mesh = this.meshMap[name];
     if (!mesh) {
@@ -502,6 +519,7 @@ export class MeshManager {
     this.gl.enableVertexAttribArray(attribLocs.vertLoc);
     this.gl.enableVertexAttribArray(attribLocs.normalLoc);
     this.gl.enableVertexAttribArray(attribLocs.texLoc);
+    this.gl.enableVertexAttribArray(pickLocs.position);
 
     // Expand our buffers so we have what we need
     OBJ.initMeshBuffers(this.gl, mesh);
@@ -522,6 +540,9 @@ export class MeshManager {
     // Vertex buffer
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, vb);
     this.gl.vertexAttribPointer(attribLocs.vertLoc, vbItemSize, this.gl.FLOAT, false, 0, 0);
+
+    // Object picking attribs
+    this.gl.vertexAttribPointer(pickLocs.position, vbItemSize, this.gl.FLOAT, false, 0, 0);
 
     // Vertex normal buffer
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, vn);
@@ -681,4 +702,33 @@ export class VAOManager {
       return this.oesExt.bindVertexArrayOES(vao);
     }
   }
+}
+
+// ***********************************************************
+//              Texture Utilities
+// ***********************************************************
+
+export function resizeFramebufferAttachments(gl: ExpoWebGLRenderingContext, tgtTexture: WebGLTexture, depthBuffer: WebGLRenderbuffer, width: number, height: number) {
+  // Resize the texture parameters
+  gl.bindTexture(gl.TEXTURE_2D, tgtTexture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.bindRenderbuffer(gl.RENDERBUFFER, depthBuffer);
+  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+}
+
+export function getPixelFromPointOnScreen(gl: ExpoWebGLRenderingContext, x: number, y: number) {
+  // Note: this must be applied after the PICK_OBJECT RenderPass. 
+
+  // See https://webglfundamentals.org/webgl/lessons/webgl-picking.html
+  const pixelX = x * gl.canvas.width;
+  const pixelY = y * gl.canvas.height;
+  const data = new Uint8Array(4);
+
+  // Read one pixel at our provided position - we just want to know what color it is
+  // We will have 8 bits of red, green, blue, and alpha
+  gl.readPixels(pixelX, pixelY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, data);
+
+  // Get our color's object ID in reverse of the process we used to encode it
+  const id: number = data[0] + (data[1] << 8) + (data[2] << 16) + (data[3] << 24);
+  return id;
 }
