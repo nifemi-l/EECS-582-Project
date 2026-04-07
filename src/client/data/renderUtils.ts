@@ -53,8 +53,8 @@ import {
 // ***********************************************************
 
 // Define the near and far clips for the projection matrix
-const NEAR_CLIP = 0.1;
-const FAR_CLIP = 100.0;
+export const NEAR_CLIP = 0.1;
+export const FAR_CLIP = 100.0;
 
 // Define min and max world scaling
 const MIN_WORLD_SCALE = 0.1;
@@ -62,6 +62,9 @@ const MAX_WORLD_SCALE = 6.0;
 
 // Define the maximum number of attempts before we give up on placing a feature with a bad XYZ position
 const MAX_PLACE_ATTEMPTS = 10;
+
+// Radians FOV
+export const FOV_RADIANS = (45 * Math.PI / 180);
 
 // ***********************************************************
 //                       Renderer Class
@@ -317,7 +320,7 @@ export class Renderer {
     // Create buffers to store our side render
     this.depthBuffer = gl.createRenderbuffer();
     gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthBuffer);
-    resizeFramebufferAttachments(gl, this.targetTexture, this.depthBuffer, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    resizeFramebufferAttachments(gl, this.targetTexture, this.depthBuffer, 1, 1); // we'll use a 1x1 pixel texture to render to
     this.frameBuffer = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.frameBuffer);
     // attach to texture
@@ -328,7 +331,7 @@ export class Renderer {
     gl.useProgram(this.shaderProgram);
 
     // Set up our perspective matrix
-    GLM.mat4.perspective(this.cam.projectionMatrix, (45 * Math.PI / 180), gl.drawingBufferWidth / gl.drawingBufferHeight, NEAR_CLIP, FAR_CLIP);
+    GLM.mat4.perspective(this.cam.projectionMatrix, FOV_RADIANS, gl.drawingBufferWidth / gl.drawingBufferHeight, NEAR_CLIP, FAR_CLIP);
     gl.uniformMatrix4fv(this.matrixUniformLocs.projectionMatrix, false, this.cam.projectionMatrix as Float32Array);
 
     // Move the camera up, back, and turn it a little to the origin, rotate a little to the left to show 2 walls
@@ -643,7 +646,7 @@ export class Renderer {
       } else if (this.currentDrawPass === RenderPass.PICK_OBJECT) {
         gl.uniformMatrix4fv(this.pickLocs.model, false, this.house.renderableFeatures[i].modelMatrix as Float32Array); // upload the correct model matrix for drawing
         gl.uniformMatrix4fv(this.pickLocs.view, false, this.cam.viewMatrix as Float32Array); // upload the correct view matrix for drawing
-        gl.uniformMatrix4fv(this.pickLocs.projection, false, this.cam.projectionMatrix as Float32Array); // upload the correct projection matrix for drawing
+        gl.uniformMatrix4fv(this.pickLocs.projection, false, this.cam.pixelPickFrustrum as Float32Array); // upload the correct projection matrix for drawing
 
         // See here: https://webglfundamentals.org/webgl/lessons/webgl-picking.html for more information
         // We split the objectID across 4 channels in order to support more objects than 256
@@ -1011,6 +1014,7 @@ export class Renderer {
 export class Camera {
   viewMatrix: GLM.mat4; // The view matrix used to setup the projection
   projectionMatrix: GLM.mat4;
+  pixelPickFrustrum: GLM.mat4;
 
   // Constructor. Initialize the viewLocation to null since we have no gl context yet, and create an identity view matrix
   constructor() {
@@ -1025,6 +1029,7 @@ export class Camera {
     // Then, we upload this matrix data as uniform data for use in our vertex shader as an array of values. 
     // we'll actually set this projection matrix up during initialization
     this.projectionMatrix = GLM.mat4.create();
+    this.pixelPickFrustrum = GLM.mat4.create();
   }
 }
 

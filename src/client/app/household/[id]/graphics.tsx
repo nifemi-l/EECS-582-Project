@@ -40,12 +40,13 @@ import {
   MoveDirection, Tool,
   FEATURE_ORANGE, FEATURE_BLUE, FEATURE_GREEN, FEATURE_RED,
   cellFromCoords, RenderPass,
-  getPixelFromPointOnScreen
+  getPixelFromRaw, getPickedObjectFromPointOnScreen,
+  setPixelFrustrum
 } from "../../../data/graphicsUtils"
 
 // Import renderer classes
 import {
-  RenderableFeature, Renderer
+  RenderableFeature, Renderer, FOV_RADIANS, NEAR_CLIP, FAR_CLIP
 } from "../../../data/renderUtils"
 
 // Import local api utilities
@@ -70,10 +71,6 @@ let viewWidth = 0;
 let viewHeight = 0;
 let windowHeight = 0;
 let windowWidth = 0;
-
-// Mouse positions
-let mouseX = 0;
-let mouseY = 0;
 
 // Store the current editing tool
 let currentTool = Tool.TOOL_FEATURE;
@@ -389,8 +386,12 @@ export default function Index() {
   useEffect(() => {
     // Update the mouse position when it moves
     const handleMouseMove = (event: MouseEvent) => {
-      mouseX = event.clientX;
-      mouseY = event.clientY;
+      if (!rdrRef.current.glRef) {
+        return;
+      }
+
+      const pixelCoords = getPixelFromRaw(rdrRef.current.glRef, event.clientX, event.clientY, viewWidth, viewHeight, windowHeight); // convert mouse position to coordinates in the GL drawing buffer
+      setPixelFrustrum(rdrRef.current.glRef, rdr.cam.pixelPickFrustrum, FOV_RADIANS, NEAR_CLIP, FAR_CLIP, pixelCoords.pixelX, pixelCoords.pixelY);
     }
 
     // Register the mouse move listner
@@ -566,7 +567,7 @@ function drawFrame(time: number) {
     // Render the scene once before the acual render so that we can know which object the user is currently highlighting
     rdr.switchRenderpass(RenderPass.PICK_OBJECT);
     renderScene(delta);
-    rdr.setHighlightedFeature(getPixelFromPointOnScreen(rdr.glRef, mouseX, mouseY, viewWidth, viewHeight, windowHeight));
+    rdr.setHighlightedFeature(getPickedObjectFromPointOnScreen(rdr.glRef));
 
     // Call the render method to actually draw all objects
     // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration. 

@@ -24,6 +24,7 @@ import { ExpoWebGLRenderingContext } from 'expo-gl';
 import { Platform } from 'react-native';
 import * as OBJ from 'webgl-obj-loader';
 import { FeatureType } from './feature';
+import * as GLM from 'gl-matrix';
 
 
 // ***********************************************************
@@ -717,22 +718,47 @@ export function resizeFramebufferAttachments(gl: ExpoWebGLRenderingContext, tgtT
   gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
 }
 
-export function getPixelFromPointOnScreen(gl: ExpoWebGLRenderingContext, rawX: number, rawY: number, viewWidth: number, viewHeight: number, windowHeight: number) {
+export function getPixelFromRaw(gl: ExpoWebGLRenderingContext, rawX: number, rawY: number, viewWidth: number, viewHeight: number, windowHeight: number) {
   // We need to convert from the raw coordinates given by react to coords scaled for the gl.drawingBuffer size
   // gl.readPixels expects a bottom-left centered coordinate system
   const drawWidth = gl.drawingBufferWidth;
   const drawHeight = gl.drawingBufferHeight;
   const pixelX = Math.floor(rawX * drawWidth / viewWidth);
   const pixelY = drawHeight - Math.floor((rawY * drawHeight / viewHeight) - (windowHeight - viewHeight) * drawHeight / viewHeight); // we need to account for the bar at the top of the screen
+  return {pixelX, pixelY};
+}
 
+export function getPickedObjectFromPointOnScreen(gl: ExpoWebGLRenderingContext) {
   // See https://webglfundamentals.org/webgl/lessons/webgl-picking.html for more information
   const data = new Uint8Array(4);
 
   // Read one pixel at our provided position - we just want to know what color it is
   // We will have 8 bits of red, green, blue, and alpha
-  gl.readPixels(pixelX, pixelY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  // We can do this because we know we're only rendering to a 1x1 texture
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, data);
 
   // Get our color's object ID in reverse of the process we used to encode it
   const id: number = data[0] + (data[1] << 8) + (data[2] << 16) + (data[3] << 24);
   return id;
+}
+
+export function setPixelFrustrum(gl: ExpoWebGLRenderingContext, out: GLM.mat4, fovRadians: number, nearClip: number, farClip: number, pixelX: number, pixelY: number) {
+  // Optimization: we only want to render the pixel our mouse is over. See https://webglfundamentals.org/webgl/lessons/webgl-picking.html
+  // compute the near plane in a standard projection matrix
+  const aspect = gl.drawingBufferWidth / gl.drawingBufferHeight;
+  const top = Math.tan(fovRadians * 0.5) * nearClip;
+  const bottm = -top;
+  const left = aspect * bottm;
+  const right = aspect * top;
+  const width = Math.abs(right - left);
+  const height = Math.abs(top - bottm);
+
+  // Now, compute the part of that near plane that covers the mouse pixel
+  const subLeft = left + pixelX * width / gl.drawingBufferWidth;
+  const subBottom = bottm + pixelY * height / gl.drawingBufferHeight;
+  const subWidth = width / gl.drawingBufferWidth;
+  const subHeight = height / gl.drawingBufferHeight;
+
+  // Finally, make our 1 pixel frustrum
+  GLM.mat4.frustum(out, subLeft, subLeft + subWidth, subBottom, subBottom + subHeight, nearClip, farClip);
 }
