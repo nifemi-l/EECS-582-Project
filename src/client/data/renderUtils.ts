@@ -768,10 +768,8 @@ export class Renderer {
 
   async deleteFeature(featureID: number) {
     try {
-      console.log("begin", this.house.renderableFeatures);
       await apiDeleteFeature(featureID); // Delete on the server
       this.house.renderableFeatures = this.house.renderableFeatures.filter((f) => {return f.id !== featureID}); // remove the deleted feature
-      console.log("end", this.house.renderableFeatures);
     } catch (e) {
       // Note, if we fail we don't need to copy the feature over because we're not updating the feature array anyway
       console.error(`Failed to delete feature. Canceling deletion for feature ${featureID} in household ${this.house.household_id}.`, e);
