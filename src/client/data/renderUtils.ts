@@ -683,11 +683,13 @@ export class Renderer {
 
     // Ensure we're ready to draw
     if (!this.glRef || !this.matrixUniformLocs || !this.matrixUniformLocs.modelMatrix || !this.lightUniformLocs || !this.lightUniformLocs.material.ambient 
-      || !this.lightUniformLocs.material.diffuse || !this.lightUniformLocs.material.shininess || !this.lightUniformLocs.material.specular) {
+      || !this.lightUniformLocs.material.diffuse || !this.lightUniformLocs.material.shininess || !this.lightUniformLocs.material.specular || !this.pickLocs) {
         console.error("Not ready to draw grid.");
         return;
     }
     const gl = this.glRef;
+
+    gl.uniform3fv(this.pickLocs.colorMult, [1.0, 1.0, 1.0]); // reset to normal color multiplier
 
     // Use our grid vertex configuration, upload the grid's model matrix to the vertex shader, and then draw a line. Each line has two vertices. 
     // Only draw if we have a proper grid setup
