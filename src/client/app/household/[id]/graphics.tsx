@@ -106,24 +106,6 @@ function getSelectedEditFeature() {
   return rdr.selectedEditFeature;
 }
 
-// Given coordinates, select the feature in the house lists
-function findAndSetSelectedFeature(cellX: number, cellY: number, cellZ: number) {
-  // iterate through house features. We do it in the order x, z, y since y should always be constant so far (we only support the xz plane)
-  // There should also only ever be one feature that matches
-  for (let i = 0; i < rdr.house.renderableFeatures.length; i++) {
-    if (rdr.house.renderableFeatures[i].x_pos != cellX || rdr.house.renderableFeatures[i].z_pos != cellZ || rdr.house.renderableFeatures[i].y_pos != cellY) {
-      continue;
-    } else {
-      // if this is already selected, deselect. Otherwise, select it
-      if (rdr.selectedEditFeature === rdr.house.renderableFeatures[i]) {
-        setSelectedEditFeature(null);
-      } else {
-        setSelectedEditFeature(rdr.house.renderableFeatures[i]);
-      }
-    }
-  }
-}
-
 // ***********************************************************
 //                  UI / Interface Utilities
 // ***********************************************************
@@ -377,6 +359,7 @@ function EditWindow() {
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
 // the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
 export default function Index() {
+  const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
   const rdrRef = useRef(rdr);
   useEffect(() => {
     rdrRef.current = rdr;
@@ -413,19 +396,51 @@ export default function Index() {
   .maxDuration(250) // Limit the amount of time of taps so we can recognize more pans
   .onFinalize((event, success) => { // When the tap event is done...
     if (success) { 
-      // Convert our tap's position on the screen to world coordinates on the xz plane
-      const dims = getViewAndWindowDims();
-      const worldPos: GLM.vec3 | null = rdrRef.current.screenToWorldCoords(event.absoluteX, event.absoluteY, dims[0], dims[1], dims[2], dims[3]);
-      if (!worldPos) {
-        console.error("Unable to convert tap to world coordinates.");
-      } else {
-        // We have successfully found a world position from our tap, so figure out what cell we're in
-        const tappedCell = cellFromCoords(worldPos[0], worldPos[2]);
-        // Add to House or select depending on tool
-        if (isUsingEditTool()) {
-          findAndSetSelectedFeature(tappedCell[0], 0, tappedCell[1]);
+      const highlightedObjectID = rdrRef.current.highlightedFeatureID; // Get the highlighted feature ID
+      if (isUsingEditTool()) {
+        // If we're editing, 
+        //    1. Check if we're highlighting a feature. If we're not, do nothing
+        //    1A. If it's selected, deselect it. (Done)
+        //    1B. If it's not, select it. (Done)
+        if (!highlightedObjectID) { // 1: Check if we're highlighting an object
+          return; // if we're not, do nothing
         } else {
-          rdrRef.current.addBlock(tappedCell[0], 0, tappedCell[1]);
+          // If we do have a highlighted object, check if it matches the selectedFeature
+          if (!selectedFeature || selectedFeature.id !== highlightedObjectID) {
+            // selectedFeature does not matched highlightedObject
+            for (const f of rdrRef.current.house.renderableFeatures) {
+              // Set the selectedFeature to match the highlighted object
+              if (f.id === highlightedObjectID) {
+                // We found the matching feature, so set it and we're done
+                setSelectedEditFeature(f);
+                break;
+              }
+            }
+          } else {
+            // selectedFeature matches the highlightedObject, so we deselect
+            setSelectedEditFeature(null);
+          }
+        }
+      } else {
+        // If we're not editing (placing features),
+        //    1. Check if we're highlighting a feature. If so, delete it and we're done.
+        //    2. If we're not highlighting a feature, check if our line intersects any of the walls or the floor. 
+        //    3. If we found a valid point, place a feature at that point. If not, we're done. 
+        if (!highlightedObjectID) {
+          // 2: We're not highlighting a feature, check if the line intersects the walls or the floor
+          const dims = getViewAndWindowDims();
+          const point = rdrRef.current.screenToWorldCoords(event.absoluteX, event.absoluteY, dims[0], dims[1], dims[2], dims[3]);
+          // 3: If we've found a valid point, place a feature at that point. Otherwise, do nothing. 
+          if (!point) {
+            return; // do nothing if we have not found a valid point
+          } else {
+            // If we did find a valid point, add the feature. 
+            rdrRef.current.placeFeature(point[0], point[1], point[2]);
+          }
+        } else {
+          // 1: We are highlighting a feature, so we just delete it.
+          rdrRef.current.deleteFeature(highlightedObjectID);
+          rdrRef.current.setHighlightedFeature(-1); // -1 effectively sets to null
         }
       }
     }

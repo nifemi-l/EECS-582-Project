@@ -412,25 +412,9 @@ export class Renderer {
 
     // Update the renderable features
     this.features.forEach((f) => {
-      // If position is conflicting, find a new position (NOTE: this is not ideal behavior, likely should have different approach)
-      let attempts = 0;
-      while (!this.checkValidCell(f.x_pos, f.y_pos, f.z_pos)) {
-        // Get a new position
-        console.warn("Adjusting feature position due to conflict. Attempt:", attempts);
-        f.x_pos = Math.floor(Math.random() * this.grid.width - this.grid.width / 2);
-        f.z_pos = Math.floor(Math.random() * this.grid.height - this.grid.height / 2);
-
-        // Ensure we don't try too hard placing the feature
-        attempts += 1;
-        if (attempts > MAX_PLACE_ATTEMPTS) {
-          console.error("Too many attempts placing a feature. Giving up.");
-          return;
-        }
-      }
-
       // Prepare the appropriate model matrix
       const transform = GLM.mat4.create();
-      GLM.mat4.translate(transform, transform, [f.x_pos + 0.5, f.y_pos + 0.5, f.z_pos + 0.5]); // The 0.5s account for the difference between the cell center and edges
+      GLM.mat4.translate(transform, transform, [f.x_pos, f.y_pos, f.z_pos]); // The 0.5s account for the difference between the cell center and edges
 
       // Select the correct material
       let mat = FEATURE_ORANGE;
@@ -782,22 +766,32 @@ export class Renderer {
     }
   }
 
-  // A function to add a block to the household at a certain position
-  async addBlock(cellX: number, cellY: number, cellZ: number) {
-    // Ensure our cell position is in bounds
-    if (!this.checkCellInBounds(cellX, cellY, cellZ)) {
-      return;
-    }
+  async deleteFeature(featureID: number) {
+    try {
+      console.log("begin", this.house.renderableFeatures);
+      await apiDeleteFeature(featureID); // Delete on the server
+      this.house.renderableFeatures = this.house.renderableFeatures.filter((f) => {return f.id !== featureID}); // remove the deleted feature
+      console.log("end", this.house.renderableFeatures);
+    } catch (e) {
+      // Note, if we fail we don't need to copy the feature over because we're not updating the feature array anyway
+      console.error(`Failed to delete feature. Canceling deletion for feature ${featureID} in household ${this.house.household_id}.`, e);
+      console.log("Corresponding feature:", featureID);
+    } 
+  }
 
-    // Ensure we haven't already placed a block here. If we have, remove it 
-    const cellFree = await this.checkValidCellAndRemove(cellX, cellY, cellZ);
-    if (!cellFree) {
-      return;
-    }
+  async placeFeature(worldX: number, worldY: number, worldZ: number) {
+    // We already know our feature is within bounds by the time this method is called since when we convert screenToWorld coords, we 
+    // return a null position on out-of-bounds and thus don't call this method. 
+    // We also ignore collisions for the moment. 
+
+    // First, round inputs to 2 decimal places
+    const x = Number(worldX.toFixed(2));
+    const y = Number(worldY.toFixed(2));
+    const z = Number(worldZ.toFixed(2));
 
     // Create the transform
     const newModelMatrix = GLM.mat4.create(); // create a new transform 
-    GLM.mat4.translate(newModelMatrix, newModelMatrix, [cellX + 0.5, cellY + 0.5, cellZ + 0.5]); // The 0.5s account for the difference between the cell center and edges
+    GLM.mat4.translate(newModelMatrix, newModelMatrix, [x, y, z]);
 
     // Create the material / type
     const newMaterial: Material = this.currentDrawingColor;
@@ -806,7 +800,7 @@ export class Renderer {
     const featureIndex = Math.max(Math.abs(Math.round(((Math.random() * 10) % (Object.keys(FeatureType).length / 2) - 1))), 1); // count the number possible enum values (will not include undefined)
 
     // Create the feature object
-    const newFeature = new RenderableFeature("f:" + cellX + cellY + cellZ, this.house.household_id, 0, newModelMatrix, newMaterial, cellX, cellY, cellZ, undefined, featureIndex); // this is the new feature object we're adding
+    const newFeature = new RenderableFeature("f:" + x + y + z, this.house.household_id, 0, newModelMatrix, newMaterial, x, y, z, undefined, featureIndex); // this is the new feature object we're adding
     // randomly add a second chore for demo purposes
     if (Math.round(Math.random()) == 0) {
       newFeature.addTask(new Task("Test Task", newFeature.id, 1));
@@ -820,10 +814,10 @@ export class Renderer {
       // Create the feature on the server
       const featureID = await apiCreateFeature({
         household_id: this.house.household_id,
-        feature_name: "f:" + cellX + cellY + cellZ,
-        x_pos: cellX,
-        y_pos: cellY,
-        z_pos: cellZ,
+        feature_name: "f:" + x + y + z,
+        x_pos: x,
+        y_pos: y,
+        z_pos: z,
         feature_type: getFeatureTypeToString(featureIndex)
       });
       newFeature.setID(featureID.feature_id); // retroactively set the appropriate ID
@@ -907,77 +901,116 @@ export class Renderer {
     back[1] /= back[3];
     back[2] /= back[3];
 
-    // Next, find where the ray intersects with the y=0 plane
-    // parametric equation of a 3D line:
-    // x = x0 + at
-    // y = y0 + bt
-    // z = z0 + ct
-    // <a, b, c> is the direction vector calculated from <x1 - x0, y1 - y0, z1 - z0>. 
-    // Since we want to find the intersection with the xz plane (y=0) we can calculate as follows:
-    // 0 = y0 + bt --> -y0/b = t
-    // z = z0 + c * (-y0 / b)
-    // x = x0 + a * (-y0 / b)
-    // This will give us our intersection point (x, 0, z) in world space. 
-    // Additionally, if b is 0 we cannot calculate a solution and must fail.
+    // Get the ray from the front and back vertices
     // We'll treat front as position 0 and back as position 1 since front is usually smaller
     const dir = GLM.vec3.fromValues(back[0] - front[0], back[1] - front[1], back[2] - front[2]);
+    GLM.vec3.normalize(dir, dir); // ensure nromalization
     if (Math.abs(dir[1]) <= 0.000001) { // check against a very small value to handle floating point error
       console.error("Failing, unable to calculate a ray.")
       return null;
     }  
-    const t = -1.0 * front[1] / dir[1];
-    const finalPos = GLM.vec3.fromValues(front[0] + dir[0] * t, 0, front[2] + dir[2] * t);
 
-    return finalPos;
-  }
-
-  // Check if a block already exists on the cell - check against all existing cells. If it does, remove what's there
-  async checkValidCellAndRemove(cellX: number, cellY: number, cellZ: number) {
-    // copy array to new array, without the removed element. We'll do this as we iterate. If we find one to remove, set the result bool
-
-    /* 
-      Cases: 
-        - Case 1: the cell is occupied and we successfully delete it (feature array changes) - we do not want to add a feature in addBlock
-            --> cellFree = false, removed = true
-        - Case 2: the cell is occupied and we fail to delete it (features do not change) - we do not want to add a feature in addBlock
-            --> cellFree = false, removed = false
-        - Case 3: the cell is not occupied so we don't delete anything (features do not change) - we add a feature in addBlock
-            --> cellFree = true, removed = false
-    */
-
-    let cellFree = true;  // Have we found a feature in this cell? If the caller is addBlock, then it will not add anything assuming we have removed a block. 
-    let removed = false; // Have we removed a block? If so, we need to copy over the new features array. If not, then an error likely occurred and we keep the same array. 
-    let copyArray = [];  // Store the copy array we will build up
-
-    for (let i = 0; i < this.house.renderableFeatures.length; i++) {
+    // Now, we need to check if the ray intersects any of the floor or wall features. Since these are known rectangles, this shouldn't be too bad.
+    // We know that the floor and walls will be the first 4 features of the RenderableFeatures array.
+    // We know that the ray will only ever intersect one of these features (we can't ever look at it from the back)
+    for (let i = 0; i < 5; i++) {
       const f = this.house.renderableFeatures[i];
-
-      // Note: only applies to the first found feature in a location (there should only ever be one)
-      if (cellFree && f.x_pos == cellX && f.y_pos == cellY && f.z_pos == cellZ) {
-        // We've found a feature not to keep
-        cellFree = false;
-        try {
-          // Delete on the server
-          await apiDeleteFeature(f.id);
-          removed = true;
-        } catch (e) {
-          // Note, if we fail we don't need to copy the feature over because we're not updating the feature array anyway
-          console.error(`Failed to delete feature. Canceling deletion for feature ${f.id} in household ${this.house.household_id}.`, e);
-          console.log("Corresponding feature:", f);
-        } 
-      } else {
-        // We've found a feature we want to keep
-        copyArray.push(f);
+      if (!f.visible) {
+        continue; // skip hidden features (e.g. walls)
       }
+
+      // We can figure out pretty easily the equation of the plane that covers the surface of each feature. 
+      // We can get a point on the plane since we know where the feature is in world space.
+      // We can easily figure out a normal vector for the plane as well. 
+      // Also adjust x0, y0, z0 points by 1/2 width to move it to the front of the feature.
+      const center = GLM.vec3.create();
+      GLM.vec3.transformMat4(center, center, f.modelMatrix); // transform to get the center point
+      const halfScale = GLM.vec3.create();
+      GLM.mat4.getScaling(halfScale, f.modelMatrix);
+      GLM.vec3.multiply(halfScale, halfScale, [0.5, 0.5, 0.5]); // adjustment factor so we can get the plane at the front of the feature
+      let normal = GLM.vec3.create();
+      switch(i) {
+        case 0:
+          normal = GLM.vec3.fromValues(0, 1, 0);
+          center[1] += halfScale[1];
+          break;
+        case 1:
+          normal = GLM.vec3.fromValues(1, 0, 0); 
+          center[0] += halfScale[0];
+          break;
+        case 2:
+          normal = GLM.vec3.fromValues(-1, 0, 0);
+          center[0] -= halfScale[0];
+          break;
+        case 3:
+          normal = GLM.vec3.fromValues(0, 0, 1);
+          center[2] += halfScale[2];
+          break;
+        case 4:
+          normal = GLM.vec3.fromValues(0, 0, -1);
+          center[2] -= halfScale[2];
+          break;
+        }
+
+        // We know if the line's direction vector dot the plane's normal is zero, there is no intersection
+        if (GLM.vec3.dot(dir, normal) === 0) {
+          console.error("Ray is either parallel or within the plane.");
+          return null;
+        }
+
+        // Now, we check if our ray intersects with said plane.
+        // The equation of the plane will be:
+        //      a(x - x0) + b(y - y0) + c(z - z0) = 0 
+        //      where: a,b,c are normal vector components and x0, y0, z0 are the point we know the place passes through
+        // Simplified: Ax + By + Cz = Ax0 + By0 + Cz0 = D
+        const D = normal[0] * center[0] + normal[1] * center[1] + normal[2] * center[2];
+        // Now, we have: Ax + By + Cz = D for the plane. 
+        // For the lines, we have: 
+        //      p(t) = p1 + Nt 
+        //      where p(t) is an output point (x, y, or z), p1 is a known point on the line, N is the line's direction vector, 
+        //      and t is a parameter. For us, p1 = front, N = dir. 
+        // To find the intersection point, we rearrange the equation to calculate t
+        //      t = (D - Ax1 - By1 - Cz1) / (An + Bn + Cn)
+        const t = (D - normal[0] * front[0] - normal[1] * front[1] - normal[2] * front[2]) / (normal[0] * dir[0] + normal[1] * dir[1] + normal[2] * dir[2]);
+        
+        // Now, we substitute t back into the line equations to find the final point on the infinite plane
+        const worldPos = GLM.vec3.fromValues(front[0] + dir[0] * t, front[1] + dir[1] * t, front[2] + dir[2] * t);
+
+        // Now, we check if this point on the inifinte plane is beyond the bounds of the finite plane
+        // First, we get the coordinates of the bounds of the plane. These will be the center times 1/2 the scale.
+        // Then, we check bounds. We only need to check two bounds since they will always be aligned to one of the axis
+        let inBounds = false;
+        switch(i) {
+          case 0: // floor (y=0, e.g. [x, 0, z])
+            if (worldPos[0] < center[0] + halfScale[0] && worldPos[0] > center[0] - halfScale[0] && worldPos[2] < center[2] + halfScale[2] && worldPos[2] > center[2] - halfScale[2]) {
+              // in bounds
+              inBounds = true;
+            }
+            break;
+          case 1: // left (-x, e.g. [-5, y, z])
+          case 2: // right (+x, e.g. [5, y, z])
+            if (worldPos[1] < center[1] + halfScale[1] && worldPos[1] > center[1] - halfScale[1] && worldPos[2] < center[2] + halfScale[2] && worldPos[2] > center[2] - halfScale[2]) {
+              // in bounds
+              inBounds = true;
+            }
+            break;
+          case 3: // up (-z, e.g. [x, y, -5])
+          case 4: // down (+z, e.g. [x, y, 5])
+            if (worldPos[0] < center[0] + halfScale[0] && worldPos[0] > center[0] - halfScale[0] && worldPos[1] < center[1] + halfScale[1] && worldPos[1] > center[1] - halfScale[1]) {
+              // in bounds
+              inBounds = true;
+            }
+            break;
+        }
+
+        // If we've found a point where we're in bounds, then return the valid point.
+        if (inBounds) {
+          return worldPos;
+        }
     }
 
-    // update house array if we have removed an object
-    if (removed) {
-      this.house.renderableFeatures = copyArray;
-    }
-    
-    // Returns true if we have not found an object (the cell is valid), and false otherwise
-    return cellFree;
+    // If we've found no in bounds point after a full search, then return null for failure.
+    return null;
   }
 
   // Check if a block already exists in a cell without removing
