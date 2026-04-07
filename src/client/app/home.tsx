@@ -443,7 +443,7 @@ export default function HomeScreen() {
                   {!isLoading && (<View style={styles.countBadge}><Text style={styles.countBadgeText}>{households.length}</Text></View>)}
                 </View>
               </View>
-              <Text style={styles.listSubtitle}>Select a household to view and manage it</Text>
+              {!isLoading && !isEmpty && <Text style={styles.listSubtitle}>Select a household to view and manage it</Text>}
               {isLoading ? (
                 <Text style={styles.loadingText}>Loading your households...</Text>
               ) : isEmpty ? (
