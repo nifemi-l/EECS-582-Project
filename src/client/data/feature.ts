@@ -1,10 +1,11 @@
 /* PROLOGUE
 File name: feature.tsx
 Description: Class for a location in a home that has a task attached to it.
-Programmer: Delroy Wright
+Programmer: Delroy Wright, Jack Bauer
 Creation date: 2/13/26
 Revision date: 
   - 3/8/26: Updated to match Feature table in DDL, reference Task instead of Task
+  - 4/1/26: Add feature type enum and translation function
 Preconditions: A client is running and has access to the Feature class.
 Postconditions: An instantiated feature class.
 Errors: None.
@@ -15,19 +16,61 @@ Known faults: None
 
 import Task from "./task";
 
+export enum FeatureType {
+    UNDEFINED = 0,
+    BED = 1,
+    TABLE = 2,
+    MONKEY = 3,
+    FRAME = 4,
+}
+
+// Translate from a string feature type (as we often see in our app) to the correct enum value
+export function getFeatureTypeFromString(str: string) {
+    switch (str) {
+        case "monkey":
+            return FeatureType.MONKEY;
+        case "table":
+            return FeatureType.TABLE;
+        case "bed":
+            return FeatureType.BED;
+        case "frame":
+            return FeatureType.FRAME;
+        case "":
+        default:
+            return FeatureType.UNDEFINED;
+    }
+}
+
+// Translate from a feature type to a string (as we often see in our app) to the correct enum value
+export function getFeatureTypeToString(ft?: FeatureType) {
+    switch (ft) {
+        case FeatureType.BED:
+            return "bed";
+        case FeatureType.TABLE:
+            return "table";
+        case FeatureType.MONKEY:
+            return "monkey";
+        case FeatureType.FRAME:
+            return "frame";
+        case FeatureType.UNDEFINED:
+        default:
+            return "";
+    }
+}
+
 export default class Feature {
     id: number;
     household_id: number;
     feature_name: string;
     name: string; // for compatibility
-    feature_type: string;
+    feature_type: FeatureType;
     x_pos: number;
     y_pos: number;
     z_pos: number;
     tasks: Task[];
     icon: string; // for compatibility
 
-    constructor(feature_name: string, household_id: number, feature_type: string = "", x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline") {
+    constructor(feature_name: string, household_id: number, feature_type: FeatureType = FeatureType.UNDEFINED, x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline") {
         this.feature_name = feature_name;
         this.name = feature_name;
         this.household_id = household_id;

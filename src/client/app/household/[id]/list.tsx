@@ -15,6 +15,7 @@ Revision date:
   - 3/29/26: Replace AsyncStorage with Flask API calls, add mark-complete button,
              read household id from route params; replace hardcoded localhost URL
              with EXPO_PUBLIC_API_URL env variable
+  - 4/6/26: Convert to use FeatureType enum
 Preconditions: Flask server reachable at EXPO_PUBLIC_API_URL with the household's data in the DB
 Postconditions: Renders an interactive task list that stays in sync with the database
 Errors: Shows error state with retry button if API is unreachable
@@ -48,7 +49,7 @@ import { useLocalSearchParams } from "expo-router";
 
 // Import server classes
 import Task from "../../../data/task";
-import Feature from "../../../data/feature";
+import Feature, { FeatureType } from "../../../data/feature";
 
 // Import data helpers, types, presets, and storage utilities
 import {
@@ -758,7 +759,7 @@ export default function ListScreen() {
         icon,
       })
         .then(({ feature_id }) => {
-          const newLoc = new Feature(name, householdId, "", 0, 0, 0, feature_id, icon);
+          const newLoc = new Feature(name, householdId, FeatureType.UNDEFINED, 0, 0, 0, feature_id, icon);
           setFeatures((prev) => [...prev, newLoc]);
         })
         .catch(console.error);
