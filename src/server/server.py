@@ -29,7 +29,8 @@ CORS(app, resources={
     r"/*": {"origins": [
         "https://seehome.app",
         "https://www.seehome.app",
-        "http://localhost:8081"
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
     ]}
 })
 
