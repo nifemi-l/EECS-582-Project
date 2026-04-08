@@ -16,6 +16,7 @@ Revision date:
              read household id from route params; replace hardcoded localhost URL
              with EXPO_PUBLIC_API_URL env variable
   - 4/5/26: Add support for viewing next due date of a task
+  - 4/6/26: Convert to use FeatureType enum
 Preconditions: Flask server reachable at EXPO_PUBLIC_API_URL with the household's data in the DB
 Postconditions: Renders an interactive task list that stays in sync with the database
 Errors: Shows error state with retry button if API is unreachable
@@ -49,7 +50,7 @@ import { useLocalSearchParams } from "expo-router";
 
 // Import server classes
 import Task from "../../../data/task";
-import Feature from "../../../data/feature";
+import Feature, { FeatureType } from "../../../data/feature";
 
 // Import data helpers, types, presets, and storage utilities
 import {
@@ -766,7 +767,7 @@ export default function ListScreen() {
         icon,
       })
         .then(({ feature_id }) => {
-          const newLoc = new Feature(name, householdId, "", 0, 0, 0, feature_id, icon);
+          const newLoc = new Feature(name, householdId, FeatureType.UNDEFINED, 0, 0, 0, feature_id, icon);
           setFeatures((prev) => [...prev, newLoc]);
         })
         .catch(console.error);
@@ -819,9 +820,10 @@ export default function ListScreen() {
       </View>
 
       <ScrollView
-        style={styles.scroll}
+        style={[styles.scroll, styles.webScroll]}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator
+        persistentScrollbar
       >
         {features.map((loc) => (
           <FeatureGroup
@@ -852,6 +854,13 @@ const styles = StyleSheet.create({
     scroll: {
         flex: 1,
     },
+    webScroll: Platform.select({
+        web: {
+            overflowY: "scroll",
+            scrollbarGutter: "stable",
+        } as any,
+        default: {},
+    }),
     scrollContent: {
         padding: 16,
         paddingBottom: 48,

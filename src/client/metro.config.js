@@ -21,7 +21,8 @@ const config = getDefaultConfig(__dirname);
 // Add support for vertex and fragment shaders
 config.resolver.assetExts.push(
     'vert',
-    'frag'
+    'frag',
+    'obj'
 );
 
 module.exports = config;

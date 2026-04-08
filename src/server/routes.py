@@ -12,7 +12,7 @@ Postconditions: Flask routes are available for managing tasks, households, and u
 
 from flask import Blueprint, request, jsonify
 from db.db_commands import (
-    add_task, update_task, delete_task, get_task_by_id,
+    add_task, get_latest_env_data, update_task, delete_task, get_task_by_id,
     add_household, update_household, delete_household, get_household_by_id,
     add_account, update_account, delete_account, get_account_by_id,
     add_feature, update_feature, delete_feature, get_feature_by_id,
@@ -243,5 +243,17 @@ def remove_user(account_id):
     try:
         delete_account(account_id)
         return jsonify({"message": "User deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+# --- Sensor Data Route for querying household sensor data ---
+@routes_bp.route("/sensor-data/<int:household_id>", methods=["GET"])
+def get_sensor_data(household_id):
+    try:
+        data = get_latest_env_data(household_id)
+        return jsonify({
+            "temperature" : data[0],
+            "humidity" : data[1]
+        }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400

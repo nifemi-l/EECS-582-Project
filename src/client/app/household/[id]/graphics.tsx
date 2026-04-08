@@ -11,6 +11,7 @@ Revision date:
   - 3/18/26: Changed dependency locations to match restructure.
   - 3/28/26: Add remove feature, walls with visibility changes, edit mode and edit menu, floor resize, zoom
   - 3/29/26: Major refactor (split to graphicsUtils and renderUtils)
+  - 4/6/26: Convert to use FeatureType enum & support model loading
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -24,27 +25,34 @@ Known faults: None
 // ***********************************************************
 
 // Import required components
-import React, { useEffect, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useState, useSyncExternalStore, useRef } from 'react';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
 import * as GLM from 'gl-matrix';
-import { LayoutChangeEvent, Pressable, View, useWindowDimensions } from "react-native";
+import { LayoutChangeEvent, Pressable, View, useWindowDimensions, ActivityIndicator } from "react-native";
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@react-navigation/elements';
 import { Button, PaperProvider, Card, Menu, TextInput } from 'react-native-paper';
+import { useLocalSearchParams } from "expo-router";
 
 // Import graphics utilities
 import {
   MoveDirection, Tool,
   FEATURE_ORANGE, FEATURE_BLUE, FEATURE_GREEN, FEATURE_RED,
-  cellFromCoords
+  cellFromCoords, RenderPass,
+  getPixelFromRaw, getPickedObjectFromPointOnScreen,
+  setPixelFrustrum
 } from "../../../data/graphicsUtils"
 
 // Import renderer classes
 import {
-  RenderableFeature, Renderer
+  RenderableFeature, Renderer, FOV_RADIANS, NEAR_CLIP, FAR_CLIP
 } from "../../../data/renderUtils"
 
+// Import local api utilities
+import { fetchHouseholdFeatures } from "../../../data/api";
+import Feature, { getFeatureTypeFromString } from "../../../data/feature";
+import Task from "../../../data/task";
 
 // ***********************************************************
 //             Top Level UI / Interface Globals
@@ -98,24 +106,6 @@ function getSelectedEditFeature() {
   return rdr.selectedEditFeature;
 }
 
-// Given coordinates, select the feature in the house lists
-export function findAndSetSelectedFeature(cellX: number, cellY: number, cellZ: number) {
-  // iterate through house features. We do it in the order x, z, y since y should always be constant so far (we only support the xz plane)
-  // There should also only ever be one feature that matches
-  for (let i = 0; i < rdr.house.renderableFeatures.length; i++) {
-    if (rdr.house.renderableFeatures[i].x_pos != cellX || rdr.house.renderableFeatures[i].z_pos != cellZ || rdr.house.renderableFeatures[i].y_pos != cellY) {
-      continue;
-    } else {
-      // if this is already selected, deselect. Otherwise, select it
-      if (rdr.selectedEditFeature === rdr.house.renderableFeatures[i]) {
-        setSelectedEditFeature(null);
-      } else {
-        setSelectedEditFeature(rdr.house.renderableFeatures[i]);
-      }
-    }
-  }
-}
-
 // ***********************************************************
 //                  UI / Interface Utilities
 // ***********************************************************
@@ -143,8 +133,11 @@ function isUsingEditTool() {
 }
 
 // ***********************************************************
-//                      Gesture Handling
+//     Non-stateful Gesture Handling (for state, see Index)
 // ***********************************************************
+// NOTE: because these are defined outside the Ract state (at the top level of this file) they will always
+// retain the state they are created with. One way to address this is to use function to access external 
+// variables since the function pointers wont change. 
 
 // Define gesture handler function for panning and rotating the model
 const handlePan = Gesture.Pan()
@@ -176,34 +169,6 @@ const handlePan = Gesture.Pan()
     updateVelocityPan(0, 0);
     panYDir = 0;
   });
-
-// Handle screen taps (on web, clicks)
-const handleTap = Gesture.Tap() // Handle the tap gesture
-  .runOnJS(true) // Run on the main JS thread that the renderer runs on, not the UI thread
-  .maxDuration(250) // Limit the amount of time of taps so we can recognize more pans
-  .onFinalize((event, success) => { // When the tap event is done...
-    if (success) { 
-      // Convert our tap's position on the screen to world coordinates on the xz plane
-      const dims = getViewAndWindowDims();
-      const worldPos: GLM.vec3 | null = rdr.screenToWorldCoords(event.absoluteX, event.absoluteY, dims[0], dims[1], dims[2], dims[3]);
-      if (!worldPos) {
-        console.error("Unable to convert tap to world coordinates.");
-      } else {
-        // We have successfully found a world position from our tap, so figure out what cell we're in
-        const tappedCell = cellFromCoords(worldPos[0], worldPos[2]);
-        // Add to House or select depending on tool
-        if (isUsingEditTool()) {
-          findAndSetSelectedFeature(tappedCell[0], 0, tappedCell[1]);
-        } else {
-          rdr.addBlock(tappedCell[0], 0, tappedCell[1]);
-        }
-      }
-    }
-  })
-
-
-// Use a composed gesture to allow for both pan and tap gestures. It is exclusive in that we can't use them both
-const composedGesture = Gesture.Exclusive(handlePan, handleTap);
 
 // ***********************************************************
 //                      JSX And UI
@@ -349,7 +314,7 @@ function EditWindow() {
           <Card
             mode='contained'
           >
-            <Card.Title title={selectedFeature.feature_name}/>
+            <Card.Title title={selectedFeature.feature_name + "[" + selectedFeature.id + "]"}/>
             <Card.Actions>
               <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}><MaterialCommunityIcons name='arrow-left'/></Button>
               <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}><MaterialCommunityIcons name='arrow-right'/></Button>
@@ -394,12 +359,151 @@ function EditWindow() {
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
 // the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
 export default function Index() {
+  const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
+  const rdrRef = useRef(rdr);
+  useEffect(() => {
+    rdrRef.current = rdr;
+  }, [rdr]);
+
+  // capture mouse moves
+  useEffect(() => {
+    // Update the mouse position when it moves
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!rdrRef.current.glRef) {
+        return;
+      }
+
+      const pixelCoords = getPixelFromRaw(rdrRef.current.glRef, event.clientX, event.clientY, viewWidth, viewHeight, windowHeight); // convert mouse position to coordinates in the GL drawing buffer
+      setPixelFrustrum(rdrRef.current.glRef, rdr.cam.pixelPickFrustrum, FOV_RADIANS, NEAR_CLIP, FAR_CLIP, pixelCoords.pixelX, pixelCoords.pixelY);
+    }
+
+    // Register the mouse move listner
+    window.addEventListener('mousemove', handleMouseMove);
+
+    return () => {
+      // Destructor
+      window.removeEventListener('mousemove', handleMouseMove);
+    }
+  }, [])
+
+  ///////////////////////////
+  ///  Stateful Gestures  ///
+  ///////////////////////////
+
+  // Handle screen taps (on web, clicks)
+  const handleTap = Gesture.Tap() // Handle the tap gesture
+  .runOnJS(true) // Run on the main JS thread that the renderer runs on, not the UI thread
+  .maxDuration(250) // Limit the amount of time of taps so we can recognize more pans
+  .onFinalize((event, success) => { // When the tap event is done...
+    if (success) { 
+      const highlightedObjectID = rdrRef.current.highlightedFeatureID; // Get the highlighted feature ID
+      if (isUsingEditTool()) {
+        // If we're editing, 
+        //    1. Check if we're highlighting a feature. If we're not, do nothing
+        //    1A. If it's selected, deselect it. (Done)
+        //    1B. If it's not, select it. (Done)
+        if (!highlightedObjectID) { // 1: Check if we're highlighting an object
+          return; // if we're not, do nothing
+        } else {
+          // If we do have a highlighted object, check if it matches the selectedFeature
+          if (!selectedFeature || selectedFeature.id !== highlightedObjectID) {
+            // selectedFeature does not matched highlightedObject
+            for (const f of rdrRef.current.house.renderableFeatures) {
+              // Set the selectedFeature to match the highlighted object
+              if (f.id === highlightedObjectID) {
+                // We found the matching feature, so set it and we're done
+                setSelectedEditFeature(f);
+                break;
+              }
+            }
+          } else {
+            // selectedFeature matches the highlightedObject, so we deselect
+            setSelectedEditFeature(null);
+          }
+        }
+      } else {
+        // If we're not editing (placing features),
+        //    1. Check if we're highlighting a feature. If so, delete it and we're done.
+        //    2. If we're not highlighting a feature, check if our line intersects any of the walls or the floor. 
+        //    3. If we found a valid point, place a feature at that point. If not, we're done. 
+        if (!highlightedObjectID) {
+          // 2: We're not highlighting a feature, check if the line intersects the walls or the floor
+          const dims = getViewAndWindowDims();
+          const point = rdrRef.current.screenToWorldCoords(event.absoluteX, event.absoluteY, dims[0], dims[1], dims[2], dims[3]);
+          // 3: If we've found a valid point, place a feature at that point. Otherwise, do nothing. 
+          if (!point) {
+            return; // do nothing if we have not found a valid point
+          } else {
+            // If we did find a valid point, add the feature. 
+            rdrRef.current.placeFeature(point[0], point[1], point[2]);
+          }
+        } else {
+          // 1: We are highlighting a feature, so we just delete it.
+          rdrRef.current.deleteFeature(highlightedObjectID);
+          rdrRef.current.setHighlightedFeature(-1); // -1 effectively sets to null
+        }
+      }
+    }
+  });
+
+  // Use a composed gesture to allow for both pan and tap gestures. It is exclusive in that we can't use them both
+  const composedGesture = Gesture.Exclusive(handlePan, handleTap);
+
+  ///////////////////////////
+  ///  Index and similar  ///
+  ///////////////////////////
+
+  // From list.tsx (thanks Nifemi)
+  const { id } = useLocalSearchParams<{ id: string }>(); // get parameter from route
+  const householdId = Number(id) || 1;
+  const [featureFetchSuccess, setFeatureFetchSuccess] = useState(false);
+
+  // Reload the features of our housewhenever the household ID changes.
+  // Also mostly from list.tsx (thanks again Nifemi)
+  useEffect(() => {
+    fetchHouseholdFeatures(householdId)
+      .then((data: any[]) => {
+              // Convert the raw JSON objects into Feature/Task class instances
+              // so the health bar math and other methods still work
+              const mapped = data.map((f: any) => {
+                const feat = new Feature(
+                  f.feature_name,
+                  f.household_id,
+                  getFeatureTypeFromString(f.feature_type),
+                  f.x_pos, f.y_pos, f.z_pos,
+                  f.feature_id,
+                  f.icon || "home-outline"
+                );
+                feat.tasks = (f.tasks || []).map((t: any) => {
+                  const task = new Task(
+                    t.task_name,
+                    t.feature_id,
+                    t.frequency_days,
+                    t.icon || "clipboard-text-outline",
+                    t.visibility || "household",
+                    t.created_by_account_id,
+                    t.task_id
+                  );
+                  // Parse the ISO date string back into a Date object for health calculations
+                  task.last_completed = t.last_completed ? new Date(t.last_completed) : null;
+                  return task;
+                });
+                return feat;
+              });
+              rdrRef.current.setFeatures(householdId, mapped);
+              setFeatureFetchSuccess(true);
+            })
+      .catch((e) => {
+        console.error("Failed to fetch features for household", householdId, e);
+      });
+  }, [householdId]);
+
   // On component unmount, cancel our rendering loop
   useEffect(() => {
     return () => {
-      if (rdr.frameId !== null) {
-        cancelAnimationFrame(rdr.frameId);
-        rdr.frameId = null;
+      if (rdrRef.current.frameId !== null) {
+        cancelAnimationFrame(rdrRef.current.frameId);
+        rdrRef.current.frameId = null;
       }
     }
   }, []);
@@ -408,7 +512,8 @@ export default function Index() {
   windowWidth = useWindowDimensions().width; 
   windowHeight = useWindowDimensions().height;
   return (
-    <PaperProvider>
+    featureFetchSuccess ? (
+      <PaperProvider>
       <View
         onLayout={handleLayout}
         style={{
@@ -422,7 +527,7 @@ export default function Index() {
             width: "100%",
             height: "100%"
           }} 
-          onContextCreate={onContextCreate} 
+          onContextCreate={onContextCreate}
           />
         </GestureDetector>
 
@@ -430,6 +535,12 @@ export default function Index() {
         <ColorButtons />
       </View>
     </PaperProvider>
+    ) : (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        {/* Display a loading bar while we wait to fetch features */}
+        <ActivityIndicator size="large" />
+      </View>
+    )
   );
 }
 
@@ -444,7 +555,6 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 
   // Start drawing frames. This is a recursive animation function
   drawFrame(rdr.lastFrameTime);
-  console.log("Context initialized.");
 }
 
 // ***********************************************************
@@ -452,47 +562,62 @@ async function onContextCreate(gl: ExpoWebGLRenderingContext) {
 // ***********************************************************
 // This is the function that will be called every frame to draw a frame on in the WebGL context
 
+// Draw a frame including all wrapper routines
 function drawFrame(time: number) {
-    // Ensure we have a valid WebGL context
-    if (!rdr.glRef) {
-      console.log("No WebGL context.");
+    // Ensure we're ready to draw
+    if (!rdr.checkReadyToDraw() || !rdr.glRef || !rdr.vaoManager) {
+      console.error("Draw not ready.");
       return;
     }
 
-    // Ensure we're ready to draw
-    if (!rdr.checkReadyToDraw()) {
-      console.error("Draw not ready.");
-      return;
+    // Update the renderable features if necessary (e.g. they've changed since last frame because we've fetched from the database)
+    if (rdr.featuresDirty) {
+      rdr.updateFeatures();
     }
 
     // Check time and update frame time to get a delta for animation
     const delta = (time - rdr.lastFrameTime) / 1000;
     rdr.lastFrameTime = time;
 
-    // Prepare draw by clearing the screen and depth buffer
-    rdr.glRef.clear(rdr.glRef.COLOR_BUFFER_BIT | rdr.glRef.DEPTH_BUFFER_BIT);
+    // Render the scene once before the acual render so that we can know which object the user is currently highlighting
+    rdr.switchRenderpass(RenderPass.PICK_OBJECT);
+    renderScene(delta);
+    rdr.setHighlightedFeature(getPickedObjectFromPointOnScreen(rdr.glRef));
 
-    // For the cube draw calls, we need to switch to the correct vertex at  tribute and buffer configuration. 
+    // Call the render method to actually draw all objects
+    // For the cube draw calls, we need to switch to the correct vertex attribute and buffer configuration. 
     // This also updates our view matrix so we can rotate the world around
-    rdr.glRef.useProgram(rdr.shaderProgram); // use the household shader program
-    rdr.bindVAO(rdr.house.vao);
-
-    // Update rotation & zoom
-    rdr.updateViewMatrix(panVelocityX, panVelocityY, panYDir, delta);
-
-    // Update wall visibility according to angle
-    rdr.setWallVisibility();
-
-    // Draw the features of the house
-    rdr.drawFeatures();
-
-    // Draw the grid. 
-    rdr.drawGrid();
-
-    // Draw healthbars
-    rdr.drawHealthbars();
-
+    rdr.switchRenderpass(RenderPass.MAIN);
+    renderScene(delta);
+  
     // End frame and then request a new animation frame with this same method (recursive)
     rdr.glRef.endFrameEXP();
     rdr.frameId = window.requestAnimationFrame(drawFrame);
+}
+
+// actually call the render methods
+function renderScene(delta: number) {
+  // Ensure we have a valid WebGL context
+  if (!rdr.glRef) {
+    console.log("No WebGL context.");
+    return;
+  }
+
+  // Prepare draw by clearing the screen and depth buffer
+  rdr.glRef.clear(rdr.glRef.COLOR_BUFFER_BIT | rdr.glRef.DEPTH_BUFFER_BIT);
+
+  // Update rotation & zoom
+  rdr.updateViewMatrix(panVelocityX, panVelocityY, panYDir, delta);
+
+  // Update wall visibility according to angle
+  rdr.setWallVisibility();
+
+  // Draw the features of the house
+  rdr.drawFeatures();
+
+  // Draw the grid. 
+  rdr.drawGrid();
+
+  // Draw healthbars
+  rdr.drawHealthbars();
 }

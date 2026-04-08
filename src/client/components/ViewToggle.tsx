@@ -14,7 +14,7 @@ Known faults: None
 */
 
 // Import react and useState hook for tracking which sensor card is open
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 // Icon library for material design icons
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -30,24 +30,60 @@ type ViewMode = "3d" | "list";
 const ACCENT = "#4169E1";
 const ACCENT_LIGHT = "#e8eaf6";
 
-// Placeholder sensor data until we hook up the actual hardware readings
-const SENSORS: SensorBadgeProps[] = [
-  { icon: "thermometer", value: "72°F", label: "Temperature" }, // temp reading
-  { icon: "water-percent", value: "45%", label: "Humidity" }, // humidity reading
-  { icon: "gauge", value: "1013", label: "Pressure" }, // pressure reading
-  { icon: "volume-high", value: "30dB", label: "Noise" }, // noise level
-];
 
 // Props for the ViewToggle component
 interface ViewToggleProps {
   active: ViewMode; // which view is currently selected
   onChange: (mode: ViewMode) => void; // callback used by the parent layout to switch views
+  householdId: number; // ID of the household to fetch sensor data for
 }
 
 // Main toggle bar component at the top of the screen
-export default function ViewToggle({ active, onChange }: ViewToggleProps) {
+export default function ViewToggle({ active, onChange, householdId }: ViewToggleProps) {
   // Track which sensor detail card is open, null means all are closed
   const [openLabel, setOpenLabel] = useState<string | null>(null);
+
+  const [sensors, setSensors] = useState<SensorBadgeProps[]>([
+    { icon: "thermometer", value: "N/A", label: "Temperature" },
+    { icon: "water-percent", value: "N/A", label: "Humidity" },
+  ]);
+
+  useEffect(() => {
+    if (!householdId) return;
+
+    let isMounted = true;
+
+    async function loadSensorData() {
+      try {
+        const response = await fetch(
+          // Fetch the most recent sensor data for the household from the backend API
+          `${process.env.EXPO_PUBLIC_API_URL}/api/sensor-data/${householdId}`
+        );
+        // Store the response of the fetch request
+        const data = await response.json();
+
+        // If the data is invalid or the component is unmounted, ignore the response
+        if (!isMounted) return;
+        if (!data || data.temperature === undefined) return;
+
+        // Update the sensor badge values with the latest environment data
+        setSensors([
+          { icon: "thermometer", value: `${data.temperature}°C`, label: "Temperature" },
+          { icon: "water-percent", value: `${data.humidity}%`, label: "Humidity" },
+        ]);
+        // If a fetch error occurs, just continue using the most recently successfully fetched data
+      } catch (_error) {
+      }
+    }
+
+    // Initial load of the page or every minute after queries for new sensor data
+    loadSensorData();
+    const interval = setInterval(loadSensorData, 60_000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [householdId]);
 
   // Handle switching between views
   const navigate = (mode: ViewMode) => {
@@ -114,7 +150,7 @@ export default function ViewToggle({ active, onChange }: ViewToggleProps) {
         {/* Sensor badges displayed to the right of the pill */}
         <View style={styles.sensors}>
           {/* Loop through each sensor and render a badge for it */}
-          {SENSORS.map((s) => (
+          {sensors.map((s) => (
             <SensorBadge
               key={s.label}
               icon={s.icon}
