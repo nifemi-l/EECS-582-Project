@@ -52,6 +52,7 @@ export const MESH_PATH_MAP: MeshPathMap = {
   "monkey": require("../assets/models/Monkey.obj"),
   "bed": require("../assets/models/bed.obj"),
   "table": require("../assets/models/table.obj"),
+  "frame": require("../assets/models/frame.obj"),
 };
 
 // ***********************************************************
@@ -617,6 +618,8 @@ export function getMeshFromType(ft: FeatureType) {
       return "table";
     case FeatureType.MONKEY:
       return "monkey";
+    case FeatureType.FRAME:
+      return "frame";
   }
 }
 

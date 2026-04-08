@@ -21,6 +21,7 @@ export enum FeatureType {
     BED = 1,
     TABLE = 2,
     MONKEY = 3,
+    FRAME = 4,
 }
 
 // Translate from a string feature type (as we often see in our app) to the correct enum value
@@ -32,6 +33,8 @@ export function getFeatureTypeFromString(str: string) {
             return FeatureType.TABLE;
         case "bed":
             return FeatureType.BED;
+        case "frame":
+            return FeatureType.FRAME;
         case "":
         default:
             return FeatureType.UNDEFINED;
@@ -47,6 +50,8 @@ export function getFeatureTypeToString(ft?: FeatureType) {
             return "table";
         case FeatureType.MONKEY:
             return "monkey";
+        case FeatureType.FRAME:
+            return "frame";
         case FeatureType.UNDEFINED:
         default:
             return "";
