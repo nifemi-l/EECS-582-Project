@@ -162,15 +162,18 @@ Create a relation for storing the sensor data. "Environmentaldata"
     Attributes:
         data_id : Primary key for identifying a data sample
         household_id : Links a data sample to the household it is a measurement for
-        temperature_C : The temperature reading from the Enviro+ sensor, in degrees Celcius
-        relative_humidity : The relative humidity reading from the Enviro+ sensor
+        temperature_C : The temperature reading from the Enviro+ sensor, in degrees Celcius (rounded to nearest int)
+        relative_humidity : The relative humidity reading from the Enviro+ sensor (rounded to nearest whole percent)
         recorded_at : The timestamp that the sensor readings took place at
 */
 
+/* Update temperature and relative humidity from floats to ints? */
 CREATE TABLE IF NOT EXISTS EnvironmentalData (
     data_id SERIAL PRIMARY KEY,
     household_id INTEGER REFERENCES Household(household_id) ON DELETE CASCADE,
-    temperature_C FLOAT,
-    relative_humidity FLOAT,
+    temperature_C INTEGER,
+    relative_humidity INTEGER,
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+

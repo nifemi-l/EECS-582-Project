@@ -386,6 +386,29 @@ def get_features_with_tasks(household_id):
         result.append(feature_dict)
     return result
 
+
+# Get the most recent environmental data readings from the Enviro+ sensor
+def get_latest_env_data(household_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT temperature_C, relative_humidity, recorded_at
+            FROM EnvironmentalData
+            WHERE household_id = %s
+            ORDER BY recorded_at DESC
+            LIMIT 1
+            """, (household_id,))
+        return cursor.fetchone()
+
+# Deletes all environmental data related to a household over 1 day old to keep the db efficient
+def delete_old_env_data_by_household_id(household_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            DELETE FROM EnvironmentalData
+            WHERE household_id = %s
+            AND recorded_at < NOW() - INTERVAL '1 day';)
+        """, (household_id,))
+        conn.commit()
+
 """
 Functions for updating data
 """

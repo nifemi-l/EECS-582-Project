@@ -67,6 +67,10 @@ const SENSOR_META: Record<string, SensorMeta> = {
       { max: Infinity, rank: "Very Humid", color: "#f44336", explanation: "Excess moisture" },
     ],
   },
+
+
+  /*
+
   // Atmospheric pressure in hectopascals
   Pressure: {
     measures: "Atmospheric pressure in hPa",
@@ -99,6 +103,7 @@ const SENSOR_META: Record<string, SensorMeta> = {
       { max: Infinity, rank: "Very Loud", color: "#f44336", explanation: "May cause discomfort" },
     ],
   },
+  */
 };
 
 // Take a label and value string, return the matching bucket or a fallback

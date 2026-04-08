@@ -25,6 +25,7 @@ import ViewToggle from "../../../components/ViewToggle";
 export default function HouseholdLayout() {
   // Read the household id from the dynamic route so toggle navigation stays in the same household
   const { id } = useLocalSearchParams<{ id: string }>();
+  const householdId = Number(id);
   // Determine the current household sub-route so we know which segment is active
   const pathname = usePathname();
   const isList = pathname === `/household/${id}/list`; // true on the list screen, false on graphics
@@ -51,7 +52,7 @@ export default function HouseholdLayout() {
     // Shared household shell: one toggle for both graphics and list routes
     <View style={styles.container}>
       {/* Household layout owns the toggle for /household/[id]/graphics and /household/[id]/list */}
-      <ViewToggle active={active} onChange={handleToggle} />
+      <ViewToggle active={active} onChange={handleToggle} householdId={householdId} />
       {/* Slot swaps in the matched household route's component below the toggle */}
       <Slot />
     </View>
