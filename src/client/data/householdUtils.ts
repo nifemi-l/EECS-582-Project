@@ -32,8 +32,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export function healthPercent(task: Task): number {
   const now = Date.now(); // current time in ms
   let rawLast = task.last_completed; // last completion in ms
-  if (!rawLast) 
-       rawLast = new Date;
 
   if (!rawLast) return 0;
 

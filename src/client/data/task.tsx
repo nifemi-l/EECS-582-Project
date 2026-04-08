@@ -44,7 +44,6 @@ export default class Task {
         visibility: TaskVisibility = TaskVisibility.Household,
         created_by_account_id: number | null = null,
         task_id: number = 0,
-        last_completed : Date | null = null
     ) {
         this.task_name = task_name;
         this.name = task_name;

@@ -15,6 +15,7 @@ Revision date:
   - 3/29/26: Replace AsyncStorage with Flask API calls, add mark-complete button,
              read household id from route params; replace hardcoded localhost URL
              with EXPO_PUBLIC_API_URL env variable
+  - 4/5/26: Add support for viewing next due date of a task
 Preconditions: Flask server reachable at EXPO_PUBLIC_API_URL with the household's data in the DB
 Postconditions: Renders an interactive task list that stays in sync with the database
 Errors: Shows error state with retry button if API is unreachable
@@ -134,11 +135,7 @@ function TaskRow({
 
       <View style={styles.taskInfo}>
         <Text style={styles.taskName} numberOfLines={1}>
-            <pre style={styles.taskLastCompletedText} >
-          {task.name}  -  Last Completed: {task.last_completed === null 
-              ? "Never Complete"
-              : `${task.last_completed.toLocaleString()}`}
-            </pre>
+          {task.name}  
         </Text>
         <HealthBar task={task} />
         <Text style={styles.taskDueText}> 
@@ -718,14 +715,14 @@ export default function ListScreen() {
         frequency_days: freqDays,
         icon,
         visibility: "household",
-        last_completed: null,
+        last_completed: now.toISOString(),
       })
         .then(({ task_id }) => {
           const newTask = new Task(name, featureId, freqDays, icon);
           // Use the id the database gave us so future operations reference the right row
           newTask.id = task_id;
           // Mirror the last_completed sent to the server so the health bar starts at 100%
-          newTask.last_completed = null;
+          newTask.last_completed = now;
           setFeatures((prev) =>
             prev.map((loc) =>
               loc.id === featureId
@@ -987,12 +984,6 @@ const styles = StyleSheet.create({
         color: "#333",
         marginBottom: 4,
     },    
-    taskLastCompletedText: {
-        fontSize: 12,
-        fontWeight: "300",
-        color: "#555",
-        marginBottom: 4,
-    },
     completeBtn: {
         padding: 6,
         marginLeft: 4,

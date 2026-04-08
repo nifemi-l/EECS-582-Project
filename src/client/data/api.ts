@@ -100,7 +100,7 @@ export async function createTask(data: {
   visibility?: string;
   created_by_account_id?: number | null;
   icon?: string;
-  last_completed:  null;
+  last_completed:  string | null;
 }): Promise<{ task_id: number }> {
   const res = await fetch(`${API_BASE}/task`, {
     method: "POST",
