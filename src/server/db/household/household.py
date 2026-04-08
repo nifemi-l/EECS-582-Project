@@ -15,7 +15,7 @@ Known faults: None
 
 # Imports
 from flask import Blueprint, request, jsonify
-from db.auth.auth_utils import get_current_account_id
+from db.auth.auth_utils import get_current_account_id, decode_bearer_token
 from db.db_commands import (create_household, add_account_to_household, get_households_for_account, get_household_by_join_code, is_account_in_household)
 
 
@@ -46,6 +46,11 @@ def create_household_route():
 
         # The creator is automatically inserted into the membership table as an admin
         add_account_to_household(account_id, household["household_id"], "admin")
+
+        # Include the admin's username so the client always shows it by name
+        payload, _ = decode_bearer_token()
+        if payload:
+            household["admin_name"] = payload.get("username")
 
         return jsonify({
             "message": "Household created successfully",
