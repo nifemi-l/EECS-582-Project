@@ -15,6 +15,7 @@ Revision date:
   - 3/29/26: Replace AsyncStorage with Flask API calls, add mark-complete button,
              read household id from route params; replace hardcoded localhost URL
              with EXPO_PUBLIC_API_URL env variable
+  - 4/5/26: Add support for viewing next due date of a task
   - 4/6/26: Convert to use FeatureType enum
 Preconditions: Flask server reachable at EXPO_PUBLIC_API_URL with the household's data in the DB
 Postconditions: Renders an interactive task list that stays in sync with the database
@@ -58,6 +59,7 @@ import {
   TASK_ICONS,
   TASK_PRESETS,
   healthPercent,
+  daysUntilNextDue,
   healthColor,
 } from "../../../data/householdUtils";
 
@@ -134,9 +136,15 @@ function TaskRow({
 
       <View style={styles.taskInfo}>
         <Text style={styles.taskName} numberOfLines={1}>
-          {task.name}
+          {task.name}  
         </Text>
         <HealthBar task={task} />
+        <Text style={styles.taskDueText}> 
+        Time Until Due: 
+            <Text style={[styles.taskDueText, { color: healthColor(task.healthPercent)}]} >
+                {daysUntilNextDue(task)} days left              
+            </Text>
+        </Text>
       </View>
 
       {/* Green check button to mark task as done (resets the health bar to 100%) */}
@@ -979,6 +987,12 @@ const styles = StyleSheet.create({
         color: "#333",
         marginBottom: 4,
     },
+    taskDueText :{
+        fontSize: 12,
+        fontWeight: "300",
+        color: "#333",
+        marginBottom: 4,
+    },    
     completeBtn: {
         padding: 6,
         marginLeft: 4,
