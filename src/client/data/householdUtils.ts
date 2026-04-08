@@ -31,7 +31,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // Returns 0 if overdue and 1 if just completed
 export function healthPercent(task: Task): number {
   const now = Date.now(); // current time in ms
-  let rawLast = task.last_completed; // last completion in ms
+  const rawLast = task.last_completed; // last completion in ms
 
   if (!rawLast) return 0;
 
