@@ -264,11 +264,6 @@ function EditWindow() {
   // The frequency update value we want to store for updates
   const [newFrequency, setNewFrequency] = useState("");
 
-  // Reset selectedChore index if needed
-  if ((selectedFeature !== null && selectedChore >= selectedFeature.tasks.length)) {
-    setSelectedChore(0);
-  }
-
   return (
     <View 
       style={{
@@ -327,26 +322,29 @@ function EditWindow() {
                 <Button onPress={() => {setSelectedChore((selectedChore + 1) % selectedFeature.tasks.length)}}>Cycle chore: Selected {selectedChore}</Button>
               </Card.Actions>
             ) : null}
+            {/* Display chore related functionality if needed */}
+            {selectedFeature.tasks.length > 0 ? (
               <Card.Actions>
-                {/* The menu for updating intervals */}
-                <Menu
-                  visible={isEditing && selectedFeature !== null && showIntervalMenu}
-                  onDismiss={() => {setShowIntervalMenu(false); setNewFrequency("0")}}
-                  anchor={<Button onPress={() => {setShowIntervalMenu(true)}}>Set interval</Button>}
-                >
-                  <TextInput label="The interval in days..." mode="outlined" value={newFrequency} keyboardType='numeric'
-                    onChangeText={(t) => {
-                      // Convert our input to a number, check if it is not a number, then apply changes if we have valid input
-                      const fixed = Number(t);
-                      if (!Number.isNaN(fixed)) {
-                        selectedFeature.tasks[selectedChore].changeFrequency(fixed)}
-                        setNewFrequency(t);
-                      }
-                    }>
-                  </TextInput>
-                </Menu>
-                <Button onPress={() => {selectedFeature.tasks[selectedChore].finishTask();}}>Mark complete!</Button>
-              </Card.Actions>
+                  {/* The menu for updating intervals */}
+                  <Menu
+                    visible={isEditing && selectedFeature !== null && showIntervalMenu}
+                    onDismiss={() => {setShowIntervalMenu(false); setNewFrequency("0")}}
+                    anchor={<Button onPress={() => {setShowIntervalMenu(true)}}>Set interval</Button>}
+                  >
+                    <TextInput label="The interval in days..." mode="outlined" value={newFrequency} keyboardType='numeric'
+                      onChangeText={(t) => {
+                        // Convert our input to a number, check if it is not a number, then apply changes if we have valid input
+                        const fixed = Number(t);
+                        if (!Number.isNaN(fixed)) {
+                          selectedFeature.tasks[selectedChore].changeFrequency(fixed)}
+                          setNewFrequency(t);
+                        }
+                      }>
+                    </TextInput>
+                  </Menu>
+                  <Button onPress={() => {selectedFeature.tasks[selectedChore].finishTask();}}>Mark complete!</Button>
+                </Card.Actions>
+            ) : null}
           </Card>
         ) : isEditing && !selectedFeature ? (
           <Text style={{color: "red"}}>Select a feature to edit</Text>
