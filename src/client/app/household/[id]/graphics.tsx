@@ -24,6 +24,9 @@ Known faults: None
 //                      Needed Imports
 // ***********************************************************
 
+// Prevents URL changing to bypass login.
+import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
+
 // Import required components
 import React, { useEffect, useState, useSyncExternalStore, useRef } from 'react';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
@@ -357,6 +360,16 @@ function EditWindow() {
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
 // the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
 export default function Index() {
+  const { isCheckingAuth, isAuthenticated } = useAuthGuard();
+
+  if (isCheckingAuth || !isAuthenticated) {
+    return <AuthLoadingScreen />;
+  }
+
+  return <AuthenticatedGraphicsScreen />;
+}
+
+function AuthenticatedGraphicsScreen() {
   const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
   const rdrRef = useRef(rdr);
   useEffect(() => {

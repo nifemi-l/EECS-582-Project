@@ -30,6 +30,8 @@ Known faults: None
 //TODO: make all ids use numbers 
 //TODO: fix highlight not working
 
+// Prevents URL changing to bypass login.
+import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
 // Import react hooks we need for state, lifecycle, and performance
 import React, { useCallback, useEffect, useRef, useState } from "react";
 // Import RN components for building the UI
@@ -598,6 +600,16 @@ function AddSectionRow({
 
 // Main list screen (connected to the database via the Flask API) 
 export default function ListScreen() {
+  const { isCheckingAuth, isAuthenticated } = useAuthGuard();
+
+  if (isCheckingAuth || !isAuthenticated) {
+    return <AuthLoadingScreen />;
+  }
+
+  return <AuthenticatedListScreen />;
+}
+
+function AuthenticatedListScreen() {
   // Grab the household id from the route (e.g. /household/3/list -> id = "3")
   const { id } = useLocalSearchParams<{ id: string }>();
   const householdId = Number(id) || 1; // fallback to 1 if somehow missing
