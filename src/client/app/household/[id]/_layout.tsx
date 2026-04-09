@@ -15,14 +15,23 @@ Invariants: None
 Known faults: None
 */
 
-// Slot renders the matched household child route with no extra stack wrapper
+
 import { Slot, useLocalSearchParams, usePathname, router } from "expo-router";
-// Basic React Native building blocks for the shared household shell
 import { StyleSheet, View } from "react-native";
-// Shared toggle bar between the 3D and list views
 import ViewToggle from "../../../components/ViewToggle";
+import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
 
 export default function HouseholdLayout() {
+  const { isCheckingAuth, isAuthenticated } = useAuthGuard();
+
+  if (isCheckingAuth || !isAuthenticated) {
+    return <AuthLoadingScreen />;
+  }
+
+  return <AuthenticatedHouseholdLayout />;
+}
+
+function AuthenticatedHouseholdLayout() {
   // Read the household id from the dynamic route so toggle navigation stays in the same household
   const { id } = useLocalSearchParams<{ id: string }>();
   const householdId = Number(id);

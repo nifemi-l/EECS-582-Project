@@ -15,6 +15,7 @@ Known faults: None.
 */
 
 import React, { useEffect, useMemo, useState } from "react";
+import { AuthLoadingScreen, useAuthGuard } from "../utils/useAuthGuard";
 import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
@@ -73,6 +74,16 @@ async function saveHouseholdOrder(ids: string[]) {
 }
 
 export default function HomeScreen() {
+  const { isCheckingAuth, isAuthenticated } = useAuthGuard();
+
+  if (isCheckingAuth || !isAuthenticated) {
+    return <AuthLoadingScreen />;
+  }
+
+  return <AuthenticatedHomeScreen />;
+}
+
+function AuthenticatedHomeScreen() {
 
   // Local in-memory list of households bound to the view; this is filled by API calls
   const [households, setHouseholds] = useState<HouseholdSummary[]>([]);
@@ -347,7 +358,9 @@ export default function HomeScreen() {
       {/* --- Top Navbar --- */}
       <View style={styles.navbar}>
         <View style={styles.navLeft}>
-          <MaterialCommunityIcons name="home" size={28} color="#FFFFFF" style={{ marginRight: 8 }} />
+          <View style={styles.logoBox}>
+            <MaterialCommunityIcons name="home" size={28} color="#FFFFFF" />
+          </View>
           <Text style={styles.navBrand}>HomeSeeHome</Text>
         </View>
         <View style={styles.navRight}>
@@ -510,7 +523,20 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F0F2F5" },
   navbar: { height: 68, backgroundColor: "#2D4A7A", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20 },
   navLeft: { flexDirection: "row", alignItems: "center" },
-  navLogo: { width: 92, height: 92, marginRight: -14 },
+  logoBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#3B5FA0",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+    shadowColor: "#1A2B4D",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 2,
+  },
   navBrand: { color: "#FFFFFF", fontSize: 18, fontWeight: "700", letterSpacing: 0.3 },
   navRight: { flexDirection: "row", alignItems: "center", gap: 20 },
   navLink: { flexDirection: "row", alignItems: "center", gap: 5 },
