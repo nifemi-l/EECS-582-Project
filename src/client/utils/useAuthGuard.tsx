@@ -1,3 +1,16 @@
+/* PROLOGUE
+File name: useAuthGuard.tsx
+Description: Provides a React hook and loading screen for authentication guarding.
+Programmers: Logan Smith
+Creation date: 4/9/26
+Revision date: N/A
+Preconditions: A React component calls the useAuthGuard hook to protect its content and redirect unauthenticated users to the login screen.
+Postconditions: The hook returns the authentication status and whether it's still checking, allowing the component to conditionally render content or a loading screen.
+Side effects: None
+Invariants: None
+Known faults: None
+*/
+
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";

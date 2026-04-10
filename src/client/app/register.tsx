@@ -10,7 +10,7 @@ Postconditions: A registration screen component is ready for rendering; successf
 Errors: None
 Side effects: None
 Invariants: None
-Known faults: Backend persistence is not implemented yet; registration does not store user data.
+Known faults: None
 */
 
 

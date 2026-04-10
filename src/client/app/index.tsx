@@ -5,6 +5,7 @@ Programmer: Logan Smith
 Creation date: 2/6/26
 Revision date:
   - 2/14/26: Change index route to redirect to /login so authentication becomes the landing flow.
+  - 4/9/26: Add AuthGuard to protect the screen and redirect unauthenticated users to login
 Preconditions: A React application requesting the default route ("/")
 Postconditions: The user is redirected to the login screen route
 Errors: If routing fails, the user may remain on the default route without navigation.

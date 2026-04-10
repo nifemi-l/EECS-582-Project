@@ -6,6 +6,7 @@ Programmers: Blake Carlson, Logan Smith
 Creation date: 2/22/26
 Revision date: 
     - 3/19/26: Added create_household, make_household_join_code, add_account_to_household, get_household_by_join_code, is_account_in_household, and get_households_for_account
+    - 4/10/26: Added get_account_role_in_household, remove_account_from_household, get_members_for_household, and transfer_admin_in_household
 Preconditions: Environment variables for database credentials are defined in .env; PostgreSQL database is running and accessible.
 Postconditions: A database connection is established and utility functions are available for performing CRUD operations on Household, Account, Feature, and Task relations.
 Errors: Database connection may fail due to invalid credentials, unreachable host, or server-side errors; SQL execution errors may occur if schema constraints are violated.
@@ -187,6 +188,61 @@ def is_account_in_household(account_id, household_id):
         """, (account_id, household_id))
         result = cursor.fetchone()
     return bool(result)
+
+# Return the role an account holds in a specific household, or None if not a member
+def get_account_role_in_household(account_id, household_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT role FROM HouseholdMember
+            WHERE account_id = %s AND household_id = %s
+        """, (account_id, household_id))
+        row = cursor.fetchone()
+    return row[0] if row else None
+
+# Remove an account from a household's membership table
+def remove_account_from_household(account_id, household_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            DELETE FROM HouseholdMember
+            WHERE account_id = %s AND household_id = %s
+        """, (account_id, household_id))
+    conn.commit()
+
+# Transfer admin role in a household: old admin becomes a member, target becomes admin
+def transfer_admin_in_household(new_admin_account_id, household_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            UPDATE HouseholdMember SET role = 'member'
+            WHERE household_id = %s AND role = 'admin'
+        """, (household_id,))
+        cursor.execute("""
+            UPDATE HouseholdMember SET role = 'admin'
+            WHERE account_id = %s AND household_id = %s
+        """, (new_admin_account_id, household_id))
+    conn.commit()
+
+# Return all members of a household with their name, role, and joined_at date
+def get_members_for_household(household_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT a.account_id, a.account_name, hm.role, hm.joined_at
+            FROM HouseholdMember hm
+            JOIN Account a ON hm.account_id = a.account_id
+            WHERE hm.household_id = %s
+            ORDER BY
+                CASE WHEN hm.role = 'admin' THEN 0 ELSE 1 END,
+                hm.joined_at ASC
+        """, (household_id,))
+        rows = cursor.fetchall()
+    return [
+        {
+            "account_id": row[0],
+            "account_name": row[1],
+            "role": row[2],
+            "joined_at": row[3].isoformat() if row[3] else None,
+        }
+        for row in rows
+    ]
 
 # Resolve a task_id to its household_id by joining through Feature
 # Used by routes to check household membership before mutating a task
@@ -504,10 +560,34 @@ def update_household(household_id, household_name):
     with conn.cursor() as cursor:
         cursor.execute("""
             UPDATE Household
-            SET household_name = %s
+            SET household_name = %s, updated_at = NOW()
             WHERE household_id = %s
+            RETURNING household_id, household_name, join_code, updated_at
         """, (household_name, household_id,))
+        row = cursor.fetchone()
     conn.commit()
+    if not row:
+        return None
+    return {"household_id": row[0], "household_name": row[1], "join_code": row[2], "updated_at": row[3]}
+
+def regenerate_join_code(household_id):
+    with conn.cursor() as cursor:
+        while True:
+            new_code = make_household_join_code(8)
+            try:
+                cursor.execute("""
+                    UPDATE Household
+                    SET join_code = %s, updated_at = NOW()
+                    WHERE household_id = %s
+                    RETURNING household_id, household_name, join_code, updated_at
+                """, (new_code, household_id,))
+                row = cursor.fetchone()
+                conn.commit()
+                break
+            except psycopg2.errors.UniqueViolation:
+                conn.rollback()
+                continue
+    return {"household_id": row[0], "household_name": row[1], "join_code": row[2], "updated_at": row[3]}
 
 # Update task details (name, frequency, visibility, and icon are optional so we don't overwrite them if not provided)
 def update_task(task_id, task_name, frequency_days, visibility, icon=None):
