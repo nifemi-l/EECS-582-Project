@@ -1,7 +1,7 @@
 /* PROLOGUE
 File name: graphics.tsx
 Description: Provide a home page with a WebGL context for graphical rendering
-Programmer: Jack Bauer
+Programmer: Jack Bauer, Logan Smith
 Creation date: 2/15/26
 Revision date: 
   - 2/15/26: Move graphical context and related code from index.tsx to here. Add comments. 
@@ -12,6 +12,7 @@ Revision date:
   - 3/28/26: Add remove feature, walls with visibility changes, edit mode and edit menu, floor resize, zoom
   - 3/29/26: Major refactor (split to graphicsUtils and renderUtils)
   - 4/6/26: Convert to use FeatureType enum & support model loading
+  - 4/9/26: Add AuthGuard to protect the screen and redirect unauthenticated users to login
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 

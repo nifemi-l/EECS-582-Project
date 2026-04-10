@@ -5,6 +5,7 @@ Programmers: Logan Smith, Nifemi Lawal
 Creation date: 2/14/26
 Revision date:
   - 3/29/26: Replace hardcoded localhost URL with EXPO_PUBLIC_API_URL env variable
+  - 4/9/26: Add AuthGuard to protect the screen and redirect unauthenticated users to login
 Preconditions: A React application requesting the login screen route ("/login")
 Postconditions: A login screen component is ready for rendering; on sign-in, user is navigated to /home
 Errors: None
