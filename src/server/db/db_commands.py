@@ -534,3 +534,4 @@ def update_account(account_id, account_name, email):
             WHERE account_id = %s
         """, (account_name, email, account_id,))
     conn.commit()
+

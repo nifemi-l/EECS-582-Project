@@ -4,6 +4,7 @@ Description: Provide cross-platform token storage utilities for authentication (
 Programmer: Logan Smith
 Creation date: 3/1/26
 Revision date: 
+    - 4/10/26 Delroy Wright: Add storge of encryption key
 Preconditions: An Expo/React application that uses JWT authentication and needs to persist an auth token between app launches; required storage dependencies are installed.
 Postconditions: Utility functions are available for saving, retrieving, and clearing the auth token in a platform-appropriate storage backend.
 Errors: None
@@ -38,6 +39,33 @@ export async function getToken(): Promise<string | null> {
 
 // Delete token (logout)
 export async function clearToken(): Promise<void> {
+  if (Platform.OS === "web") {
+    await AsyncStorage.removeItem(TOKEN_KEY);
+  } else {
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
+  }
+}
+
+// TODO: Store Encryption Key 
+export async function saveKey(key: string): Promise<void> {
+  if (Platform.OS === "web") {
+    await AsyncStorage.setItem(TOKEN_KEY, key);
+  } else {
+    await SecureStore.setItemAsync(TOKEN_KEY, key);
+  }
+}
+
+// TODO: Retrieve Encryption Key 
+export async function getKey(): Promise<string | null> {
+  if (Platform.OS === "web") {
+    return await AsyncStorage.getItem(TOKEN_KEY);
+  } else {
+    return await SecureStore.getItemAsync(TOKEN_KEY);
+  }
+}
+
+// TODO: Delete Encryption Key
+export async function clearKey(): Promise<void> {
   if (Platform.OS === "web") {
     await AsyncStorage.removeItem(TOKEN_KEY);
   } else {

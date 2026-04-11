@@ -18,7 +18,7 @@ import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-nativ
 import { router, useLocalSearchParams } from "expo-router";
 import { useState, useEffect } from "react";
 import { saveToken } from "../utils/authStorage";
-
+import { deriveKey } from "../utils/encryptionUtils"
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 // Local state for the email and password text boxes
@@ -81,6 +81,7 @@ export default function LoginScreen() {
       }
 
       // Successful login
+      const key = useCrypto
       router.replace("/home");
 
     } catch (error: any) {
