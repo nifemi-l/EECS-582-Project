@@ -52,7 +52,6 @@ export async function fetchHouseholdFeaturesEncrypted(
 }
 
 export async function createHousehold(data: { household_name: string }) {
-  const password = getVaultPassword();
   const encrypted = await encryptData(data.household_name);
 
   const res = await fetch(`${API_BASE}/household`, {
@@ -78,7 +77,6 @@ export async function createFeature(data: {
   z_pos: number;
   icon?: string;
 }) {
-  const password = getVaultPassword();
   const encName = await encryptData(data.feature_name);
   const encType = await encryptData(data.feature_type);
 
@@ -99,7 +97,6 @@ export async function createFeature(data: {
 }
 
 export async function updateFeature(featureId: number, data: { feature_name?: string }) {
-  const password = getVaultPassword();
   let payload: any = {};
 
   if (data.feature_name) {
@@ -124,7 +121,6 @@ export async function createTask(data: {
   visibility?: string;
   icon?: string;
 }) {
-  const password = getVaultPassword();
   const enc = await encryptData(data.task_name);
 
   const res = await fetch(`${API_BASE}/task`, {
