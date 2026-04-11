@@ -24,7 +24,7 @@ export const getSessionPassword = async (password: string) => {
 };
 
 // Turns password + salt into a 256-bit AES key
-const deriveKey = async (password: string, salt: Uint8Array) => {
+export const deriveKey = async (password: string ) => {
   const passwordKey = await window.crypto.subtle.importKey(
     "raw", encoder.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
   );
@@ -42,31 +42,26 @@ export const encryptData = async (plainText: string) => {
   const password = window.sessionStorage.getItem('vault_secret');
   if (!password) throw new Error("Vault is locked");
 
-  const salt = window.crypto.getRandomValues(new Uint8Array(16));
-  const iv = window.crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveKey(password, salt);
+  const key = await deriveKey(password);
 
   const encrypted = await window.crypto.subtle.encrypt(
-    { name: "AES-GCM", iv }, key, encoder.encode(plainText)
+    { name: "AES-GCM" }, key, encoder.encode(plainText)
   );
 
   return {
     ciphertext: btoa(String.fromCharCode(...new Uint8Array(encrypted))),
-    salt: btoa(String.fromCharCode(...salt)),
-    iv: btoa(String.fromCharCode(...iv)),
   };
 };
 
-export const decryptData = async (ciphertextB64: string, saltB64: string, ivB64: string) => {
+export const decryptData = async (ciphertextB64: string) => {
   const password = window.sessionStorage.getItem('vault_secret');
   if (!password) throw new Error("Vault is locked");
 
   const ciphertext = Uint8Array.from(atob(ciphertextB64), c => c.charCodeAt(0));
-  const salt = Uint8Array.from(atob(saltB64), c => c.charCodeAt(0));
-  const iv = Uint8Array.from(atob(ivB64), c => c.charCodeAt(0));
 
-  const key = await deriveKey(password, salt);
-  const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+  const key = await deriveKey(password);
+  const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", }, key, ciphertext);
   
   return new TextDecoder().decode(decrypted);
 };
+

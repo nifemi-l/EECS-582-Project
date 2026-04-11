@@ -19,6 +19,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useState, useEffect } from "react";
 import { saveToken } from "../utils/authStorage";
 import { deriveKey } from "../utils/encryptionUtils"
+import { saveKey } from "../utils/authStorage";
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 // Local state for the email and password text boxes
@@ -81,7 +82,9 @@ export default function LoginScreen() {
       }
 
       // Successful login
-      const key = useCrypto
+      const key = deriveKey(password);
+      saveKey(key);
+
       router.replace("/home");
 
     } catch (error: any) {

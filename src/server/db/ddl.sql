@@ -193,31 +193,6 @@ CREATE TABLE IF NOT EXISTS Household_Encrypted (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-/*
-Create a table for Accounts
-    Attributes:
-        Number (Primary Key)
-        Name
-        Linked to a household by household_id
-*/
-CREATE TABLE IF NOT EXISTS Account_Encrypted (
-    /* Account id is the primary key */
-    account_id SERIAL PRIMARY KEY CHECK (account_id > 0),
-    /* A single account can be a part of multiple households
-        Add a many to many relationship table
-    */
-    /* The name of the account */
-    account_name BYTEA NOT NULL,
-    /* Store a hashed version of the user's password for security */
-    hashed_password VARCHAR(255) NOT NULL,
-    /* Each account should have a unique email for login */
-    email BYTEA NOT NULL UNIQUE,
-    /* Store time the account is created */
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    /* Last login time */
-    last_login TIMESTAMPTZ
-);
-
 /* Constraint on created_by_account_id to ensure it is an active account and is replaced by NULL if deleted */
 ALTER TABLE Household_Encrypted
 ADD CONSTRAINT fk_household_created_by
@@ -315,7 +290,7 @@ Create a relation for storing the sensor data. "Environmentaldata"
 */
 
 /* Update temperature and relative humidity from floats to ints? */
-CREATE TABLE IF NOT EXISTS EnvironmentalData (
+CREATE TABLE IF NOT EXISTS EnvironmentalData_Encrypted (
     data_id SERIAL PRIMARY KEY,
     household_id INTEGER REFERENCES Household(household_id) ON DELETE CASCADE,
     temperature_C INTEGER,
