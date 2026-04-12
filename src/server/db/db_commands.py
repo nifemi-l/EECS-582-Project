@@ -266,14 +266,16 @@ def get_households_for_account(account_id):
                 h.household_name,
                 h.join_code,
                 hm_current.role,
-                creator.account_name,
+                admin_account.account_name,
                 h.created_at,
                 h.updated_at
             FROM Household AS h
             JOIN HouseholdMember AS hm_current
                 ON h.household_id = hm_current.household_id
-            LEFT JOIN Account AS creator
-                ON h.created_by_account_id = creator.account_id
+            LEFT JOIN HouseholdMember AS hm_admin
+                ON h.household_id = hm_admin.household_id AND hm_admin.role = 'admin'
+            LEFT JOIN Account AS admin_account
+                ON hm_admin.account_id = admin_account.account_id
             WHERE hm_current.account_id = %s
             ORDER BY h.household_id
         """
