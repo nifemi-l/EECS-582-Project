@@ -37,7 +37,7 @@ import {
   FEATURE_ORANGE, FEATURE_GREY,
   ShaderLightUniformLocations, ShaderBillboardUniformLocations,
   ShaderAttributebLocations, ShaderMatrixUniformLocations,
-  MeshManager, VAO, getMeshFromType, VAOManager,
+  MeshManager, VAO, VAOManager,
   ShaderProgramManager, SHADER_REGULAR_PATHS, SHADER_BILLBOARD_PATHS,
   SHADER_PICK_PATHS, ShaderPickLocations, RenderPass, resizeFramebufferAttachments,
 } from "./graphicsUtils";
@@ -795,10 +795,11 @@ export class Renderer {
     const newMaterial: Material = this.currentDrawingColor;
 
     // Get the correct type
-    const featureIndex = Math.max(Math.abs(Math.round(((Math.random() * 10) % (Object.keys(FeatureType).length / 2) - 1))), 1); // count the number possible enum values (will not include undefined)
+    const featureOptions = Object.values(FeatureType) as FeatureType[];
+    const featureType = featureOptions[Math.floor(Math.random() * featureOptions.length)];
 
     // Create the feature object
-    const newFeature = new RenderableFeature("f:" + x + y + z, this.house.household_id, 0, newModelMatrix, newMaterial, x, y, z, undefined, featureIndex); // this is the new feature object we're adding
+    const newFeature = new RenderableFeature("f:" + x + y + z, this.house.household_id, 0, newModelMatrix, newMaterial, x, y, z, undefined, featureType); // this is the new feature object we're adding
     // randomly add a second chore for demo purposes
     if (Math.round(Math.random()) == 0) {
       newFeature.addTask(new Task("Test Task", newFeature.id, 1));
@@ -816,7 +817,7 @@ export class Renderer {
         x_pos: x,
         y_pos: y,
         z_pos: z,
-        feature_type: getFeatureTypeToString(featureIndex)
+        feature_type: getFeatureTypeToString(featureType)
       });
       newFeature.setID(featureID.feature_id); // retroactively set the appropriate ID
 
@@ -1077,7 +1078,7 @@ export class RenderableFeature extends Feature {
     super(name, household_id, type, x, y, z, feature_id, icon);
 
     // Set up mesh if a type is provided
-    this.mesh = !type ? undefined : getMeshFromType(type);
+    this.mesh = !type ? undefined : getFeatureTypeToString(type);
 
     // Assign model matrix to either a provided value or a default
     this.modelMatrix = mm || GLM.mat4.create();
