@@ -16,6 +16,7 @@ Invariants: None
 Known faults: None. 
 */
 
+// Imports
 import React, { useEffect, useMemo, useState } from "react";
 import { AuthLoadingScreen, useAuthGuard } from "../utils/useAuthGuard";
 import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
@@ -25,11 +26,13 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { getToken, clearToken } from "../utils/authStorage";
 
+// Base URL for backend API requests, set through environment variable in app config
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 // The local Household model shape used by HomeScreen state and rendering
 const HOUSEHOLD_ORDER_KEY = "household_order";
 
+// This is the shape of the household data as used in the HomeScreen component state and UI rendering
 type HouseholdSummary = {
   id: string; // internal household id used for routing
   name: string; // display name shown to the user
@@ -41,93 +44,132 @@ type HouseholdSummary = {
 // Decode the username from a JWT token payload
 function getUsernameFromToken(token: string): string | null {
   try {
+    // Split the JWT into its three parts: header, payload, and signature
     const parts = token.split(".");
+
+    // If the token does not have exactly three parts, treat it as invalid
     if (parts.length !== 3) return null;
+
+    // Convert the payload from base64url format to standard base64 format
     let payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    while (payload.length % 4 !== 0) payload += "=";
-    const decoded = Platform.OS === "web"
+
+    // Add '=' padding until the payload length is a multiple of 4
+    while (payload.length % 4 !== 0) payload += "="; // Add padding (for multiple of 4)
+    
+    // Decode the payload string into plain text
+    const decoded = Platform.OS === "web" 
       ? atob(payload)
       : global.atob?.(payload) ?? atob(payload);
+
+    // Parse the decoded payload text into a JavaScript object
     const parsed = JSON.parse(decoded);
+
+    // Return the username if it exists in the payload
     return parsed.username || null;
+
   } catch {
+    // Return null if the token cannot be decoded or parsed
     return null;
   }
 }
 
+// Load the user's saved household order from AsyncStorage
 async function loadHouseholdOrder(): Promise<string[] | null> {
   try {
+    // Read the stored household order value using the shared storage key
     const raw = await AsyncStorage.getItem(HOUSEHOLD_ORDER_KEY);
+
+    // Return null if no saved order exists
     if (!raw) return null;
+
+    // Convert the stored JSON string into a JavaScript value
     const parsed = JSON.parse(raw);
+
+    // Return null if the parsed value is not an array
     if (!Array.isArray(parsed)) return null;
+
+    // Filter the parsed array to include only string values (valid household ids)
     return parsed.filter((id) => typeof id === "string");
   } catch (_err) {
+    // Return null if reading or parsing the stored value fails
     return null;
   }
 }
 
+// Save the user's household order to AsyncStorage
 async function saveHouseholdOrder(ids: string[]) {
   try {
+    // Convert the household id array into a JSON string and store it using the shared storage key
     await AsyncStorage.setItem(HOUSEHOLD_ORDER_KEY, JSON.stringify(ids));
   } catch (_err) {
-    // non-fatal
+    // Ignore errors when saving the household order
   }
 }
 
+// Render the home screen after checking whether the user is authenticated
 export default function HomeScreen() {
+  // Get the current authentication check status and whether the user is authenticated
   const { isCheckingAuth, isAuthenticated } = useAuthGuard();
 
+  // Show the loading screen while authentication is still being checked
+  // Also keep showing it if the user is not authenticated and is being redirected
   if (isCheckingAuth || !isAuthenticated) {
     return <AuthLoadingScreen />;
   }
-
+  // Render the authenticated version of the home screen once access is confirmed
   return <AuthenticatedHomeScreen />;
 }
 
-
+// The main content of the home screen that is shown to authenticated users. 
+// It fetches and displays the user's households, allows creating and joining households, and provides navigation into each household's screen tree.
 function AuthenticatedHomeScreen() {
-  // Local in-memory list of households bound to the view; this is filled by API calls
+  // Store the households currently shown on the screen
   const [households, setHouseholds] = useState<HouseholdSummary[]>([]);
 
-  // Modal state for create and join workflows, toggled by button press
+  // Track whether the create and join household modals are open
   const [createOpen, setCreateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
 
-  // Controlled text entry fields for the create/join dialogs
+  // Store the text entered into the create and join household inputs
   const [newHouseholdName, setNewHouseholdName] = useState("");
   const [joinCodeInput, setJoinCodeInput] = useState("");
 
-  // Tracks whether household list is currently being loaded from backend
+  // Track whether the household list is still being loaded from the backend
   const [isLoading, setIsLoading] = useState(true);
 
-  // Username decoded from the JWT token for the welcome message
+  // Store the username decoded from the JWT for the welcome message
   const [username, setUsername] = useState<string | null>(null);
 
-  // Pick a random message for the quote card on mount
+  // Define the possible messages that can appear in the quote card
   const carouselMessages = [
-    'A clean home is\na happy home.',
-    'Placeholder 2',
-    'Placeholder 3',
-    'Placeholder 4',
-    'Placeholder 5',
+    'A clean home is a happy home.',
+    'Small tasks today, big results tomorrow.',
+    'A little effort goes a long way.',
+    'Clean space, clear mind.',
+    'Consistency beats perfection.',
+    'Tidy home, peaceful life.',
+    'Progress over perfection.',
+    'Every small task counts.',
+    'Take it one room at a time.',
+    'Done is better than perfect.',
+    'Keep it simple, keep it clean.',
+    'Good habits build great homes.',
+    'Reset your space, reset your mind.',
+    'Clean today, relax tomorrow.',
+    'Your future self will thank you.',
   ];
+
+  // Pick one random message when the screen first loads
   const [carouselIndex] = useState(() => Math.floor(Math.random() * carouselMessages.length));
 
   // On first render, load the current user's household membership from /household/mine
   useEffect(() => {
     async function loadHouseholds() {
+      // Mark the household list as loading before starting the request
       setIsLoading(true);
 
       // Get the saved auth token so the request can be authorized
-      const token = await getToken();
-
-      // If no token exists, treat the user as having no accessible households
-      if (!token) {
-        setHouseholds([]);
-        setIsLoading(false);
-        return;
-      }
+      const token = await getToken() as string;
 
       // Extract the username from the JWT for the welcome banner
       const name = getUsernameFromToken(token);
@@ -154,7 +196,7 @@ function AuthenticatedHomeScreen() {
           return;
         }
 
-        // Map the returned household data into the local HouseholdSummary shape
+        // Convert the returned household data into the local HouseholdSummary format
         if (Array.isArray(data.households)) {
           const fetched: HouseholdSummary[] = data.households.map((h: any) => ({
             id: String(h.household_id),
@@ -164,10 +206,15 @@ function AuthenticatedHomeScreen() {
             adminName: h.admin_name || "Unknown",
           }));
 
+          // Load the user's saved household order from local storage
           const savedOrder = await loadHouseholdOrder();
+
+          // Reorder the fetched households to match the saved order when possible
           if (savedOrder && savedOrder.length > 0) {
             const byId = new Map(fetched.map((h) => [h.id, h]));
             const ordered: HouseholdSummary[] = [];
+
+            // Add households in the saved order if they still exist
             for (const id of savedOrder) {
               const item = byId.get(String(id));
               if (item) {
@@ -175,17 +222,20 @@ function AuthenticatedHomeScreen() {
                 byId.delete(String(id));
               }
             }
+
+            // Append any remaining households that were not in the saved order
             ordered.push(...Array.from(byId.values()));
             setHouseholds(ordered);
           } else {
+            // Use the fetched order if no saved order exists
             setHouseholds(fetched);
           }
         } else {
-          // Fallback in case the backend response does not include a valid households array
+          // Clear the list if the backend did not return a valid households array
           setHouseholds([]);
         }
       } catch (error: any) {
-        // Handle network or fetch-level failures
+        // Clear the list and show an error if the request fails
         Alert.alert("Network Error", error?.message || "Unable to fetch households.");
         setHouseholds([]);
       } finally {
@@ -193,61 +243,63 @@ function AuthenticatedHomeScreen() {
         setIsLoading(false);
       }
     }
-
+    // Start loading the user's households
     loadHouseholds();
   }, []);
 
-  // Derived value used to decide whether to show the empty state or the household list
+  // Memoized value: true if the household list is empty, used to show empty state UI
   const isEmpty = useMemo(() => households.length === 0, [households]);
-  
-  // Get the current screen width for responsive layout
+
+  // Responsive layout: get the current screen width and determine if the layout should be wide
   const { width: windowWidth } = useWindowDimensions();
   const isWide = windowWidth > 860;
 
-  // Logout handler - clears token and redirects to login
+  // Logs the user out by clearing the auth token and redirecting to login
   async function handleLogout() {
     await clearToken();
     router.replace("/login");
   }
 
-  // Navigate into a household's screen tree when a household card is pressed (ordered)
+  /**
+   * Moves the selected household to the top of the list and navigates to its graphics screen.
+   * This also persists the new order in local storage for future sessions.
+   * @param id The id of the household to open
+   */
   async function openHousehold(id: string) {
     setHouseholds((prev) => {
+      
+      // Find the index of the selected household in the current list
       const index = prev.findIndex((h) => h.id === id);
-      if (index <= 0) {
-        return prev; // already first or not found
-      }
+      
+      // If already first or not found, do nothing
+      if (index <= 0) return prev;
+      
+      // Move the selected household to the front
       const selected = prev[index];
       const updated = [selected, ...prev.slice(0, index), ...prev.slice(index + 1)];
       saveHouseholdOrder(updated.map((h) => h.id));
       return updated;
     });
-
-    router.push({
-      pathname: "/household/[id]/graphics",
-      params: { id },
-    });
+    // Navigate to the selected household's graphics screen
+    router.push({ pathname: "/household/[id]/graphics", params: { id } });
   }
 
-  // Create a new household using backend API and update UI list state on success
+  /**
+   * Creates a new household by sending a request to the backend.
+   * On success, adds the new household to the top of the list and shows a success message.
+   */
   async function handleCreateHousehold() {
+    // Remove extra spaces from the entered household name
     const trimmed = newHouseholdName.trim();
-
-    // Stop if the user did not enter a household name
+    
+    // Block if no name entered
     if (!trimmed) {
       Alert.alert("Missing name", "Please enter a household name.");
       return;
     }
-
-    // Get the saved token so the create request can be authorized
-    const token = await getToken();
-
-    // If the token is missing, send the user back to login
-    if (!token) {
-      Alert.alert("Unauthorized", "Please log in again.");
-      router.replace("/login");
-      return;
-    }
+    
+    // Get the saved auth token so the request can be authorized
+    const token = await getToken() as string;
 
     try {
       // Send the create household request to the backend
@@ -257,20 +309,19 @@ function AuthenticatedHomeScreen() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-
-        // Parse the backend response body
         body: JSON.stringify({ name: trimmed }),
       });
-
+      
+      // Parse the JSON body returned by the backend
       const data = await response.json();
-
-      // If server returns an error, keep UI state unchanged and show the message
+      
+      // Show an error message and stop if the request failed
       if (!response.ok) {
         Alert.alert("Create failed", data.error || "Could not create household.");
         return;
       }
-
-      // Build the newly created household object in the local UI shape
+      
+      // Convert the returned household data into the local HouseholdSummary format
       const household = data.household;
       const created: HouseholdSummary = {
         id: String(household.household_id),
@@ -279,42 +330,38 @@ function AuthenticatedHomeScreen() {
         role: "admin",
         adminName: household.admin_name || "Unknown",
       };
-
-      // Add the new household to the top of the local list
+      
+      // Add the new household to the top of the list
       setHouseholds((prev) => [created, ...prev]);
-
-      // Clear the input and close the create modal
+      
+      // Clear the input and close the create household modal
       setNewHouseholdName("");
       setCreateOpen(false);
-
-      // Confirm success and show the household's invite code
+      
+      // Show a success message with the new household's invite code
       Alert.alert("Household created", `${created.name} was created. Invite code: ${created.joinCode}`);
     } catch (error: any) {
-      // Handle network or fetch-level failures
+      // Show an error message if the request fails before a response is returned
       Alert.alert("Network Error", error?.message || "Unable to create household.");
     }
   }
 
-  // Join an existing household by invite code through the backend
+  /**
+   * Joins an existing household using an invite code.
+   * On success, adds the joined household to the list and shows a confirmation.
+   */
   async function handleJoinHousehold() {
+    // Remove extra spaces and convert to uppercase
     const trimmed = joinCodeInput.trim().toUpperCase();
-
-    // Stop if the user did not enter a join code
+    
+    // Block if no code entered
     if (!trimmed) {
       Alert.alert("Missing code", "Please enter a household code.");
       return;
     }
-
-    // Get the saved token so the join request can be authorized
-    const token = await getToken();
-
-    // If the token is missing, send the user back to login
-    if (!token) {
-      Alert.alert("Unauthorized", "Please log in again.");
-      router.replace("/login");
-      return;
-    }
-
+    
+    // Get the saved auth token so the request can be authorized
+    const token = await getToken() as string;
     try {
       // Send the join request to the backend with the invite code
       const response = await fetch(`${API_URL}/household/join`, {
@@ -325,17 +372,17 @@ function AuthenticatedHomeScreen() {
         },
         body: JSON.stringify({ join_code: trimmed }),
       });
-
-      // Parse the backend response body
+      
+      // Parse the JSON response body
       const data = await response.json();
-
-      // If the backend rejects the code, show the error and stop
+      
+      // Show an error message and stop if the join request failed
       if (!response.ok) {
         Alert.alert("Join failed", data.error || "Invalid join code.");
         return;
       }
-
-      // Build the joined household object in the local UI shape
+      
+      // Convert the returned household data into the local HouseholdSummary format
       const household = data.household;
       const joined: HouseholdSummary = {
         id: String(household.household_id),
@@ -344,52 +391,65 @@ function AuthenticatedHomeScreen() {
         role: "member",
         adminName: household.admin_name || "Unknown",
       };
-
-      // Avoid duplicate cards if the household already exists in local state
+      
+      // Add the joined household to the list only if it is not already present
       const alreadyExists = households.some((h) => h.id === joined.id);
       if (!alreadyExists) {
         setHouseholds((prev) => [joined, ...prev]);
       }
-
-      // Clear the input and close the join modal
+      
+      // Clear the input and close the join household modal
       setJoinCodeInput("");
       setJoinOpen(false);
-
+      
       // Confirm the household was joined successfully
       Alert.alert("Joined household", `You joined ${joined.name}.`);
     } catch (error: any) {
-      // Handle network or fetch-level failures
+      // Show an error message if the request fails before a response is returned
       Alert.alert("Network Error", error?.message || "Unable to join household.");
     }
   }
-  // Leave a household — admins are blocked; members get a proper confirmation modal
+
+  /**
+   * Handles the leave household action for members.
+   * Admins are blocked and shown an info modal; members get a confirmation modal.
+   * @param householdId The id of the household to leave
+   */
   function handleLeaveHousehold(householdId: string) {
+    // Find the selected household in the current list
     const household = households.find((h) => h.id === householdId);
+
+    // If the household is not found (should not happen), do nothing
     if (!household) return;
 
+    // Prevent admins from leaving and show the informational modal instead
     if (household.role === "admin") {
-      // Close the options popup and open the dedicated "cannot leave" info modal
       setMenuOpenId(null);
       setCannotLeaveId(householdId);
       return;
     }
 
-    // Close the options popup first, then open the dedicated confirmation modal
+    // Close the options menu and open the leave confirmation modal for members
     setMenuOpenId(null);
     setLeaveConfirmId(householdId);
   }
 
-  // Confirmed by the user in the leave confirmation modal
+  /**
+   * Called when the user confirms leaving a household (from the modal).
+   * Removes the household from the list on success and shows a confirmation.
+   */
   async function confirmLeaveHousehold() {
+    // If no household is currently pending leave confirmation, do nothing (should not happen)
     if (!leaveConfirmId) return;
+
+    // Find the selected household so its name can be shown in the success message
     const household = households.find((h) => h.id === leaveConfirmId);
-    const token = await getToken();
-    if (!token) {
-      Alert.alert("Unauthorized", "Please log in again.");
-      router.replace("/login");
-      return;
-    }
+
+    // Get the saved auth token so the request can be authorized
+    const token = await getToken() as string;
+
     try {
+      // Send the leave household request to the backend
       const response = await fetch(`${API_URL}/household/leave`, {
         method: "POST",
         headers: {
@@ -398,179 +458,325 @@ function AuthenticatedHomeScreen() {
         },
         body: JSON.stringify({ household_id: Number(leaveConfirmId) }),
       });
+
+      // Parse the JSON response body
       const data = await response.json();
+
+      // Show an error message and stop if the leave request failed
       if (!response.ok) {
         Alert.alert("Error", data.error || "Unable to leave household.");
         return;
       }
+
+      // Remove the household from the local list after the leave succeeds
       setHouseholds((prev) => prev.filter((h) => h.id !== leaveConfirmId));
+
+      // Close the leave confirmation modal
       setLeaveConfirmId(null);
+
+      // Show a success message with the household name
       Alert.alert("Left household", `You have left "${household?.name ?? "the household"}".`);
     } catch (error: any) {
+      // Show an error message if the request fails before a response is returned
       Alert.alert("Network Error", error?.message || "Unable to leave household.");
     }
   }
 
-  // Track which household card is hovered and which has its menu popup open
+  /**
+   * [Relavent to the below lines]
+   * These state variables control the interactive UI for household actions.
+   * They keep track of which household or member the user is currently
+   * interacting with, which modals or menus are open, and whether certain
+   * actions are loading or waiting for confirmation. Without this state,
+   * the screen would not know which household to highlight, which popup
+   * to display, which member list to load, or which settings action is
+   * currently being performed.
+   */
+
+  // UI state: which household card is hovered (for web hover effect)
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // UI state: which household card's menu is open
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-
-  // Tracks which household id is pending a leave confirmation
+  // UI state: which household is pending leave confirmation
   const [leaveConfirmId, setLeaveConfirmId] = useState<string | null>(null);
-
-  // Tracks which admin household triggered the "cannot leave" info modal
+  // UI state: which admin household triggered the "cannot leave" info modal
   const [cannotLeaveId, setCannotLeaveId] = useState<string | null>(null);
-
-  // Tracks which household's member list is being viewed
+  // UI state: which household's member list is being viewed
   const [viewMembersId, setViewMembersId] = useState<string | null>(null);
+  // Data: list of members for the currently viewed household
   const [membersData, setMembersData] = useState<{ account_id: number; account_name: string; role: string; joined_at: string | null }[]>([]);
+  // UI state: whether the members list is loading
   const [membersLoading, setMembersLoading] = useState(false);
-
-  // Tracks which member row has its dots menu open
+  // UI state: which member row has its dots menu open
   const [memberDotsOpenId, setMemberDotsOpenId] = useState<number | null>(null);
-
-  // Member awaiting remove confirmation
+  // UI state: member awaiting remove confirmation
   const [removeConfirmMember, setRemoveConfirmMember] = useState<{ account_id: number; account_name: string } | null>(null);
-
-  // Member awaiting make-admin confirmation
+  // UI state: member awaiting make-admin confirmation
   const [makeAdminConfirmMember, setMakeAdminConfirmMember] = useState<{ account_id: number; account_name: string } | null>(null);
-
-  // Household Settings modal state
+  // UI state: household settings modal
   const [settingsId, setSettingsId] = useState<string | null>(null);
+  // UI state: household name in the settings modal
   const [settingsName, setSettingsName] = useState("");
+  // UI state: whether the settings name is being saved
   const [settingsNameSaving, setSettingsNameSaving] = useState(false);
+  // UI state: when the join code was last updated
   const [settingsCodeUpdatedAt, setSettingsCodeUpdatedAt] = useState<string | null>(null);
+  // UI state: whether the join code was just copied
   const [settingsCodeCopied, setSettingsCodeCopied] = useState(false);
+  // UI state: whether the join code is being regenerated
   const [settingsCodeRegenerating, setSettingsCodeRegenerating] = useState(false);
+  // UI state: whether the delete confirmation modal is open
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  // UI state: whether the household is being deleted
   const [deletingHousehold, setDeletingHousehold] = useState(false);
 
   function handleOpenSettings(householdId: string) {
+    // Open the settings modal for the selected household and reset its temporary UI state
     const h = households.find((hh) => hh.id === householdId);
+
+    // Find the selected household in the current list
     if (!h) return;
-    setMenuOpenId(null);
-    setSettingsName(h.name);
-    setSettingsCodeUpdatedAt(null);
+
+    setMenuOpenId(null); // Close the household options menu before opening settings
+    setSettingsName(h.name); // Load the current household name into the settings input
+
+    // Reset temporary settings state for a fresh modal session
+    setSettingsCodeUpdatedAt(null); 
     setSettingsCodeCopied(false);
     setDeleteConfirmOpen(false);
-    setSettingsId(householdId);
+
+    setSettingsId(householdId); // Open the settings modal for the selected household
   }
 
+  // Save the updated household name through the backend and refresh it in local state
   async function handleSaveHouseholdName() {
+    // Stop if no household settings are open or if the entered name is blank
     if (!settingsId || !settingsName.trim()) return;
+
+    // Mark the household name as currently being saved
     setSettingsNameSaving(true);
+
     try {
-      const token = await getToken();
+      // Get the saved auth token so the request can be authorized
+      const token = await getToken() as string;
+
+      // Send the updated household name to the backend
       const response = await fetch(`${API_URL}/household/${settingsId}/update_name`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ name: settingsName.trim() }),
       });
+
+      // Parse the JSON response body
       const data = await response.json();
-      if (!response.ok) { Alert.alert("Error", data.error || "Could not update name."); return; }
-      setHouseholds((prev) => prev.map((h) => h.id === settingsId ? { ...h, name: data.household.household_name } : h));
+
+      // Show an error message and stop if the request failed
+      if (!response.ok) { 
+        Alert.alert("Error", data.error || "Could not update name."); 
+        return;
+      }
+
+      // Update the household name in local state after the save succeeds
+      setHouseholds((prev) => 
+        prev.map((h) => 
+          h.id === settingsId ? { ...h, name: data.household.household_name } : h
+        )
+      );
     } catch (e: any) {
+      // Show an error message if the request fails before a response is returned
       Alert.alert("Network Error", e?.message || "Unable to save name.");
     } finally {
+      // Always stop the saving state when the request finishes
       setSettingsNameSaving(false);
     }
   }
 
+  // Generate a new join code for the selected household and update it in local state
   async function handleRegenerateCode() {
+    // // Stop if no household settings are currently open
     if (!settingsId) return;
+
+    // Mark the join code as currently being regenerated
     setSettingsCodeRegenerating(true);
+
     try {
-      const token = await getToken();
+      // Get the saved auth token so the request can be authorized
+      const token = await getToken() as string;
+
+      // Send the regenerate join code request to the backend
       const response = await fetch(`${API_URL}/household/${settingsId}/regenerate_code`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      // Parse the JSON response body
       const data = await response.json();
+
+      // Show an error message and stop if the request failed
       if (!response.ok) { Alert.alert("Error", data.error || "Could not regenerate code."); return; }
+
+      // Read the new join code and update timestamp returned by the backend
       const newCode = data.household.join_code;
       const updatedAt = data.household.updated_at;
-      setHouseholds((prev) => prev.map((h) => h.id === settingsId ? { ...h, joinCode: newCode } : h));
+
+      // Update the household's join code in local state
+      setHouseholds((prev) => 
+        prev.map((h) => 
+          h.id === settingsId ? { ...h, joinCode: newCode } : h
+        )
+      );
+
+      // Store when the join code was last updated
       setSettingsCodeUpdatedAt(updatedAt);
     } catch (e: any) {
+      // Show an error message if the request fails before a response is returned
       Alert.alert("Network Error", e?.message || "Unable to regenerate code.");
     } finally {
+      // Always stop the regenerating state when the request finishes
       setSettingsCodeRegenerating(false);
     }
   }
 
+  // Delete the selected household through the backend and remove it from local state
   async function handleDeleteHousehold() {
+    // Stop if no household settings are currently open
     if (!settingsId) return;
+
+    // Mark the household as currently being deleted
     setDeletingHousehold(true);
+
     try {
-      const token = await getToken();
+      // Get the saved auth token so the request can be authorized
+      const token = await getToken() as string;
+
+      // Send the delete household request to the backend
       const response = await fetch(`${API_URL}/household/${settingsId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      // Parse the JSON response body
       const data = await response.json();
-      if (!response.ok) { Alert.alert("Error", data.error || "Could not delete household."); return; }
+
+      // Show an error message and stop if the request failed
+      if (!response.ok) { 
+        Alert.alert("Error", data.error || "Could not delete household."); 
+        return; 
+      }
+
+      // Remove the deleted household from the local list
       setHouseholds((prev) => prev.filter((h) => h.id !== settingsId));
+
+      // Close the delete confirmation modal
       setDeleteConfirmOpen(false);
+
+      // Close the household settings modal
       setSettingsId(null);
     } catch (e: any) {
+      // Show an error message if the request fails before a response is returned
       Alert.alert("Network Error", e?.message || "Unable to delete household.");
     } finally {
+      // Always stop the deleting state when the request finishes
       setDeletingHousehold(false);
     }
   }
 
+  // Open the members view for the selected household and load its member list
   async function handleViewMembers(householdId: string) {
-    setMenuOpenId(null);
-    setViewMembersId(householdId);
-    setMembersData([]);
-    setMemberDotsOpenId(null);
-    setMembersLoading(true);
+    setMenuOpenId(null); // Close the household options menu before opening the members view
+    setViewMembersId(householdId); // Open the members view for the selected household
+    setMembersData([]); // Clear any previously loaded member data
+    setMemberDotsOpenId(null); // Close any open member row dots menu
+    setMembersLoading(true); // Mark the members list as currently loading
+
     try {
-      const token = await getToken();
+      // Get the saved auth token so the request can be authorized
+      const token = await getToken() as string;
+
+      // Request the selected household's member list from the backend
       const response = await fetch(`${API_URL}/household/${householdId}/members`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      // Parse the JSON response body
       const data = await response.json();
+
+      // Store the returned member list if the request succeeded
       if (response.ok) setMembersData(data.members ?? []);
     } catch (_e) {
-      // non-fatal — list stays empty
+      // Ignore request errors and leave the member list empty
     } finally {
+      // Always stop the loading state when the request finishes
       setMembersLoading(false);
     }
   }
 
+  // Remove the selected member from the currently viewed household
   async function handleRemoveMember() {
+    // Stop if no member is waiting for removal confirmation or no household is open
     if (!removeConfirmMember || !viewMembersId) return;
-    const token = await getToken();
-    if (!token) { Alert.alert("Unauthorized", "Please log in again."); return; }
+
+    // Get the saved auth token so the request can be authorized
+    const token = await getToken() as string;
+
     try {
+      // Send the remove member request to the backend
       const response = await fetch(`${API_URL}/household/${viewMembersId}/remove_member`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ account_id: removeConfirmMember.account_id }),
       });
+
+      // Parse the JSON response body
       const data = await response.json();
-      if (!response.ok) { Alert.alert("Error", data.error || "Could not remove member."); return; }
-      setMembersData((prev) => prev.filter((m) => m.account_id !== removeConfirmMember.account_id));
+
+      // Show an error message and stop if the request failed
+      if (!response.ok) { 
+        Alert.alert("Error", data.error || "Could not remove member."); 
+        return; 
+      }
+
+      // Remove the deleted member from the local members list
+      setMembersData((prev) => 
+        prev.filter((m) => 
+          m.account_id !== removeConfirmMember.account_id
+        )
+      );
+
+      // Close the remove member confirmation modal
       setRemoveConfirmMember(null);
     } catch (e: any) {
+      // Show an error message if the request fails before a response is returned
       Alert.alert("Network Error", e?.message || "Unable to remove member.");
     }
   }
 
+  // Transfer admin ownership to the selected member in the currently viewed household
   async function handleMakeAdmin() {
+    // Stop if no member is waiting for make-admin confirmation or no household is open
     if (!makeAdminConfirmMember || !viewMembersId) return;
-    const token = await getToken();
-    if (!token) { Alert.alert("Unauthorized", "Please log in again."); return; }
+
+    // Get the saved auth token so the request can be authorized
+    const token = await getToken() as string;
+
     try {
+      // Send the transfer admin request to the backend
       const response = await fetch(`${API_URL}/household/${viewMembersId}/transfer_admin`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ account_id: makeAdminConfirmMember.account_id }),
       });
+
+      // Parse the JSON response body
       const data = await response.json();
-      if (!response.ok) { Alert.alert("Error", data.error || "Could not transfer admin."); return; }
-      // Update local member list roles
+
+      // Show an error message and stop if the request failed
+      if (!response.ok) { 
+        Alert.alert("Error", data.error || "Could not transfer admin."); 
+        return; 
+      }
+
+      // Update the local member list so the new admin and old admin roles are swapped
       setMembersData((prev) =>
         prev.map((m) => {
           if (m.account_id === makeAdminConfirmMember.account_id) return { ...m, role: "admin" };
@@ -578,7 +784,8 @@ function AuthenticatedHomeScreen() {
           return m;
         })
       );
-      // Update the household list so the role + adminName reflects the change
+
+      // Update the household list so the household's displayed role and admin name stay in sync
       setHouseholds((prev) =>
         prev.map((h) =>
           h.id === viewMembersId
@@ -586,8 +793,11 @@ function AuthenticatedHomeScreen() {
             : h
         )
       );
+
+      // Close the make-admin confirmation modal
       setMakeAdminConfirmMember(null);
     } catch (e: any) {
+      // Show an error message if the request fails before a response is returned
       Alert.alert("Network Error", e?.message || "Unable to transfer admin.");
     }
   }

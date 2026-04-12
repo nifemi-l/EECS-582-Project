@@ -5,6 +5,7 @@ Programmers: Logan Smith, Nifemi Lawal
 Creation date: 2/14/26
 Revision date:
   - 3/29/26: Replace hardcoded localhost URL with EXPO_PUBLIC_API_URL env variable
+  - 4/10/26: Add alert invalid login credentials entered by user
 Preconditions: A React application requesting the register screen route ("/register")
 Postconditions: A registration screen component is ready for rendering; successful registration flow can route back to login (temporary)
 Errors: None
@@ -28,17 +29,31 @@ export default function RegisterScreen() {
   const [password1, setPassword1] = useState(""); // Stores the first password field value
   const [password2, setPassword2] = useState(""); // Stores the confirm password field value
   const [loading, setLoading] = useState(false); // Tracks whether the register request is currently running
+  const [errorMessage, setErrorMessage] = useState(""); // Stores inline validation error messages
 
   async function handleRegister() {
+    setErrorMessage(""); // Clear any previous error
+
     // Block if the password and confirm password fields do not match
     if (password1 !== password2) {
-      Alert.alert("Passwords do not match", "Please re-enter your passwords.");
+      setErrorMessage("Passwords do not match. Please re-enter your passwords.");
       return;
     }
 
-    // Block if any required field is missing
-    if (!username || !email || !password1) {
-      Alert.alert("Missing fields", "Please fill out all fields.");
+    // Check for missing fields and give specific feedback
+    const missingFields = [];
+    if (!username) missingFields.push("Username");
+    if (!email) missingFields.push("Email");
+    if (!password1) missingFields.push("Password");
+    if (missingFields.length > 0) {
+      setErrorMessage(`Please fill out the following: ${missingFields.join(", ")}`);
+      return;
+    }
+
+    // Email format validation (simple regex)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      setErrorMessage("The email address you entered is not valid. Please check the Email field.");
       return;
     }
 
@@ -150,6 +165,11 @@ export default function RegisterScreen() {
           onChangeText={setPassword2}
         />
 
+        {/* Inline validation error message */}
+        {errorMessage ? (
+          <Text style={styles.errorText}>{errorMessage}</Text>
+        ) : null}
+
         {/* Main action button that submits the register flow */}
         <Pressable
           style={[styles.button, loading && styles.buttonDisabled]}
@@ -225,5 +245,12 @@ const styles = StyleSheet.create({
     marginTop: 18,
     textAlign: "center",
     color: "#333",
+  },
+
+  errorText: {
+    color: "#cc0000",
+    marginBottom: 10,
+    textAlign: "center",
+    fontSize: 14,
   },
 });

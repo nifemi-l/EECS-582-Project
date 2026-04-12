@@ -6,6 +6,7 @@ Creation date: 2/14/26
 Revision date:
   - 3/29/26: Replace hardcoded localhost URL with EXPO_PUBLIC_API_URL env variable
   - 4/9/26: Add AuthGuard to protect the screen and redirect unauthenticated users to login
+  - 4/10/26: Add alert on successful registration redirect to login
 Preconditions: A React application requesting the login screen route ("/login")
 Postconditions: A login screen component is ready for rendering; on sign-in, user is navigated to /home
 Errors: None
@@ -42,6 +43,14 @@ export default function LoginScreen() {
       return;
     }
 
+    // Email format validation (simple regex)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      Alert.alert("Invalid Email", "Please enter a valid email address.");
+      return;
+    }
+
+    // Disable repeated submits while the request is in progress
     try {
       const response = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
@@ -57,6 +66,7 @@ export default function LoginScreen() {
       // Parse the JSON response from the server, which should contain a token if login is successful
       const data = await response.json();
 
+      // If the response is not OK, show an error message (e.g., invalid credentials)
       if (!response.ok) {
         Alert.alert("Login Failed", data.error || "Invalid credentials");
         return;
