@@ -21,6 +21,17 @@ import { getToken } from "../utils/authStorage";
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const API_BASE = `${API_URL}/api`;
 
+// Added to get the household name for the header
+export async function fetchMyHouseholds(): Promise<{
+  households: Array<{ household_id: number; household_name: string }>;
+}> {
+  const res = await fetch(`${API_URL}/household/mine`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch households: ${res.status}`);
+  return res.json();
+}
+
 // Build headers with the stored JWT token attached; throws if no token is found
 async function authHeaders(withBody = false): Promise<Record<string, string>> {
   const token = await getToken();

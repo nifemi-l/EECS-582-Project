@@ -25,6 +25,18 @@ import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { getToken, clearToken } from "../utils/authStorage";
+import {
+  border,
+  brand,
+  brandMuted,
+  heroGradient,
+  navy,
+  pageBg,
+  primaryButtonGradient,
+  surfaceSoft,
+  textPrimary,
+  textSecondary,
+} from "../theme/colors";
 
 // Base URL for backend API requests, set through environment variable in app config
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -832,7 +844,7 @@ function AuthenticatedHomeScreen() {
       {/* --- Hero Banner with curved bottom --- */}
       <View>
         <LinearGradient
-          colors={["#3B5FA0", "#5B7EC2", "#7B9BDB"]}
+          colors={[...heroGradient]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.heroBanner}
@@ -884,12 +896,12 @@ function AuthenticatedHomeScreen() {
               <Text style={styles.illustrationTitle}>Your Homes, Your Progress</Text>
               <Text style={styles.illustrationDesc}>Manage your households, keep things clean, and build healthier habits together.</Text>
               <Pressable style={styles.primaryButton} onPress={() => setCreateOpen(true)}>
-                <LinearGradient colors={["#3B6DB5", "#5B8AD4"]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.primaryButtonFill}>
+                <LinearGradient colors={[...primaryButtonGradient]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.primaryButtonFill}>
                   <Text style={styles.primaryButtonText}>+ Create New Household</Text>
                 </LinearGradient>
               </Pressable>
               <Pressable style={styles.secondaryButton} onPress={() => setJoinOpen(true)}>
-                <MaterialCommunityIcons name="link-variant" size={22} color="#3B6DB5" />
+                <MaterialCommunityIcons name="link-variant" size={22} color={brand} />
                 <Text style={styles.secondaryButtonText}>Join with a Code</Text>
               </Pressable>
               <View style={styles.quoteCard}>
@@ -904,7 +916,7 @@ function AuthenticatedHomeScreen() {
               <View style={styles.listHeader}>
                 <View style={styles.listHeaderLeft}>
                   <View style={styles.sectionIconCircle}>
-                    <MaterialCommunityIcons name="home" size={22} color="#3B6DB5" />
+                    <MaterialCommunityIcons name="home" size={22} color={brand} />
                   </View>
                   <Text style={styles.sectionTitle}>Your Households</Text>
                   {!isLoading && (<View style={styles.countBadge}><Text style={styles.countBadgeText}>{households.length}</Text></View>)}
@@ -938,7 +950,7 @@ function AuthenticatedHomeScreen() {
                         >
                           <View style={styles.householdCardLeft}>
                             <View style={styles.householdIconCircle}>
-                              <MaterialCommunityIcons name="home-group" size={28} color="#5D7FAF" />
+                              <MaterialCommunityIcons name="home-group" size={28} color={brandMuted} />
                             </View>
                             <View style={styles.householdInfo}>
                               <Text style={styles.householdName}>{household.name}</Text>
@@ -980,11 +992,11 @@ function AuthenticatedHomeScreen() {
               <Pressable style={styles.householdPopup} onPress={(e) => e.stopPropagation?.()}>
                 {/* Header */}
                 <Pressable style={styles.householdPopupClose} onPress={() => setMenuOpenId(null)}>
-                  <MaterialCommunityIcons name="close" size={20} color="#7B8A9C" />
+                  <MaterialCommunityIcons name="close" size={20} color={textSecondary} />
                 </Pressable>
                 <View style={styles.householdPopupHeader}>
                   <View style={styles.householdPopupIconCircle}>
-                    <MaterialCommunityIcons name="home-group" size={30} color="#5D7FAF" />
+                    <MaterialCommunityIcons name="home-group" size={30} color={brandMuted} />
                   </View>
                   <Text style={styles.householdPopupName}>{menuHousehold?.name ?? ""}</Text>
                   {menuHousehold?.role === "admin" ? (
@@ -1005,7 +1017,7 @@ function AuthenticatedHomeScreen() {
                     <Text style={styles.householdPopupSectionLabel}>ADMIN CONTROLS</Text>
                     {/* Edit Household removed as requested */}
                     <Pressable style={styles.householdPopupItem} onPress={() => menuHousehold && handleOpenSettings(menuHousehold.id)}>
-                      <View style={styles.householdPopupItemIcon}><MaterialCommunityIcons name="cog-outline" size={20} color="#3D4F63" /></View>
+                      <View style={styles.householdPopupItemIcon}><MaterialCommunityIcons name="cog-outline" size={20} color={textPrimary} /></View>
                       <View style={styles.householdPopupItemText}>
                         <Text style={styles.householdPopupItemTitle}>Household Settings</Text>
                         <Text style={styles.householdPopupItemSub}>Update preferences and notifications</Text>
@@ -1019,7 +1031,7 @@ function AuthenticatedHomeScreen() {
                 {/* Member actions — visible to all roles */}
                 <Text style={styles.householdPopupSectionLabel}>MEMBER ACTIONS</Text>
                 <Pressable style={styles.householdPopupItem} onPress={() => { menuHousehold && handleViewMembers(menuHousehold.id); }}>
-                  <View style={styles.householdPopupItemIcon}><MaterialCommunityIcons name="eye-outline" size={20} color="#3D4F63" /></View>
+                  <View style={styles.householdPopupItemIcon}><MaterialCommunityIcons name="eye-outline" size={20} color={textPrimary} /></View>
                   <View style={styles.householdPopupItemText}>
                     <Text style={styles.householdPopupItemTitle}>View Members</Text>
                     <Text style={styles.householdPopupItemSub}>See who's in this household</Text>
@@ -1083,12 +1095,12 @@ function AuthenticatedHomeScreen() {
                 <Pressable style={styles.settingsModalCard} onPress={(e) => e.stopPropagation?.()}>
                   {/* Back button */}
                   <Pressable style={styles.membersBackButton} onPress={() => { setMenuOpenId(settingsId); setSettingsId(null); }}>
-                    <MaterialCommunityIcons name="arrow-left" size={22} color="#3D4F63" />
+                    <MaterialCommunityIcons name="arrow-left" size={22} color={textPrimary} />
                   </Pressable>
                   {/* Header */}
                   <View style={styles.settingsModalHeader}>
                     <View style={styles.settingsModalIconCircle}>
-                      <MaterialCommunityIcons name="cog-outline" size={28} color="#5D7FAF" />
+                      <MaterialCommunityIcons name="cog-outline" size={28} color={brandMuted} />
                     </View>
                     <Text style={styles.settingsModalTitle}>Household Settings</Text>
                     <Text style={styles.settingsModalSub}>{settingsHousehold.name}</Text>
@@ -1099,7 +1111,7 @@ function AuthenticatedHomeScreen() {
                     <View style={styles.settingsSection}>
                       <View style={styles.settingsSectionHeader}>
                         <View style={styles.settingsSectionIconCircle}>
-                          <MaterialCommunityIcons name="home-outline" size={20} color="#5D7FAF" />
+                          <MaterialCommunityIcons name="home-outline" size={20} color={brandMuted} />
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.settingsSectionTitle}>Household Name</Text>
@@ -1119,7 +1131,7 @@ function AuthenticatedHomeScreen() {
                           onPress={handleSaveHouseholdName}
                           disabled={!settingsName.trim() || settingsNameSaving}
                         >
-                          <MaterialCommunityIcons name="pencil-outline" size={15} color="#3B6DB5" />
+                          <MaterialCommunityIcons name="pencil-outline" size={15} color={brand} />
                           <Text style={styles.settingsSaveBtnText}>{settingsNameSaving ? "Saving..." : "Save Changes"}</Text>
                         </Pressable>
                       </View>
@@ -1128,7 +1140,7 @@ function AuthenticatedHomeScreen() {
                     <View style={styles.settingsSection}>
                       <View style={styles.settingsSectionHeader}>
                         <View style={styles.settingsSectionIconCircle}>
-                          <MaterialCommunityIcons name="key-outline" size={20} color="#5D7FAF" />
+                          <MaterialCommunityIcons name="key-outline" size={20} color={brandMuted} />
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.settingsSectionTitle}>Join Code</Text>
@@ -1141,7 +1153,7 @@ function AuthenticatedHomeScreen() {
                           onPress={handleRegenerateCode}
                           disabled={settingsCodeRegenerating}
                         >
-                          <MaterialCommunityIcons name="refresh" size={16} color="#3B6DB5" />
+                          <MaterialCommunityIcons name="refresh" size={16} color={brand} />
                           <Text style={styles.settingsRegenBtnText}>{settingsCodeRegenerating ? "Regenerating..." : "Regenerate Code"}</Text>
                         </Pressable>
                         <View style={styles.settingsCodeBox}>
@@ -1155,7 +1167,7 @@ function AuthenticatedHomeScreen() {
                               setTimeout(() => setSettingsCodeCopied(false), 2000);
                             }}
                           >
-                            <MaterialCommunityIcons name={settingsCodeCopied ? "check" : "content-copy"} size={18} color={settingsCodeCopied ? "#16A34A" : "#5D7FAF"} />
+                            <MaterialCommunityIcons name={settingsCodeCopied ? "check" : "content-copy"} size={18} color={settingsCodeCopied ? "#16A34A" : brandMuted} />
                           </Pressable>
                         </View>
                       </View>
@@ -1163,7 +1175,7 @@ function AuthenticatedHomeScreen() {
                         <Text style={styles.settingsCodeUpdated}>Last changed: {codeUpdated}</Text>
                       )}
                       <View style={styles.settingsCodeNote}>
-                        <MaterialCommunityIcons name="information-outline" size={14} color="#5D7FAF" />
+                        <MaterialCommunityIcons name="information-outline" size={14} color={brandMuted} />
                         <Text style={styles.settingsCodeNoteText}>After changing the code, anyone with the old code won't be able to join.</Text>
                       </View>
                     </View>
@@ -1199,7 +1211,7 @@ function AuthenticatedHomeScreen() {
                   </View>
                   <Text style={styles.modalTitle}>Delete Household?</Text>
                   <Text style={styles.modalSubtitle}>
-                    Are you sure you want to permanently delete <Text style={{ fontWeight: "700", color: "#3D4F63" }}>{settingsHousehold.name}</Text>? All data will be lost. This cannot be undone.
+                    Are you sure you want to permanently delete <Text style={{ fontWeight: "700", color: textPrimary }}>{settingsHousehold.name}</Text>? All data will be lost. This cannot be undone.
                   </Text>
                   <View style={styles.modalActions}>
                     <Pressable style={styles.modalCancelButton} onPress={() => setDeleteConfirmOpen(false)}>
@@ -1230,7 +1242,7 @@ function AuthenticatedHomeScreen() {
                 </View>
                 <Text style={styles.modalTitle}>You're the Admin</Text>
                 <Text style={styles.modalSubtitle}>
-                  You cannot leave{cannotLeaveHousehold ? ` "${cannotLeaveHousehold.name}"` : " this household"} while you are the admin. Use <Text style={{ fontWeight: "700", color: "#3B6DB5" }}>View Members</Text> to transfer admin status to another member first.
+                  You cannot leave{cannotLeaveHousehold ? ` "${cannotLeaveHousehold.name}"` : " this household"} while you are the admin. Use <Text style={{ fontWeight: "700", color: brand }}>View Members</Text> to transfer admin status to another member first.
                 </Text>
                 <View style={styles.modalActions}>
                   <Pressable style={styles.modalConfirmButton} onPress={() => setCannotLeaveId(null)}>
@@ -1252,7 +1264,7 @@ function AuthenticatedHomeScreen() {
           if (a.role !== "admin" && b.role === "admin") return 1;
           return 0;
         });
-        const AVATAR_COLORS = ["#5B7AB5", "#E07B5B", "#5BA87B", "#8B5BB5", "#B5855B", "#5B9EB5"];
+        const AVATAR_COLORS = [brandMuted, "#E07B5B", "#5BA87B", "#4A7BBF", "#B5855B", "#5B9EB5"];
         function avatarColor(id: number) { return AVATAR_COLORS[id % AVATAR_COLORS.length]; }
         function fmtDate(iso: string | null) {
           if (!iso) return "";
@@ -1268,12 +1280,12 @@ function AuthenticatedHomeScreen() {
               <Pressable style={styles.membersModalCard} onPress={(e) => { e.stopPropagation?.(); setMemberDotsOpenId(null); }}>
                 {/* Back button */}
                 <Pressable style={styles.membersBackButton} onPress={() => { setMenuOpenId(viewMembersId); setViewMembersId(null); setMemberDotsOpenId(null); }}>
-                  <MaterialCommunityIcons name="arrow-left" size={22} color="#3D4F63" />
+                  <MaterialCommunityIcons name="arrow-left" size={22} color={textPrimary} />
                 </Pressable>
                 {/* Header */}
                 <View style={styles.membersModalHeader}>
                   <View style={styles.membersModalIconCircle}>
-                    <MaterialCommunityIcons name="account-group" size={28} color="#5D7FAF" />
+                    <MaterialCommunityIcons name="account-group" size={28} color={brandMuted} />
                   </View>
                   <Text style={styles.membersModalTitle}>Members</Text>
                   <Text style={styles.membersModalSub}>{viewHousehold?.name ?? ""}</Text>
@@ -1298,7 +1310,7 @@ function AuthenticatedHomeScreen() {
                                 <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                                   <Text style={styles.memberName2}>{m.account_name}</Text>
                                   <View style={[styles.memberInlineBadge, isMemberAdmin && styles.memberInlineBadgeAdmin]}>
-                                    <MaterialCommunityIcons name={isMemberAdmin ? "shield-check" : "account-outline"} size={11} color={isMemberAdmin ? "#3B6DB5" : "#5B7AB5"} />
+                                    <MaterialCommunityIcons name={isMemberAdmin ? "shield-check" : "account-outline"} size={11} color={isMemberAdmin ? brand : brandMuted} />
                                     <Text style={[styles.memberInlineBadgeText, isMemberAdmin && styles.memberInlineBadgeTextAdmin]}>{isMemberAdmin ? "Admin" : "Member"}</Text>
                                   </View>
                                 </View>
@@ -1345,7 +1357,7 @@ function AuthenticatedHomeScreen() {
             </View>
             <Text style={styles.modalTitle}>Remove Member?</Text>
             <Text style={styles.modalSubtitle}>
-              Are you sure you want to remove <Text style={{ fontWeight: "700", color: "#3D4F63" }}>{removeConfirmMember?.account_name}</Text> from this household? This cannot be undone — they will need a new invite code to rejoin.
+              Are you sure you want to remove <Text style={{ fontWeight: "700", color: textPrimary }}>{removeConfirmMember?.account_name}</Text> from this household? This cannot be undone — they will need a new invite code to rejoin.
             </Text>
             <View style={styles.modalActions}>
               <Pressable style={styles.modalCancelButton} onPress={() => setRemoveConfirmMember(null)}>
@@ -1364,13 +1376,13 @@ function AuthenticatedHomeScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.leaveModalIconRow}>
-              <View style={[styles.cannotLeaveIconCircle, { backgroundColor: "#EBF2FC" }]}>
-                <MaterialCommunityIcons name="crown" size={26} color="#3B6DB5" />
+              <View style={[styles.cannotLeaveIconCircle, { backgroundColor: surfaceSoft }]}>
+                <MaterialCommunityIcons name="crown" size={26} color={brand} />
               </View>
             </View>
             <Text style={styles.modalTitle}>Transfer Admin?</Text>
             <Text style={styles.modalSubtitle}>
-              Are you sure you want to make <Text style={{ fontWeight: "700", color: "#3D4F63" }}>{makeAdminConfirmMember?.account_name}</Text> the admin? You will become a regular member and lose admin controls. This cannot be undone.
+              Are you sure you want to make <Text style={{ fontWeight: "700", color: textPrimary }}>{makeAdminConfirmMember?.account_name}</Text> the admin? You will become a regular member and lose admin controls. This cannot be undone.
             </Text>
             <View style={styles.modalActions}>
               <Pressable style={styles.modalCancelButton} onPress={() => setMakeAdminConfirmMember(null)}>
@@ -1418,14 +1430,14 @@ function AuthenticatedHomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#F0F2F5" },
-  navbar: { height: 68, backgroundColor: "#2D4A7A", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20 },
+  screen: { flex: 1, backgroundColor: pageBg },
+  navbar: { height: 68, backgroundColor: navy, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20 },
   navLeft: { flexDirection: "row", alignItems: "center" },
   logoBox: {
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: "#3B5FA0",
+    backgroundColor: heroGradient[0],
     alignItems: "center",
     justifyContent: "center",
     marginRight: 8,
@@ -1442,7 +1454,7 @@ const styles = StyleSheet.create({
   navLogout: { flexDirection: "row", alignItems: "center", gap: 8 },
   avatarCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#5B8AD4", alignItems: "center", justifyContent: "center" },
   avatarText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
-  heroBanner: { paddingTop: 40, paddingBottom: 70, paddingHorizontal: 24, alignItems: "center", position: "relative", overflow: "hidden" },
+  heroBanner: { paddingTop: 32, paddingBottom: 56, paddingHorizontal: 24, alignItems: "center", position: "relative", overflow: "hidden" },
   starField: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   star1: { position: "absolute", top: 12, left: "15%", color: "rgba(255,255,255,0.25)", fontSize: 14 },
   star2: { position: "absolute", top: 20, right: "15%", color: "rgba(255,255,255,0.2)", fontSize: 10 },
@@ -1456,7 +1468,7 @@ const styles = StyleSheet.create({
   bannerCloud: { position: "absolute", width: 80, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.12)" },
   bannerCloudSm: { width: 60, height: 24, borderRadius: 12 },
   bannerHousesRow: { position: "absolute", bottom: 12, left: 0, right: 0, flexDirection: "row", justifyContent: "space-around", alignItems: "flex-end", paddingHorizontal: 10 },
-  heroCurve: { height: 50, backgroundColor: "#F0F2F5", borderTopLeftRadius: 600, borderTopRightRadius: 600, marginTop: -50 },
+  heroCurve: { height: 50, backgroundColor: pageBg, borderTopLeftRadius: 600, borderTopRightRadius: 600, marginTop: -50 },
   heroTitle: { fontSize: 30, fontWeight: "700", color: "#FFFFFF", textAlign: "center", marginBottom: 8, zIndex: 2 },
   heroSubtitle: { fontSize: 16, color: "rgba(255,255,255,0.85)", textAlign: "center", zIndex: 2 },
   scrollContent: { paddingTop: 8, paddingBottom: 30, paddingHorizontal: 20 },
@@ -1464,26 +1476,26 @@ const styles = StyleSheet.create({
   mainContentWide: { flexDirection: "row", gap: 28 },
   leftColumn: { marginBottom: 24 },
   leftColumnWide: { width: "36%", marginBottom: 0 },
-  illustrationCard: { backgroundColor: "#FFFFFF", borderRadius: 20, padding: 24, alignItems: "center", shadowColor: "#AAB6C5", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 2 },
+  illustrationCard: { backgroundColor: "#FFFFFF", borderRadius: 20, padding: 24, alignItems: "center", borderWidth: 1, borderColor: border, shadowColor: "#AAB6C5", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 3 },
   illustrationImage: { width: "100%", height: 200, marginBottom: 16 },
-  illustrationTitle: { fontSize: 20, fontWeight: "700", color: "#3D4F63", textAlign: "center", marginBottom: 8 },
+  illustrationTitle: { fontSize: 20, fontWeight: "700", color: textPrimary, textAlign: "center", marginBottom: 8 },
   illustrationDesc: { fontSize: 14, lineHeight: 21, color: "#6B7B8D", textAlign: "center", marginBottom: 20 },
-  primaryButton: { width: "100%", borderRadius: 14, overflow: "hidden", marginBottom: 12, shadowColor: "#3B6DB5", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 10, elevation: 3 },
+  primaryButton: { width: "100%", borderRadius: 14, overflow: "hidden", marginBottom: 12, shadowColor: brand, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 4 },
   primaryButtonFill: { height: 52, alignItems: "center", justifyContent: "center", borderRadius: 14 },
   primaryButtonText: { fontSize: 16, fontWeight: "700", color: "#FFFFFF", letterSpacing: 0.2 },
-  secondaryButton: { width: "100%", height: 52, borderRadius: 14, borderWidth: 2, borderColor: "#3B6DB5", backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 18 },
-  secondaryButtonText: { fontSize: 16, fontWeight: "700", color: "#3B6DB5" },
-  quoteCard: { width: "100%", backgroundColor: "#EBF2FC", borderRadius: 14, paddingVertical: 18, paddingHorizontal: 20, alignItems: "center" },
+  secondaryButton: { width: "100%", height: 52, borderRadius: 14, borderWidth: 2, borderColor: brand, backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 18 },
+  secondaryButtonText: { fontSize: 16, fontWeight: "700", color: brand },
+  quoteCard: { width: "100%", backgroundColor: surfaceSoft, borderRadius: 14, paddingVertical: 18, paddingHorizontal: 20, alignItems: "center", borderLeftWidth: 4, borderLeftColor: brand },
   quoteText: { fontSize: 15, fontWeight: "600", color: "#4A6FA5", textAlign: "center", lineHeight: 24 },
   rightColumn: { flex: 1 },
   rightColumnWide: { flex: 1 },
-  rightColumnCard: { backgroundColor: "#FFFFFF", borderRadius: 20, padding: 24, shadowColor: "#AAB6C5", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 2 },
+  rightColumnCard: { backgroundColor: "#FFFFFF", borderRadius: 20, padding: 24, borderWidth: 1, borderColor: border, shadowColor: "#AAB6C5", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 3 },
   listHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
   listHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
-  sectionIconCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#EBF2FC", alignItems: "center", justifyContent: "center" },
-  sectionTitle: { fontSize: 22, fontWeight: "700", color: "#3D4F63" },
+  sectionIconCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: surfaceSoft, alignItems: "center", justifyContent: "center" },
+  sectionTitle: { fontSize: 22, fontWeight: "700", color: textPrimary },
   countBadge: {
-    backgroundColor: "#3B6DB5",
+    backgroundColor: brand,
     borderRadius: 8.4, // 1.2x of 7
     minWidth: 26.4,    // 1.2x of 22
     height: 26.4,      // 1.2x of 22
@@ -1502,45 +1514,45 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     marginLeft: 0,
   },
-  listSubtitle: { fontSize: 14, color: "#7B8A9C", marginBottom: 18, marginLeft: 38 },
+  listSubtitle: { fontSize: 14, color: textSecondary, marginBottom: 18, marginLeft: 38 },
   householdListScroll: { maxHeight: 480 },
-  loadingText: { textAlign: "center", fontSize: 16, color: "#7B8A9C", paddingVertical: 40 },
+  loadingText: { textAlign: "center", fontSize: 16, color: textSecondary, paddingVertical: 40 },
   emptyState: { alignItems: "center", paddingVertical: 36 },
   emptyTitle: { textAlign: "center", fontSize: 20, fontWeight: "600", color: "#596474", marginTop: 12, marginBottom: 8 },
   emptySubtitle: { textAlign: "center", fontSize: 15, lineHeight: 22, color: "#7C8797", paddingHorizontal: 12 },
-  householdCard: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: "#E6EAF0", flexDirection: "row", alignItems: "center", justifyContent: "space-between", shadowColor: "#AAB6C5", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 1 },
-  householdCardHovered: { backgroundColor: "#EBF2FC", borderColor: "#BDD0EE" },
+  householdCard: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: border, flexDirection: "row", alignItems: "center", justifyContent: "space-between", shadowColor: "#AAB6C5", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 2 },
+  householdCardHovered: { backgroundColor: surfaceSoft, borderColor: "#BDD0EE" },
   householdCardLeft: { flexDirection: "row", alignItems: "center", gap: 14, flex: 1 },
   householdCardRight: { flexDirection: "row", alignItems: "center", gap: 4 },
   dotsButton: { padding: 4, borderRadius: 8 },
-  dropdownDivider: { height: 1, backgroundColor: "#E6EAF0", marginVertical: 6 },
+  dropdownDivider: { height: 1, backgroundColor: border, marginVertical: 6 },
   householdPopup: { width: "100%", maxWidth: 420, backgroundColor: "#FFFFFF", borderRadius: 22, paddingTop: 20, paddingBottom: 8, paddingHorizontal: 0, shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 10, alignSelf: "center", overflow: "hidden" },
   householdPopupClose: { position: "absolute", top: 14, right: 14, zIndex: 10, padding: 6 },
   householdPopupHeader: { alignItems: "center", paddingBottom: 16, paddingHorizontal: 24 },
-  householdPopupIconCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: "#EBF2FC", alignItems: "center", justifyContent: "center", marginBottom: 10 },
-  householdPopupName: { fontSize: 20, fontWeight: "700", color: "#3D4F63", textAlign: "center", marginBottom: 8 },
-  householdPopupRoleBadge: { backgroundColor: "#EBF2FC", borderRadius: 20, paddingVertical: 4, paddingHorizontal: 14 },
-  householdPopupRoleText: { fontSize: 13, color: "#3B6DB5", fontWeight: "600" },
-  householdPopupRoleBadgeAdmin: { flexDirection: "row", alignItems: "center", backgroundColor: "#3B6DB5", borderRadius: 20, paddingVertical: 5, paddingHorizontal: 14 },
+  householdPopupIconCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: surfaceSoft, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  householdPopupName: { fontSize: 20, fontWeight: "700", color: textPrimary, textAlign: "center", marginBottom: 8 },
+  householdPopupRoleBadge: { backgroundColor: surfaceSoft, borderRadius: 20, paddingVertical: 4, paddingHorizontal: 14 },
+  householdPopupRoleText: { fontSize: 13, color: brand, fontWeight: "600" },
+  householdPopupRoleBadgeAdmin: { flexDirection: "row", alignItems: "center", backgroundColor: brand, borderRadius: 20, paddingVertical: 5, paddingHorizontal: 14 },
   householdPopupRoleTextAdmin: { fontSize: 13, color: "#FFFFFF", fontWeight: "600" },
   householdPopupSectionLabel: { fontSize: 11, fontWeight: "700", color: "#8FA0B3", letterSpacing: 0.8, paddingHorizontal: 24, paddingTop: 14, paddingBottom: 6 },
   householdPopupItem: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 24, paddingVertical: 13 },
   householdPopupItemLeave: { backgroundColor: "#FFF5F5" },
   householdPopupItemIcon: { width: 32, alignItems: "center" },
   householdPopupItemText: { flex: 1 },
-  householdPopupItemTitle: { fontSize: 15, fontWeight: "600", color: "#3D4F63", marginBottom: 1 },
+  householdPopupItemTitle: { fontSize: 15, fontWeight: "600", color: textPrimary, marginBottom: 1 },
   householdPopupItemSub: { fontSize: 12, color: "#8FA0B3" },
   householdPopupCancel: { marginHorizontal: 24, marginTop: 8, marginBottom: 12, height: 46, borderRadius: 12, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center" },
   householdPopupCancelText: { fontSize: 15, fontWeight: "600", color: "#596474" },
-  householdIconCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: "#EBF2FC", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  householdIconCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: surfaceSoft, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   householdLogo: { width: 90, height: 90, tintColor: "#4A7BBF" },
   householdInfo: { flex: 1 },
-  householdName: { fontSize: 17, fontWeight: "700", color: "#3D4F63", marginBottom: 3 },
-  householdMeta: { fontSize: 13, color: "#7B8A9C" },
+  householdName: { fontSize: 17, fontWeight: "700", color: textPrimary, marginBottom: 3 },
+  householdMeta: { fontSize: 13, color: textSecondary },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(27, 39, 56, 0.35)", alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
   modalCard: { width: "100%", maxWidth: 480, backgroundColor: "#FFFFFF", borderRadius: 22, padding: 22, shadowColor: "#000000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 8, alignSelf: "center" },
-  modalTitle: { fontSize: 24, fontWeight: "700", color: "#3D4F63", marginBottom: 8 },
-  modalSubtitle: { fontSize: 16, lineHeight: 24, color: "#7B8A9C", marginBottom: 18 },
+  modalTitle: { fontSize: 24, fontWeight: "700", color: textPrimary, marginBottom: 8 },
+  modalSubtitle: { fontSize: 16, lineHeight: 24, color: textSecondary, marginBottom: 18 },
   input: { height: 54, borderRadius: 14, borderWidth: 1.5, borderColor: "#D7DFEA", paddingHorizontal: 16, fontSize: 16, color: "#334155", backgroundColor: "#FAFBFD" },
   modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 12, marginTop: 20 },
   leaveConfirmButton: { paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12, backgroundColor: "#D9534F" },
@@ -1550,76 +1562,76 @@ const styles = StyleSheet.create({
   cannotLeaveIconCircle: { width: 52, height: 52, borderRadius: 26, backgroundColor: "#FFFBEB", alignItems: "center", justifyContent: "center" },
   modalCancelButton: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, backgroundColor: "#EEF2F7" },
   modalCancelText: { color: "#64748B", fontWeight: "600" },
-  modalConfirmButton: { paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12, backgroundColor: "#3B6DB5" },
+  modalConfirmButton: { paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12, backgroundColor: brand },
   modalConfirmText: { color: "#FFFFFF", fontWeight: "700" },
   membersModalCard: { width: "100%", maxWidth: 500, backgroundColor: "#FFFFFF", borderRadius: 22, paddingTop: 20, paddingBottom: 16, shadowColor: "#000000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 8, alignSelf: "center", maxHeight: "80%" },
   membersModalHeader: { alignItems: "center", paddingHorizontal: 24, paddingBottom: 16, paddingTop: 8 },
-  membersModalIconCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: "#EBF2FC", alignItems: "center", justifyContent: "center", marginBottom: 10 },
-  membersModalTitle: { fontSize: 22, fontWeight: "700", color: "#3D4F63", marginBottom: 2 },
-  membersModalSub: { fontSize: 14, color: "#7B8A9C", marginBottom: 4 },
-  membersModalDesc: { fontSize: 14, color: "#7B8A9C", textAlign: "center" },
+  membersModalIconCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: surfaceSoft, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  membersModalTitle: { fontSize: 22, fontWeight: "700", color: textPrimary, marginBottom: 2 },
+  membersModalSub: { fontSize: 14, color: textSecondary, marginBottom: 4 },
+  membersModalDesc: { fontSize: 14, color: textSecondary, textAlign: "center" },
   membersBackButton: { position: "absolute", top: 14, left: 14, zIndex: 10, padding: 6 },
-  memberCountHeader: { fontSize: 16, fontWeight: "700", color: "#3D4F63", paddingHorizontal: 20, paddingVertical: 12 },
-  membersLoadingText: { textAlign: "center", color: "#7B8A9C", paddingVertical: 24, fontSize: 15 },
+  memberCountHeader: { fontSize: 16, fontWeight: "700", color: textPrimary, paddingHorizontal: 20, paddingVertical: 12 },
+  membersLoadingText: { textAlign: "center", color: textSecondary, paddingVertical: 24, fontSize: 15 },
   membersScroll: { paddingHorizontal: 12 },
   memberAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   memberAvatarText: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
   memberRow2: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, marginBottom: 4, borderWidth: 1, borderColor: "transparent" },
-  memberRowAdmin2: { backgroundColor: "#EBF2FC", borderColor: "#D0E2F7" },
+  memberRowAdmin2: { backgroundColor: surfaceSoft, borderColor: "#D0E2F7" },
   memberInfo2: { flex: 1 },
-  memberName2: { fontSize: 15, fontWeight: "600", color: "#3D4F63" },
+  memberName2: { fontSize: 15, fontWeight: "600", color: textPrimary },
   memberJoined: { fontSize: 12, color: "#8FA0B3", marginTop: 1 },
   memberInlineBadge: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#F0F4FA", borderRadius: 10, paddingVertical: 2, paddingHorizontal: 8 },
-  memberInlineBadgeAdmin: { backgroundColor: "#EBF2FC" },
-  memberInlineBadgeText: { fontSize: 11, color: "#5B7AB5", fontWeight: "600" },
-  memberInlineBadgeTextAdmin: { color: "#3B6DB5" },
+  memberInlineBadgeAdmin: { backgroundColor: surfaceSoft },
+  memberInlineBadgeText: { fontSize: 11, color: brandMuted, fontWeight: "600" },
+  memberInlineBadgeTextAdmin: { color: brand },
   currentAdminBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#F0FDF4", borderRadius: 12, paddingVertical: 5, paddingHorizontal: 10, borderWidth: 1, borderColor: "#BBF7D0" },
   currentAdminText: { fontSize: 12, color: "#16A34A", fontWeight: "600" },
   memberAdminActions: { flexDirection: "row", gap: 6 },
-  memberMakeAdminBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: "#EBF2FC", borderWidth: 1, borderColor: "#C5D8F0" },
-  memberMakeAdminBtnText: { fontSize: 12, fontWeight: "600", color: "#3B6DB5" },
+  memberMakeAdminBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: surfaceSoft, borderWidth: 1, borderColor: "#C5D8F0" },
+  memberMakeAdminBtnText: { fontSize: 12, fontWeight: "600", color: brand },
   memberRemoveBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: "#FFF5F5", borderWidth: 1, borderColor: "#F5BCBC" },
   memberRemoveBtnText: { fontSize: 12, fontWeight: "600", color: "#D9534F" },
   membersFooter: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 14, paddingHorizontal: 8 },
   membersFooterText: { fontSize: 12, color: "#8FA0B3" },
-  memberActionSheet: { borderTopWidth: 1, borderTopColor: "#E6EAF0", backgroundColor: "#FFFFFF", borderBottomLeftRadius: 22, borderBottomRightRadius: 22, paddingTop: 4, paddingBottom: 8 },
+  memberActionSheet: { borderTopWidth: 1, borderTopColor: border, backgroundColor: "#FFFFFF", borderBottomLeftRadius: 22, borderBottomRightRadius: 22, paddingTop: 4, paddingBottom: 8 },
   memberActionSheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#D0D9E6", alignSelf: "center", marginTop: 10, marginBottom: 8 },
   memberActionSheetName: { fontSize: 13, fontWeight: "600", color: "#8FA0B3", paddingHorizontal: 20, paddingVertical: 6 },
   memberActionSheetItem: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingVertical: 14 },
-  memberActionSheetItemText: { fontSize: 15, fontWeight: "600", color: "#3D4F63" },
+  memberActionSheetItemText: { fontSize: 15, fontWeight: "600", color: textPrimary },
   memberActionSheetCancel: { marginHorizontal: 16, marginTop: 6, marginBottom: 4, height: 44, borderRadius: 12, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center" },
   memberActionSheetCancelText: { fontSize: 15, fontWeight: "600", color: "#596474" },
   // Household Settings modal
   settingsModalCard: { width: "100%", maxWidth: 560, backgroundColor: "#FFFFFF", borderRadius: 22, paddingTop: 20, paddingBottom: 0, shadowColor: "#000000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 8, alignSelf: "center", maxHeight: "88%" },
   settingsModalHeader: { alignItems: "center", paddingHorizontal: 24, paddingBottom: 16, paddingTop: 8 },
-  settingsModalIconCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: "#EBF2FC", alignItems: "center", justifyContent: "center", marginBottom: 10 },
-  settingsModalTitle: { fontSize: 22, fontWeight: "700", color: "#3D4F63", marginBottom: 2 },
-  settingsModalSub: { fontSize: 14, fontWeight: "600", color: "#3D4F63", marginBottom: 2 },
-  settingsModalDesc: { fontSize: 13, color: "#7B8A9C", textAlign: "center" },
+  settingsModalIconCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: surfaceSoft, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  settingsModalTitle: { fontSize: 22, fontWeight: "700", color: textPrimary, marginBottom: 2 },
+  settingsModalSub: { fontSize: 14, fontWeight: "600", color: textPrimary, marginBottom: 2 },
+  settingsModalDesc: { fontSize: 13, color: textSecondary, textAlign: "center" },
   settingsScroll: { paddingHorizontal: 20, paddingBottom: 20 },
-  settingsSection: { borderWidth: 1, borderColor: "#E6EAF0", borderRadius: 16, padding: 16, marginBottom: 14, backgroundColor: "#FAFBFD" },
+  settingsSection: { borderWidth: 1, borderColor: border, borderRadius: 16, padding: 16, marginBottom: 14, backgroundColor: "#FAFBFD" },
   settingsSectionDanger: { borderColor: "#F5BCBC", backgroundColor: "#FFF8F8" },
   settingsSectionHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 14 },
-  settingsSectionIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#EBF2FC", alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  settingsSectionTitle: { fontSize: 15, fontWeight: "700", color: "#3D4F63", marginBottom: 3 },
-  settingsSectionSub: { fontSize: 13, color: "#7B8A9C", lineHeight: 18 },
+  settingsSectionIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: surfaceSoft, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  settingsSectionTitle: { fontSize: 15, fontWeight: "700", color: textPrimary, marginBottom: 3 },
+  settingsSectionSub: { fontSize: 13, color: textSecondary, lineHeight: 18 },
   settingsNameRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   settingsNameInput: { flex: 1, height: 44, borderRadius: 12, borderWidth: 1.5, borderColor: "#D7DFEA", paddingHorizontal: 14, fontSize: 15, color: "#334155", backgroundColor: "#FFFFFF" },
   settingsSaveBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: "#C5D8F0", backgroundColor: "#FFFFFF" },
   settingsSaveBtnDisabled: { opacity: 0.5 },
-  settingsSaveBtnText: { fontSize: 13, fontWeight: "600", color: "#3B6DB5" },
+  settingsSaveBtnText: { fontSize: 13, fontWeight: "600", color: brand },
   settingsCodeRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   settingsRegenBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: "#C5D8F0", backgroundColor: "#FFFFFF" },
-  settingsRegenBtnText: { fontSize: 13, fontWeight: "600", color: "#3B6DB5" },
+  settingsRegenBtnText: { fontSize: 13, fontWeight: "600", color: brand },
   settingsCodeBox: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: "#C5D8F0", backgroundColor: "#FFFFFF" },
-  settingsCodeText: { fontSize: 16, fontWeight: "700", color: "#3B6DB5", letterSpacing: 1.5 },
+  settingsCodeText: { fontSize: 16, fontWeight: "700", color: brand, letterSpacing: 1.5 },
   settingsCodeUpdated: { fontSize: 12, color: "#8FA0B3", marginBottom: 8 },
-  settingsCodeNote: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#EBF2FC", borderRadius: 10, padding: 10 },
+  settingsCodeNote: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: surfaceSoft, borderRadius: 10, padding: 10 },
   settingsCodeNoteText: { flex: 1, fontSize: 12, color: "#4A6FA5", lineHeight: 18 },
   settingsDangerContent: { flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" },
   settingsDangerIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#FFF0F0", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   settingsDangerTitle: { fontSize: 15, fontWeight: "700", color: "#D9534F", marginBottom: 3 },
-  settingsDangerSub: { fontSize: 13, color: "#7B8A9C", lineHeight: 18 },
+  settingsDangerSub: { fontSize: 13, color: textSecondary, lineHeight: 18 },
   settingsDeleteBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: "#F5BCBC", backgroundColor: "#FFF0F0" },
   settingsDeleteBtnText: { fontSize: 13, fontWeight: "600", color: "#D9534F" },
 });

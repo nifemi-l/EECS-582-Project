@@ -1,52 +1,95 @@
 /* PROLOGUE
 File name: ViewToggle.tsx
-Description: Top bar with a pill toggle to switch between 3D and list views, plus sensor badges
+Description: Unified household header: navy bar with back, divider, 3D/List pill, sensor
+             badges, spacer, avatar and Logout. Fetches sensor data for the household.
 Programmer: Nifemi Lawal
 Creation date: 2/6/26
 Revision date:
   - 2/14/26: Add sensor badges and improve layout
+  - 4/12/26: Household header bar rework for small screens; placeholder sensor values if the API is missing data
 Preconditions: Must receive the currently active view mode as a prop
-Postconditions: Renders a toggle bar that can navigate between views
+Postconditions: Renders the household chrome bar and can navigate between views
 Errors: None. Will always render successfully
-Side effects: Navigates to a different route when a toggle option is pressed
+Side effects: Navigates to a different route when the user switches views or logs out
 Invariants: None
 Known faults: None
 */
 
-// Import react and useState hook for tracking which sensor card is open
 import React, { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-// Icon library for material design icons
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-// Router hook for navigating between pages
-import { useRouter } from "expo-router";
-// Import sensor badge and its prop types
+import { router } from "expo-router";
 import { SensorBadge, SensorBadgeProps } from "./SensorBadge";
+import { clearToken, getToken } from "../utils/authStorage";
+import { brand, navy } from "../theme/colors";
 
-// Two possible view modes
+/** Below this width, sensors move to a second row so the pill and auth cluster fit phones. */
+const STACKED_TOOLBAR_BREAKPOINT = 560;
+/** Below this width, use short segment labels and icon-only logout. */
+const COMPACT_CHROME_BREAKPOINT = 640;
+
+const MOCK_TEMP_C = "21°C";
+const MOCK_HUMIDITY_PCT = "52%";
+
+/** Shown in badges before the API responds; also used after failed/missing responses. */
+const MOCK_SENSOR_BADGES: SensorBadgeProps[] = [
+  { icon: "thermometer", value: MOCK_TEMP_C, label: "Temperature" },
+  { icon: "water-percent", value: MOCK_HUMIDITY_PCT, label: "Humidity" },
+];
+
 type ViewMode = "3d" | "list";
 
-// Color constants used throughout this component
-const ACCENT = "#4169E1";
-const ACCENT_LIGHT = "#e8eaf6";
-
-
-// Props for the ViewToggle component
 interface ViewToggleProps {
-  active: ViewMode; // which view is currently selected
-  onChange: (mode: ViewMode) => void; // callback used by the parent layout to switch views
-  householdId: number; // ID of the household to fetch sensor data for
+  active: ViewMode;
+  onChange: (mode: ViewMode) => void;
+  householdId: number;
 }
 
-// Main toggle bar component at the top of the screen
-export default function ViewToggle({ active, onChange, householdId }: ViewToggleProps) {
-  // Track which sensor detail card is open, null means all are closed
-  const [openLabel, setOpenLabel] = useState<string | null>(null);
+function initialFromToken(token: string): string {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return "?";
+    let payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    while (payload.length % 4 !== 0) payload += "=";
+    const decoded =
+      Platform.OS === "web" ? atob(payload) : global.atob?.(payload) ?? atob(payload);
+    const parsed = JSON.parse(decoded);
+    const u = parsed.username;
+    if (typeof u === "string" && u.length > 0) return u.charAt(0).toUpperCase();
+    return "?";
+  } catch {
+    return "?";
+  }
+}
 
-  const [sensors, setSensors] = useState<SensorBadgeProps[]>([
-    { icon: "thermometer", value: "N/A", label: "Temperature" },
-    { icon: "water-percent", value: "N/A", label: "Humidity" },
-  ]);
+export default function ViewToggle({ active, onChange, householdId }: ViewToggleProps) {
+  const { width: windowWidth } = useWindowDimensions();
+  const stackedToolbarLayout = windowWidth < STACKED_TOOLBAR_BREAKPOINT;
+  const compactChrome = windowWidth < COMPACT_CHROME_BREAKPOINT;
+
+  const [openLabel, setOpenLabel] = useState<string | null>(null);
+  const [avatarLetter, setAvatarLetter] = useState("?");
+
+  const [sensors, setSensors] = useState<SensorBadgeProps[]>(MOCK_SENSOR_BADGES);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const token = await getToken();
+      if (cancelled || !token) return;
+      setAvatarLetter(initialFromToken(token));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!householdId) return;
@@ -56,27 +99,29 @@ export default function ViewToggle({ active, onChange, householdId }: ViewToggle
     async function loadSensorData() {
       try {
         const response = await fetch(
-          // Fetch the most recent sensor data for the household from the backend API
           `${process.env.EXPO_PUBLIC_API_URL}/api/sensor-data/${householdId}`
         );
-        // Store the response of the fetch request
         const data = await response.json();
 
-        // If the data is invalid or the component is unmounted, ignore the response
         if (!isMounted) return;
-        if (!data || data.temperature === undefined) return;
+        if (!data || data.temperature === undefined) {
+          setSensors(MOCK_SENSOR_BADGES);
+          return;
+        }
 
-        // Update the sensor badge values with the latest environment data
+        const hum =
+          data.humidity !== undefined && data.humidity !== null
+            ? `${data.humidity}%`
+            : MOCK_HUMIDITY_PCT;
         setSensors([
           { icon: "thermometer", value: `${data.temperature}°C`, label: "Temperature" },
-          { icon: "water-percent", value: `${data.humidity}%`, label: "Humidity" },
+          { icon: "water-percent", value: hum, label: "Humidity" },
         ]);
-        // If a fetch error occurs, just continue using the most recently successfully fetched data
       } catch (_error) {
+        if (isMounted) setSensors(MOCK_SENSOR_BADGES);
       }
     }
 
-    // Initial load of the page or every minute after queries for new sensor data
     loadSensorData();
     const interval = setInterval(loadSensorData, 60_000);
     return () => {
@@ -85,152 +130,299 @@ export default function ViewToggle({ active, onChange, householdId }: ViewToggle
     };
   }, [householdId]);
 
-  // Handle switching between views
   const navigate = (mode: ViewMode) => {
-    if (mode === active) return; // don't switch if we're already there
-    onChange(mode); // ask the parent layout to navigate
+    if (mode === active) return;
+    onChange(mode);
   };
 
+  async function handleLogout() {
+    await clearToken();
+    router.replace("/login");
+  }
+
+  const backButton = (
+    <Pressable
+      onPress={() => router.replace("/home")}
+      style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+      accessibilityRole="button"
+      accessibilityLabel="Back to home"
+      hitSlop={8}
+    >
+      <MaterialCommunityIcons name="chevron-left" size={22} color="#FFFFFF" />
+    </Pressable>
+  );
+
+  const divider = <View style={styles.divider} />;
+
+  const segmentPad = compactChrome ? styles.segmentCompact : undefined;
+
+  const pill = (
+    <View style={styles.pill}>
+      <Pressable
+        onPress={() => navigate("3d")}
+        style={[styles.segment, segmentPad, active === "3d" && styles.segmentActive]}
+      >
+        <MaterialCommunityIcons
+          name="rotate-3d-variant"
+          size={17}
+          color={active === "3d" ? "#fff" : "rgba(255,255,255,0.65)"}
+        />
+        <Text
+          style={[styles.segmentText, active === "3d" && styles.segmentTextActive]}
+          numberOfLines={1}
+        >
+          {compactChrome ? "3D" : "3D View"}
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={() => navigate("list")}
+        style={[styles.segment, segmentPad, active === "list" && styles.segmentActive]}
+      >
+        <MaterialCommunityIcons
+          name="format-list-bulleted"
+          size={17}
+          color={active === "list" ? "#fff" : "rgba(255,255,255,0.65)"}
+        />
+        <Text
+          style={[styles.segmentText, active === "list" && styles.segmentTextActive]}
+          numberOfLines={1}
+        >
+          List
+        </Text>
+      </Pressable>
+    </View>
+  );
+
+  const sensorRow = (
+    <View style={[styles.sensors, stackedToolbarLayout && styles.sensorsStacked]}>
+      {sensors.map((s, index) => (
+        <SensorBadge
+          key={s.label}
+          icon={s.icon}
+          value={s.value}
+          label={s.label}
+          isOpen={openLabel === s.label}
+          onToggle={() => setOpenLabel(openLabel === s.label ? null : s.label!)}
+          darkBg
+          toolbar
+          detailAlign={index === sensors.length - 1 ? "end" : "start"}
+        />
+      ))}
+    </View>
+  );
+
+  const userCluster = (
+    <View style={styles.userCluster}>
+      <View style={styles.avatarCircle}>
+        <Text style={styles.avatarText}>{avatarLetter}</Text>
+      </View>
+      <Pressable
+        onPress={() => {
+          void handleLogout();
+        }}
+        accessibilityRole="button"
+        accessibilityLabel="Log out"
+        style={({ pressed }) => [
+          compactChrome ? styles.logoutBtnIcon : styles.logoutBtn,
+          pressed && (compactChrome ? styles.logoutBtnIconPressed : styles.logoutBtnPressed),
+        ]}
+      >
+        {compactChrome ? (
+          <MaterialCommunityIcons name="logout" size={20} color="#FFFFFF" />
+        ) : (
+          <Text style={styles.logoutText}>Logout</Text>
+        )}
+      </Pressable>
+    </View>
+  );
+
   return (
-    // Wrapper with padding around everything
     <View style={styles.wrapper}>
-      {/* Invisible full-screen backdrop that closes the open card when tapped */}
       {openLabel && (
         <Pressable style={styles.backdrop} onPress={() => setOpenLabel(null)} />
       )}
-      {/* Row that holds the pill and the sensor badges */}
-      <View style={styles.row}>
-        {/* Pill-shaped toggle container */}
-        <View style={styles.pill}>
-          {/* 3D view button */}
-          <Pressable
-            onPress={() => navigate("3d")}
-            style={[styles.segment, active === "3d" && styles.segmentActive]}
-          >
-            {/* 3D rotation icon */}
-            <MaterialCommunityIcons
-              name="rotate-3d-variant"
-              size={17}
-              color={active === "3d" ? "#fff" : ACCENT}
-            />
-            {/* 3D View label text */}
-            <Text
-              style={[
-                styles.segmentText,
-                active === "3d" && styles.segmentTextActive,
-              ]}
-            >
-              3D View
-            </Text>
-          </Pressable>
 
-          {/* List view button */}
-          <Pressable
-            onPress={() => navigate("list")}
-            style={[styles.segment, active === "list" && styles.segmentActive]}
-          >
-            {/* List icon */}
-            <MaterialCommunityIcons
-              name="format-list-bulleted"
-              size={17}
-              color={active === "list" ? "#fff" : ACCENT}
-            />
-            {/* List label text */}
-            <Text
-              style={[
-                styles.segmentText,
-                active === "list" && styles.segmentTextActive,
-              ]}
-            >
-              List
-            </Text>
-          </Pressable>
+      {stackedToolbarLayout ? (
+        <>
+          <View style={styles.rowTop}>
+            {backButton}
+            {divider}
+            {pill}
+            <View style={styles.spacer} />
+            {userCluster}
+          </View>
+          <View style={styles.rowBottom}>{sensorRow}</View>
+        </>
+      ) : (
+        <View style={styles.row}>
+          {backButton}
+          {divider}
+          {pill}
+          {sensorRow}
+          <View style={styles.spacer} />
+          {userCluster}
         </View>
-
-        {/* Sensor badges displayed to the right of the pill */}
-        <View style={styles.sensors}>
-          {/* Loop through each sensor and render a badge for it */}
-          {sensors.map((s) => (
-            <SensorBadge
-              key={s.label}
-              icon={s.icon}
-              value={s.value}
-              label={s.label}
-              isOpen={openLabel === s.label}
-              onToggle={() => setOpenLabel(openLabel === s.label ? null : s.label!)}
-              darkBg={active === "3d"}
-            />
-          ))}
-        </View>
-      </View>
+      )}
     </View>
   );
 }
 
-// Styles for the toggle and its layout
 const styles = StyleSheet.create({
-  // Outer wrapper with padding, z-index so popover cards sit above the 3D view
   wrapper: {
-    paddingTop: 10, // space above the bar
-    paddingBottom: 6, // space below the bar
-    paddingHorizontal: 16, // side padding
-    position: "relative", // establish stacking context for absolute children
-    zIndex: 50, // float above sibling views like the WebGL canvas
+    backgroundColor: navy,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    position: "relative",
+    zIndex: 50,
+    minHeight: 68,
+    justifyContent: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: `${brand}55`,
+    width: "100%",
+    alignSelf: "stretch",
   },
-  // Invisible overlay that covers the whole screen to catch outside taps
   backdrop: {
-    position: "absolute", // break out of normal flow
-    top: 0, // start from the top of the wrapper
-    left: -16, // extend past the horizontal padding
-    right: -16, // extend past the horizontal padding on the other side
-    height: 2000, // tall enough to cover the entire screen below
-    zIndex: 0, // sit behind the badges but inside the wrapper stacking context
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2000,
+    zIndex: 0,
   },
-  // Horizontal row that holds everything
   row: {
-    flexDirection: "row", // lay children out horizontally
-    alignItems: "center", // vertically center everything
+    flexDirection: "row",
+    alignItems: "center",
+    zIndex: 1,
+    minWidth: 0,
   },
-  // The pill-shaped toggle background
+  rowTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    zIndex: 1,
+    marginBottom: 8,
+    minWidth: 0,
+  },
+  rowBottom: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    zIndex: 1,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.28)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    marginRight: 10,
+  },
+  backBtnPressed: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  divider: {
+    width: StyleSheet.hairlineWidth,
+    height: 28,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    marginRight: 12,
+  },
   pill: {
-    flexDirection: "row", // buttons sit side by side
-    backgroundColor: ACCENT_LIGHT, // light background behind the pill
-    borderRadius: 24, // rounded ends
-    padding: 3, // inner spacing around buttons
+    flexDirection: "row",
+    backgroundColor: "rgba(0,0,0,0.22)",
+    borderRadius: 22,
+    padding: 3,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.15)",
+    flexShrink: 1,
+    minWidth: 0,
   },
-  // Each clickable segment inside the pill
   segment: {
-    flexDirection: "row", // icon and text side by side
-    alignItems: "center", // vertically center contents
-    paddingVertical: 7, // top and bottom padding
-    paddingHorizontal: 18, // left and right padding
-    borderRadius: 22, // rounded corners
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 18,
   },
-  // Active segment gets a filled background and shadow
+  segmentCompact: {
+    paddingHorizontal: 8,
+  },
   segmentActive: {
-    backgroundColor: ACCENT, // fill with the accent color
-    elevation: 2, // android shadow
-    shadowColor: ACCENT, // ios shadow color
-    shadowOffset: { width: 0, height: 2 }, // shadow direction
-    shadowOpacity: 0.3, // how transparent the shadow is
-    shadowRadius: 4, // how blurry the shadow is
+    backgroundColor: "rgba(255,255,255,0.22)",
   },
-  // Default text style inside each segment
   segmentText: {
-    marginLeft: 6, // gap between icon and text
-    fontSize: 13, // text size
-    fontWeight: "700", // bold
-    color: ACCENT, // accent colored text
+    marginLeft: 6,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "rgba(255,255,255,0.65)",
+    flexShrink: 1,
   },
-  // Text override when the segment is active
   segmentTextActive: {
-    color: "#fff", // white text on active background
+    color: "#fff",
   },
-  // Container for the sensor badges
   sensors: {
-    flexDirection: "row", // badges in a row
-    alignItems: "center", // vertically centered
-    marginLeft: 18, // gap between pill and first badge
-    gap: 14, // space between each badge
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 10,
+    gap: 8,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  sensorsStacked: {
+    marginLeft: 0,
+  },
+  spacer: {
+    flex: 1,
+    minWidth: 8,
+  },
+  userCluster: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginLeft: 8,
+    flexShrink: 0,
+  },
+  avatarCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#5B8AD4",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  logoutBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  logoutBtnPressed: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  logoutBtnIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  logoutBtnIconPressed: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  logoutText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });
