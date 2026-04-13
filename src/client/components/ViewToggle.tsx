@@ -6,7 +6,7 @@ Programmer: Nifemi Lawal
 Creation date: 2/6/26
 Revision date:
   - 2/14/26: Add sensor badges and improve layout
-  - 4/12/26: Household header bar rework for small screens; placeholder sensor values if the API is missing data
+  - 4/12/26: Household header bar rework for small screens
 Preconditions: Must receive the currently active view mode as a prop
 Postconditions: Renders the household chrome bar and can navigate between views
 Errors: None. Will always render successfully
@@ -35,13 +35,9 @@ const STACKED_TOOLBAR_BREAKPOINT = 560;
 /** Below this width, use short segment labels and icon-only logout. */
 const COMPACT_CHROME_BREAKPOINT = 640;
 
-const MOCK_TEMP_C = "21°C";
-const MOCK_HUMIDITY_PCT = "52%";
-
-/** Shown in badges before the API responds; also used after failed/missing responses. */
-const MOCK_SENSOR_BADGES: SensorBadgeProps[] = [
-  { icon: "thermometer", value: MOCK_TEMP_C, label: "Temperature" },
-  { icon: "water-percent", value: MOCK_HUMIDITY_PCT, label: "Humidity" },
+const SENSORS_NA: SensorBadgeProps[] = [
+  { icon: "thermometer", value: "N/A", label: "Temperature" },
+  { icon: "water-percent", value: "N/A", label: "Humidity" },
 ];
 
 type ViewMode = "3d" | "list";
@@ -77,7 +73,7 @@ export default function ViewToggle({ active, onChange, householdId }: ViewToggle
   const [openLabel, setOpenLabel] = useState<string | null>(null);
   const [avatarLetter, setAvatarLetter] = useState("?");
 
-  const [sensors, setSensors] = useState<SensorBadgeProps[]>(MOCK_SENSOR_BADGES);
+  const [sensors, setSensors] = useState<SensorBadgeProps[]>(SENSORS_NA);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,20 +101,20 @@ export default function ViewToggle({ active, onChange, householdId }: ViewToggle
 
         if (!isMounted) return;
         if (!data || data.temperature === undefined) {
-          setSensors(MOCK_SENSOR_BADGES);
+          setSensors(SENSORS_NA);
           return;
         }
 
         const hum =
           data.humidity !== undefined && data.humidity !== null
             ? `${data.humidity}%`
-            : MOCK_HUMIDITY_PCT;
+            : "N/A";
         setSensors([
           { icon: "thermometer", value: `${data.temperature}°C`, label: "Temperature" },
           { icon: "water-percent", value: hum, label: "Humidity" },
         ]);
       } catch (_error) {
-        if (isMounted) setSensors(MOCK_SENSOR_BADGES);
+        if (isMounted) setSensors(SENSORS_NA);
       }
     }
 
