@@ -17,45 +17,32 @@ Known faults: None
 import Task from "./task";
 
 export enum FeatureType {
-    UNDEFINED = 0,
-    BED = 1,
-    TABLE = 2,
-    MONKEY = 3,
-    FRAME = 4,
+    UNDEFINED = "",
+    BED = "bed",
+    TABLE = "table",
+    MONKEY = "monkey",
+    FRAME = "frame",
+    FLOWER_POT = "flower_pot",
+    COUCH = "couch",
+    FRIDGE = "fridge",
 }
 
 // Translate from a string feature type (as we often see in our app) to the correct enum value
-export function getFeatureTypeFromString(str: string) {
-    switch (str) {
-        case "monkey":
-            return FeatureType.MONKEY;
-        case "table":
-            return FeatureType.TABLE;
-        case "bed":
-            return FeatureType.BED;
-        case "frame":
-            return FeatureType.FRAME;
-        case "":
-        default:
-            return FeatureType.UNDEFINED;
+export function getFeatureTypeFromString(str: string): FeatureType {
+    // Get a list of our string values.
+    const vals = Object.values(FeatureType) as string[];
+    if (vals.includes(str)) {
+        // If we have one, return the string.
+        return str as FeatureType;
     }
+
+    // Otherwise return UNDEFINED
+    return FeatureType.UNDEFINED;
 }
 
 // Translate from a feature type to a string (as we often see in our app) to the correct enum value
-export function getFeatureTypeToString(ft?: FeatureType) {
-    switch (ft) {
-        case FeatureType.BED:
-            return "bed";
-        case FeatureType.TABLE:
-            return "table";
-        case FeatureType.MONKEY:
-            return "monkey";
-        case FeatureType.FRAME:
-            return "frame";
-        case FeatureType.UNDEFINED:
-        default:
-            return "";
-    }
+export function getFeatureTypeToString(ft?: FeatureType): string {
+    return ft ?? FeatureType.UNDEFINED;
 }
 
 export default class Feature {
@@ -69,8 +56,10 @@ export default class Feature {
     z_pos: number;
     tasks: Task[];
     icon: string; // for compatibility
+    room_number: number; // store which room the feature is in
+    room_name: string; // store the name of the current room
 
-    constructor(feature_name: string, household_id: number, feature_type: FeatureType = FeatureType.UNDEFINED, x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline") {
+    constructor(feature_name: string, household_id: number, feature_type: FeatureType = FeatureType.UNDEFINED, x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline", room_number: number = 0, room_name: string = "default") {
         this.feature_name = feature_name;
         this.name = feature_name;
         this.household_id = household_id;
@@ -82,6 +71,8 @@ export default class Feature {
         this.id = feature_id;
         this.tasks = [];
         this.icon = icon;
+        this.room_number = room_number;
+        this.room_name = room_name;
     }
 
     addTask(task : Task) {

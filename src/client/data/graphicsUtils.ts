@@ -53,6 +53,9 @@ export const MESH_PATH_MAP: MeshPathMap = {
   "bed": require("../assets/models/bed.obj"),
   "table": require("../assets/models/table.obj"),
   "frame": require("../assets/models/frame.obj"),
+  "flower_pot": require("../assets/models/flower_pot.obj"),
+  "couch": require("../assets/models/couch.obj"),
+  "fridge": require("../assets/models/Fridge.obj"),
 };
 
 // ***********************************************************
@@ -606,20 +609,6 @@ export class MeshManager {
     this.gl = gl;
     this.meshVaoMap = {};
     this.vaoManager = vaoManager;
-  }
-}
-
-// Return the correct mesh for a specific type given
-export function getMeshFromType(ft: FeatureType) {
-  switch (ft) {
-    case FeatureType.BED:
-      return "bed";
-    case FeatureType.TABLE:
-      return "table";
-    case FeatureType.MONKEY:
-      return "monkey";
-    case FeatureType.FRAME:
-      return "frame";
   }
 }
 

@@ -37,7 +37,7 @@ import {
   FEATURE_ORANGE, FEATURE_GREY,
   ShaderLightUniformLocations, ShaderBillboardUniformLocations,
   ShaderAttributebLocations, ShaderMatrixUniformLocations,
-  MeshManager, VAO, getMeshFromType, VAOManager,
+  MeshManager, VAO, VAOManager,
   ShaderProgramManager, SHADER_REGULAR_PATHS, SHADER_BILLBOARD_PATHS,
   SHADER_PICK_PATHS, ShaderPickLocations, RenderPass, resizeFramebufferAttachments,
 } from "./graphicsUtils";
@@ -116,7 +116,8 @@ export class Renderer {
   currentDrawingColor: Material; // the current color used for drawing our objects
   featuresDirty: boolean; // flag so we know if we need to apply feature updates or not
   features: Feature[]; // store the fetched feature list for our household
-  highlightedFeatureID: number | null;
+  highlightedFeatureID: number | null; // which feature the user's mouse is hovering over
+  currentViewingRoom: number; // which room of the household we're currently viewing
 
   // Model data
   meshManager: MeshManager | null;
@@ -389,6 +390,7 @@ export class Renderer {
     this.features = [];
     this.featuresDirty = false;
     this.currentDrawPass = RenderPass.MAIN;
+    this.currentViewingRoom = 0;
 
     // These will be set as needed
     this.frameId = null;
@@ -604,8 +606,9 @@ export class Renderer {
       const f = this.house.renderableFeatures[i];
       const fVao = !f.mesh ? this.house.vao : this.meshManager.getVaoForMesh(f.mesh); 
 
-      if (!f.visible) {
-        // Skip invisible features
+      if (!f.visible || (f.room_number !== this.currentViewingRoom && i > 4)) {
+        // Skip invisible features or (features that are not in the current room and not walls or floors)
+        // The first four features should always be the walls and floor
         continue;
       }
 
@@ -719,6 +722,11 @@ export class Renderer {
       gl.uniformMatrix4fv(this.bbLocs.inverseView, false, this.inverseView as Float32Array);
       // Now iterate through
       for (let i = 0; i < this.house.renderableFeatures.length; i++) {
+        // Skip if we're not displaying the current room
+        if (this.house.renderableFeatures[i].room_number !== this.currentViewingRoom) {
+          continue;
+        }
+
         // Get the feature position
         gl.uniformMatrix4fv(this.bbLocs.model, false, this.house.renderableFeatures[i].modelMatrix as Float32Array);
         for (let j = 0; j < this.house.renderableFeatures[i].tasks.length; j++) {
@@ -795,10 +803,11 @@ export class Renderer {
     const newMaterial: Material = this.currentDrawingColor;
 
     // Get the correct type
-    const featureIndex = Math.max(Math.abs(Math.round(((Math.random() * 10) % (Object.keys(FeatureType).length / 2) - 1))), 1); // count the number possible enum values (will not include undefined)
+    const featureOptions = Object.values(FeatureType) as FeatureType[];
+    const featureType = featureOptions[Math.floor(Math.random() * featureOptions.length)];
 
     // Create the feature object
-    const newFeature = new RenderableFeature("f:" + x + y + z, this.house.household_id, 0, newModelMatrix, newMaterial, x, y, z, undefined, featureIndex); // this is the new feature object we're adding
+    const newFeature = new RenderableFeature("f:" + x + y + z, this.house.household_id, 0, newModelMatrix, newMaterial, x, y, z, undefined, featureType); // this is the new feature object we're adding
     // randomly add a second chore for demo purposes
     if (Math.round(Math.random()) == 0) {
       newFeature.addTask(new Task("Test Task", newFeature.id, 1));
@@ -816,7 +825,7 @@ export class Renderer {
         x_pos: x,
         y_pos: y,
         z_pos: z,
-        feature_type: getFeatureTypeToString(featureIndex)
+        feature_type: getFeatureTypeToString(featureType)
       });
       newFeature.setID(featureID.feature_id); // retroactively set the appropriate ID
 
@@ -1077,7 +1086,7 @@ export class RenderableFeature extends Feature {
     super(name, household_id, type, x, y, z, feature_id, icon);
 
     // Set up mesh if a type is provided
-    this.mesh = !type ? undefined : getMeshFromType(type);
+    this.mesh = !type ? undefined : getFeatureTypeToString(type);
 
     // Assign model matrix to either a provided value or a default
     this.modelMatrix = mm || GLM.mat4.create();

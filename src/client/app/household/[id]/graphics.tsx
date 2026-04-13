@@ -192,67 +192,86 @@ function ColorButtons() {
 
   /* Buttons for selecting type */
   return (
-    <View 
+    <View
       style={{
-        flexDirection: "row",
+        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         position: "absolute",
         bottom: 40,
-        padding: 10,
         zIndex: 10,
         gap: 10,
       }}
     >
-      {/* Red Button */}
-      <Pressable
-        onPress={() => {rdr.currentDrawingColor = FEATURE_RED; setDrawingColor(FEATURE_RED)}}
-        hitSlop={8}
+      <View 
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10,
+          gap: 10,
+        }}
       >
-        <MaterialCommunityIcons name={drawingColor !== FEATURE_RED ? 'circle-outline' : 'circle'} size={20} color="#de3737" />
-      </Pressable>
-      {/* Green Button */}
-      <Pressable
-        onPress={() => {rdr.currentDrawingColor = FEATURE_GREEN; setDrawingColor(FEATURE_GREEN)}}
-        hitSlop={8}
+        {/* Red Button */}
+        <Pressable
+          onPress={() => {rdr.currentDrawingColor = FEATURE_RED; setDrawingColor(FEATURE_RED)}}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name={drawingColor !== FEATURE_RED ? 'circle-outline' : 'circle'} size={20} color="#de3737" />
+        </Pressable>
+        {/* Green Button */}
+        <Pressable
+          onPress={() => {rdr.currentDrawingColor = FEATURE_GREEN; setDrawingColor(FEATURE_GREEN)}}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name={drawingColor !== FEATURE_GREEN ? 'circle-outline' : 'circle'} size={20} color="#53de37" />
+        </Pressable>
+        {/* Blue Button */}
+        <Pressable
+          onPress={() => {rdr.currentDrawingColor = FEATURE_BLUE; setDrawingColor(FEATURE_BLUE)}}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name={drawingColor !== FEATURE_BLUE ? 'circle-outline' : 'circle'} size={20} color="#3764de" />
+        </Pressable>
+        {/* Orange Button */}
+        <Pressable
+          onPress={() => {rdr.currentDrawingColor = FEATURE_ORANGE; setDrawingColor(FEATURE_ORANGE)}}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name={drawingColor !== FEATURE_ORANGE ? 'circle-outline' : 'circle'} size={20} color="#de8537" />
+        </Pressable>
+      </View>
+
+      <View 
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10,
+          gap: 10,
+        }}
       >
-        <MaterialCommunityIcons name={drawingColor !== FEATURE_GREEN ? 'circle-outline' : 'circle'} size={20} color="#53de37" />
-      </Pressable>
-      {/* Blue Button */}
-      <Pressable
-        onPress={() => {rdr.currentDrawingColor = FEATURE_BLUE; setDrawingColor(FEATURE_BLUE)}}
-        hitSlop={8}
-      >
-        <MaterialCommunityIcons name={drawingColor !== FEATURE_BLUE ? 'circle-outline' : 'circle'} size={20} color="#3764de" />
-      </Pressable>
-      {/* Orange Button */}
-      <Pressable
-        onPress={() => {rdr.currentDrawingColor = FEATURE_ORANGE; setDrawingColor(FEATURE_ORANGE)}}
-        hitSlop={8}
-      >
-        <MaterialCommunityIcons name={drawingColor !== FEATURE_ORANGE ? 'circle-outline' : 'circle'} size={20} color="#de8537" />
-      </Pressable>
+        {/* Edit grid size buttons */}
+        <Pressable
+          onPress={() => {rdr.grid.resize(rdr.grid.width + 2, rdr.grid.height); rdr.house.resizeFloorFeature()}}>
+          <MaterialCommunityIcons name='arrow-right' color="#abcd" />
+        </Pressable>
 
-      {/* Edit grid size buttons */}
-      <Pressable
-        onPress={() => {rdr.grid.resize(rdr.grid.width + 2, rdr.grid.height); rdr.house.resizeFloorFeature()}}>
-        <MaterialCommunityIcons name='arrow-right' color="#abcd" />
-      </Pressable>
+        <Pressable
+          onPress={() => {rdr.grid.resize(rdr.grid.width, rdr.grid.height + 2); rdr.house.resizeFloorFeature()}}>
+          <MaterialCommunityIcons name='arrow-up' color="#abcd" />
+        </Pressable>
 
-      <Pressable
-        onPress={() => {rdr.grid.resize(rdr.grid.width, rdr.grid.height + 2); rdr.house.resizeFloorFeature()}}>
-        <MaterialCommunityIcons name='arrow-up' color="#abcd" />
-      </Pressable>
+        <Pressable
+          onPress={() => {rdr.grid.resize(rdr.grid.width - 2, rdr.grid.height); rdr.house.resizeFloorFeature()}}>
+          <MaterialCommunityIcons name='arrow-left' color="#abcd" />
+        </Pressable>
 
-      <Pressable
-        onPress={() => {rdr.grid.resize(rdr.grid.width - 2, rdr.grid.height); rdr.house.resizeFloorFeature()}}>
-        <MaterialCommunityIcons name='arrow-left' color="#abcd" />
-      </Pressable>
-
-      <Pressable
-        onPress={() => {rdr.grid.resize(rdr.grid.width, rdr.grid.height - 2); rdr.house.resizeFloorFeature()}}>
-        <MaterialCommunityIcons name='arrow-down' color="#abcd" />
-      </Pressable>
+        <Pressable
+          onPress={() => {rdr.grid.resize(rdr.grid.width, rdr.grid.height - 2); rdr.house.resizeFloorFeature()}}>
+          <MaterialCommunityIcons name='arrow-down' color="#abcd" />
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -371,6 +390,9 @@ function EditWindow() {
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
 // the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
 export default function Index() {
+  ///////////////////////////
+  ///  Renderer State.    ///
+  ///////////////////////////
   const { isCheckingAuth, isAuthenticated } = useAuthGuard();
 
   if (isCheckingAuth || !isAuthenticated) {
@@ -386,6 +408,16 @@ function AuthenticatedGraphicsScreen() {
   useEffect(() => {
     rdrRef.current = rdr;
   }, [rdr]);
+
+  // Track which household room we're viewing
+  const [currentViewingRoom, setCurrentViewingRoom] = useState(rdrRef.current.currentViewingRoom);
+  if (currentViewingRoom !== rdrRef.current.currentViewingRoom) {
+    setCurrentViewingRoom(currentViewingRoom);
+  }
+
+  ///////////////////////////
+  ///  Mouse Gestures     ///
+  ///////////////////////////
 
   // capture mouse moves
   useEffect(() => {
@@ -552,6 +584,29 @@ function AuthenticatedGraphicsScreen() {
           onContextCreate={onContextCreate}
           />
         </GestureDetector>
+
+        {/* Room change buttons */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "absolute",
+            right: 20,
+            top: 10,
+            padding: 10,
+            zIndex: 10,
+        }}>         
+          <Pressable
+            onPress={() => {rdrRef.current.currentViewingRoom -= 1; setCurrentViewingRoom(rdrRef.current.currentViewingRoom)}}>
+              <MaterialCommunityIcons name="chevron-left" size={40} color="#29ff46" />
+          </Pressable>
+          <Text style={{color:"white"}}>Currently viewing room: ({rdrRef.current.currentViewingRoom})</Text>
+          <Pressable
+            onPress={() => {rdrRef.current.currentViewingRoom += 1; setCurrentViewingRoom(rdrRef.current.currentViewingRoom)}}>
+              <MaterialCommunityIcons name="chevron-right" size={40} color="#29ff46" />
+          </Pressable>
+        </View>
 
         <EditWindow />
         <ColorButtons />
