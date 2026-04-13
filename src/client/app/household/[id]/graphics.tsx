@@ -331,7 +331,7 @@ function EditWindow() {
         <View
           style={{
             alignSelf: "flex-start",
-            transform: [{ scale: Platform.OS === "web" && hoverEditButton ? 1.06 : 1 }],
+            transform: [{ scale: Platform.OS === "web" && hoverEditButton ? 1.025 : 1 }],
           }}
         >
           <Button
