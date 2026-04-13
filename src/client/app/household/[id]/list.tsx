@@ -18,6 +18,7 @@ Revision date:
   - 4/5/26: Add support for viewing next due date of a task
   - 4/6/26: Convert to use FeatureType enum
   - 4/12/26: Phone-sized layout fixes and in-app delete prompts instead of system popups
+  - 4/13/26: Web hover feedback on list rows, headers, add-task/section controls
 Preconditions: Flask server reachable at EXPO_PUBLIC_API_URL with the household's data in the DB
 Postconditions: Renders an interactive task list that stays in sync with the database
 Errors: Shows error state with retry button if API is unreachable
@@ -88,6 +89,22 @@ import {
   textPrimary,
 } from "../../../theme/colors";
 
+/** Web-only pointer hover; handlers are no-ops on native */
+function useWebHover(): readonly [
+  boolean,
+  { onMouseEnter?: () => void; onMouseLeave?: () => void },
+] {
+  const [hovered, setHovered] = useState(false);
+  const handlers =
+    Platform.OS === "web"
+      ? {
+          onMouseEnter: () => setHovered(true),
+          onMouseLeave: () => setHovered(false),
+        }
+      : {};
+  return [hovered, handlers] as const;
+}
+
 // Health bar component that shows how "healthy" a task is as a colored bar
 function HealthBar({ task }: { task: Task }) {
     const pct = healthPercent(task); // get the health as a 0-1 decimal
@@ -125,19 +142,43 @@ function TaskRow({
 }) {
   const daysLeft = daysUntilNextDue(task);
   const duePhrase = `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left`;
+  const [hoverRow, hoverRowHandlers] = useWebHover();
+  const [hoverCheck, hoverCheckHandlers] = useWebHover();
+  const [hoverDone, hoverDoneHandlers] = useWebHover();
+  const [hoverDel, hoverDelHandlers] = useWebHover();
 
   return (
-    <View style={[styles.taskRow, isSelected && styles.taskRowSelected]}>
+    <View
+      style={[
+        styles.taskRow,
+        isSelected && styles.taskRowSelected,
+        Platform.OS === "web" && hoverRow && styles.listRowHoverDarken,
+      ]}
+      // @ts-ignore web-only pointer hover — whole task row
+      {...hoverRowHandlers}
+    >
       <Pressable
         onPress={() => onToggleSelect(task.id)}
         hitSlop={8}
-        style={styles.checkbox}
+        style={({ pressed }) => [
+          styles.checkbox,
+          Platform.OS === "web" && hoverCheck && styles.taskRowControlHover,
+          pressed && styles.taskRowControlPressed,
+        ]}
+        // @ts-ignore web-only
+        {...hoverCheckHandlers}
       >
-        <MaterialCommunityIcons
-          name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"}
-          size={22}
-          color={isSelected ? listBrand : "#ccc"}
-        />
+        <View
+          style={{
+            transform: [{ scale: Platform.OS === "web" && hoverCheck ? 1.08 : 1 }],
+          }}
+        >
+          <MaterialCommunityIcons
+            name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"}
+            size={22}
+            color={isSelected ? listBrand : "#ccc"}
+          />
+        </View>
       </Pressable>
 
       <View style={styles.taskIconWrap}>
@@ -165,25 +206,49 @@ function TaskRow({
       <Pressable
         onPress={() => onCompleteTask(task.id)}
         hitSlop={8}
-        style={styles.completeBtn}
+        style={({ pressed }) => [
+          styles.completeBtn,
+          Platform.OS === "web" && hoverDone && styles.taskRowControlHover,
+          pressed && styles.taskRowControlPressed,
+        ]}
+        // @ts-ignore web-only
+        {...hoverDoneHandlers}
       >
-        <MaterialCommunityIcons
-          name="check-circle-outline"
-          size={20}
-          color="#4caf50"
-        />
+        <View
+          style={{
+            transform: [{ scale: Platform.OS === "web" && hoverDone ? 1.08 : 1 }],
+          }}
+        >
+          <MaterialCommunityIcons
+            name="check-circle-outline"
+            size={20}
+            color={Platform.OS === "web" && hoverDone ? "#2e7d32" : "#4caf50"}
+          />
+        </View>
       </Pressable>
 
       <Pressable
         onPress={() => onRequestDeleteTask(task)}
         hitSlop={8}
-        style={styles.taskDeleteBtn}
+        style={({ pressed }) => [
+          styles.taskDeleteBtn,
+          Platform.OS === "web" && hoverDel && styles.taskRowControlHover,
+          pressed && styles.taskRowControlPressed,
+        ]}
+        // @ts-ignore web-only
+        {...hoverDelHandlers}
       >
-        <MaterialCommunityIcons
-          name="close-circle-outline"
-          size={20}
-          color="#ccc"
-        />
+        <View
+          style={{
+            transform: [{ scale: Platform.OS === "web" && hoverDel ? 1.08 : 1 }],
+          }}
+        >
+          <MaterialCommunityIcons
+            name="close-circle-outline"
+            size={20}
+            color={Platform.OS === "web" && hoverDel ? "#e57373" : "#ccc"}
+          />
+        </View>
       </Pressable>
     </View>
   );
@@ -226,16 +291,45 @@ function AddTaskCard({
     setCustomFreqText("");
   };
 
+  const [hoverAddRow, hoverAddRowHandlers] = useWebHover();
+  const [hoverPresetKey, setHoverPresetKey] = useState<string | null>(null);
+  const [hoverIconKey, setHoverIconKey] = useState<string | null>(null);
+  const [hoverFreqKey, setHoverFreqKey] = useState<number | "custom" | null>(null);
+  const [hoverCancel, hoverCancelHandlers] = useWebHover();
+  const [hoverSubmit, hoverSubmitHandlers] = useWebHover();
+
   if (!expanded) {
     return (
-      <Pressable style={styles.addTaskRow} onPress={() => setExpanded(true)}>
-        <MaterialCommunityIcons
-          name="plus"
-          size={18}
-          color={listBrand}
-          style={{ marginRight: 8 }}
-        />
-        <Text style={styles.addTaskPlaceholder}>Add a task...</Text>
+      <Pressable
+        style={({ pressed }) => [
+          styles.addTaskRow,
+          Platform.OS === "web" && hoverAddRow && styles.listRowHoverDarken,
+          pressed && styles.listPressablePressed,
+        ]}
+        onPress={() => setExpanded(true)}
+        // @ts-ignore web-only pointer hover
+        {...hoverAddRowHandlers}
+      >
+        <View
+          style={{
+            transform: [{ scale: Platform.OS === "web" && hoverAddRow ? 1.05 : 1 }],
+          }}
+        >
+          <MaterialCommunityIcons
+            name="plus"
+            size={18}
+            color={listBrand}
+            style={{ marginRight: 8 }}
+          />
+        </View>
+        <Text
+          style={[
+            styles.addTaskPlaceholder,
+            Platform.OS === "web" && hoverAddRow && { color: "#8A9BAE" },
+          ]}
+        >
+          Add a task...
+        </Text>
       </Pressable>
     );
   }
@@ -255,23 +349,51 @@ function AddTaskCard({
             style={[
               styles.presetChip,
               name === p.name && styles.presetChipActive,
+              Platform.OS === "web" &&
+                hoverPresetKey === p.name &&
+                !(name === p.name) &&
+                styles.chipInactiveHover,
+              Platform.OS === "web" &&
+                hoverPresetKey === p.name &&
+                name === p.name &&
+                styles.chipActiveHover,
             ]}
             onPress={() => applyPreset(p)}
+            // @ts-ignore web-only pointer hover
+            onMouseEnter={() => Platform.OS === "web" && setHoverPresetKey(p.name)}
+            // @ts-ignore web-only pointer hover
+            onMouseLeave={() =>
+              Platform.OS === "web" &&
+              setHoverPresetKey((k) => (k === p.name ? null : k))
+            }
           >
-            <MaterialCommunityIcons
-              name={p.icon as any}
-              size={14}
-              color={name === p.name ? "#fff" : listBrand}
-              style={{ marginRight: 4 }}
-            />
-            <Text
-              style={[
-                styles.presetChipText,
-                name === p.name && styles.presetChipTextActive,
-              ]}
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                transform: [
+                  {
+                    scale:
+                      Platform.OS === "web" && hoverPresetKey === p.name ? 1.03 : 1,
+                  },
+                ],
+              }}
             >
-              {p.name}
-            </Text>
+              <MaterialCommunityIcons
+                name={p.icon as any}
+                size={14}
+                color={name === p.name ? "#fff" : listBrand}
+                style={{ marginRight: 4 }}
+              />
+              <Text
+                style={[
+                  styles.presetChipText,
+                  name === p.name && styles.presetChipTextActive,
+                ]}
+              >
+                {p.name}
+              </Text>
+            </View>
           </Pressable>
         ))}
       </ScrollView>
@@ -296,13 +418,35 @@ function AddTaskCard({
             style={[
               styles.iconPickerItem,
               icon === ic && styles.iconPickerItemActive,
+              Platform.OS === "web" &&
+                hoverIconKey === ic &&
+                !(icon === ic) &&
+                styles.chipInactiveHover,
+              Platform.OS === "web" &&
+                hoverIconKey === ic &&
+                icon === ic &&
+                styles.chipActiveHover,
             ]}
+            // @ts-ignore web-only pointer hover
+            onMouseEnter={() => Platform.OS === "web" && setHoverIconKey(ic)}
+            // @ts-ignore web-only pointer hover
+            onMouseLeave={() =>
+              Platform.OS === "web" && setHoverIconKey((k) => (k === ic ? null : k))
+            }
           >
-            <MaterialCommunityIcons
-              name={ic as any}
-              size={20}
-              color={icon === ic ? "#fff" : "#666"}
-            />
+            <View
+              style={{
+                transform: [
+                  { scale: Platform.OS === "web" && hoverIconKey === ic ? 1.08 : 1 },
+                ],
+              }}
+            >
+              <MaterialCommunityIcons
+                name={ic as any}
+                size={20}
+                color={icon === ic ? "#fff" : "#666"}
+              />
+            </View>
           </Pressable>
         ))}
       </View>
@@ -320,27 +464,83 @@ function AddTaskCard({
             style={[
               styles.freqPill,
               !customFreq && freqDays === fp.days && styles.freqPillActive,
+              Platform.OS === "web" &&
+                hoverFreqKey === fp.days &&
+                !(!customFreq && freqDays === fp.days) &&
+                styles.chipInactiveHover,
+              Platform.OS === "web" &&
+                hoverFreqKey === fp.days &&
+                !customFreq &&
+                freqDays === fp.days &&
+                styles.chipActiveHover,
             ]}
+            // @ts-ignore web-only pointer hover
+            onMouseEnter={() => Platform.OS === "web" && setHoverFreqKey(fp.days)}
+            // @ts-ignore web-only pointer hover
+            onMouseLeave={() =>
+              Platform.OS === "web" &&
+              setHoverFreqKey((k) => (k === fp.days ? null : k))
+            }
           >
-            <Text
-              style={[
-                styles.freqPillText,
-                !customFreq && freqDays === fp.days && styles.freqPillTextActive,
-              ]}
+            <View
+              style={{
+                transform: [
+                  {
+                    scale:
+                      Platform.OS === "web" && hoverFreqKey === fp.days ? 1.04 : 1,
+                  },
+                ],
+              }}
             >
-              {fp.label}
-            </Text>
+              <Text
+                style={[
+                  styles.freqPillText,
+                  !customFreq && freqDays === fp.days && styles.freqPillTextActive,
+                ]}
+              >
+                {fp.label}
+              </Text>
+            </View>
           </Pressable>
         ))}
         <Pressable
           onPress={() => setCustomFreq(true)}
-          style={[styles.freqPill, customFreq && styles.freqPillActive]}
+          style={[
+            styles.freqPill,
+            customFreq && styles.freqPillActive,
+            Platform.OS === "web" &&
+              hoverFreqKey === "custom" &&
+              !customFreq &&
+              styles.chipInactiveHover,
+            Platform.OS === "web" &&
+              hoverFreqKey === "custom" &&
+              customFreq &&
+              styles.chipActiveHover,
+          ]}
+          // @ts-ignore web-only pointer hover
+          onMouseEnter={() => Platform.OS === "web" && setHoverFreqKey("custom")}
+          // @ts-ignore web-only pointer hover
+          onMouseLeave={() =>
+            Platform.OS === "web" &&
+            setHoverFreqKey((k) => (k === "custom" ? null : k))
+          }
         >
-          <Text
-            style={[styles.freqPillText, customFreq && styles.freqPillTextActive]}
+          <View
+            style={{
+              transform: [
+                {
+                  scale:
+                    Platform.OS === "web" && hoverFreqKey === "custom" ? 1.04 : 1,
+                },
+              ],
+            }}
           >
-            Custom
-          </Text>
+            <Text
+              style={[styles.freqPillText, customFreq && styles.freqPillTextActive]}
+            >
+              Custom
+            </Text>
+          </View>
         </Pressable>
       </View>
 
@@ -364,15 +564,38 @@ function AddTaskCard({
       )}
 
       <View style={styles.addTaskActions}>
-        <Pressable onPress={resetForm} style={styles.addTaskCancelBtn}>
-          <Text style={styles.addTaskCancelText}>Cancel</Text>
+        <Pressable
+          onPress={resetForm}
+          style={({ pressed }) => [
+            styles.addTaskCancelBtn,
+            Platform.OS === "web" && hoverCancel && styles.addTaskCancelBtnHover,
+            pressed && styles.listPressablePressed,
+          ]}
+          // @ts-ignore web-only pointer hover
+          {...hoverCancelHandlers}
+        >
+          <Text
+            style={[
+              styles.addTaskCancelText,
+              Platform.OS === "web" && hoverCancel && { color: "#666" },
+            ]}
+          >
+            Cancel
+          </Text>
         </Pressable>
         <Pressable
           onPress={handleSubmit}
-          style={[
+          style={({ pressed }) => [
             styles.addTaskSubmitBtn,
             !name.trim() && styles.addTaskSubmitBtnDisabled,
+            Platform.OS === "web" &&
+              hoverSubmit &&
+              !!name.trim() &&
+              styles.addTaskSubmitBtnHover,
+            pressed && styles.listPressablePressed,
           ]}
+          // @ts-ignore web-only pointer hover
+          {...hoverSubmitHandlers}
         >
           <Text style={styles.addTaskSubmitText}>Add</Text>
         </Pressable>
@@ -412,6 +635,11 @@ function FeatureGroup({
   const hasSelection = Array.from(feature.tasks).some((t) => selectedIds.has(t.id));
   const selectedCount = Array.from(feature.tasks).filter((t) => selectedIds.has(t.id)).length;
 
+  const [hoverHeader, hoverHeaderHandlers] = useWebHover();
+  const [hoverBatch, hoverBatchHandlers] = useWebHover();
+  const [hoverEditBtn, hoverEditBtnHandlers] = useWebHover();
+  const [hoverTrashBtn, hoverTrashBtnHandlers] = useWebHover();
+
   const handleSaveRename = () => {
     const trimmed = editName.trim();
     if (trimmed && trimmed !== feature.name) {
@@ -435,14 +663,26 @@ function FeatureGroup({
   return (
     <View style={styles.featureGroup}>
       <Pressable
-        style={styles.featureHeader}
+        style={({ pressed }) => [
+          styles.featureHeader,
+          Platform.OS === "web" && hoverHeader && styles.listRowHoverDarken,
+          pressed && styles.listPressablePressed,
+        ]}
         onPress={() => setCollapsed((c) => !c)}
+        // @ts-ignore web-only pointer hover
+        {...hoverHeaderHandlers}
       >
-        <MaterialCommunityIcons
-          name={feature.icon as any}
-          size={24}
-          color={listBrand}
-        />
+        <View
+          style={{
+            transform: [{ scale: Platform.OS === "web" && hoverHeader ? 1.06 : 1 }],
+          }}
+        >
+          <MaterialCommunityIcons
+            name={feature.icon as any}
+            size={24}
+            color={listBrand}
+          />
+        </View>
 
         {isEditing ? (
           <TextInput
@@ -470,7 +710,13 @@ function FeatureGroup({
         {hasSelection && (
           <Pressable
             onPress={() => onDeleteSelected(feature.id)}
-            style={styles.batchDeleteBtn}
+            style={({ pressed }) => [
+              styles.batchDeleteBtn,
+              Platform.OS === "web" && hoverBatch && styles.batchDeleteBtnHover,
+              pressed && styles.listPressablePressed,
+            ]}
+            // @ts-ignore web-only pointer hover
+            {...hoverBatchHandlers}
           >
             <MaterialCommunityIcons name="delete-outline" size={18} color="#f44336" />
             <Text style={styles.batchDeleteText}>{selectedCount}</Text>
@@ -479,11 +725,51 @@ function FeatureGroup({
 
         {!isEditing && (
           <View style={styles.headerActions}>
-            <Pressable onPress={handleStartEdit} hitSlop={6} style={styles.headerActionBtn}>
-              <MaterialCommunityIcons name="pencil-outline" size={18} color="#999" />
+            <Pressable
+              onPress={handleStartEdit}
+              hitSlop={6}
+              style={({ pressed }) => [
+                styles.headerActionBtn,
+                Platform.OS === "web" && hoverEditBtn && styles.headerActionBtnHover,
+                pressed && styles.listPressablePressed,
+              ]}
+              // @ts-ignore web-only pointer hover
+              {...hoverEditBtnHandlers}
+            >
+              <View
+                style={{
+                  transform: [{ scale: Platform.OS === "web" && hoverEditBtn ? 1.1 : 1 }],
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="pencil-outline"
+                  size={18}
+                  color={Platform.OS === "web" && hoverEditBtn ? listBrand : "#999"}
+                />
+              </View>
             </Pressable>
-            <Pressable onPress={confirmDeleteFeature} hitSlop={6} style={styles.headerActionBtn}>
-              <MaterialCommunityIcons name="trash-can-outline" size={18} color="#999" />
+            <Pressable
+              onPress={confirmDeleteFeature}
+              hitSlop={6}
+              style={({ pressed }) => [
+                styles.headerActionBtn,
+                Platform.OS === "web" && hoverTrashBtn && styles.headerActionBtnHover,
+                pressed && styles.listPressablePressed,
+              ]}
+              // @ts-ignore web-only pointer hover
+              {...hoverTrashBtnHandlers}
+            >
+              <View
+                style={{
+                  transform: [{ scale: Platform.OS === "web" && hoverTrashBtn ? 1.1 : 1 }],
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="trash-can-outline"
+                  size={18}
+                  color={Platform.OS === "web" && hoverTrashBtn ? "#e53935" : "#999"}
+                />
+              </View>
             </Pressable>
           </View>
         )}
@@ -491,8 +777,11 @@ function FeatureGroup({
         <MaterialCommunityIcons
           name={collapsed ? "chevron-down" : "chevron-up"}
           size={22}
-          color="#999"
-          style={{ marginLeft: 4 }}
+          color={Platform.OS === "web" && hoverHeader ? listBrand : "#999"}
+          style={{
+            marginLeft: 4,
+            transform: [{ scale: Platform.OS === "web" && hoverHeader ? 1.08 : 1 }],
+          }}
         />
       </Pressable>
 
@@ -538,6 +827,9 @@ function AddSectionRow({
   const [name, setName] = useState("");
   const [icon, setIcon] = useState(LOCATION_ICONS[0]);
   const [showIcons, setShowIcons] = useState(false);
+  const [hoverLocPicker, hoverLocPickerHandlers] = useWebHover();
+  const [hoverCreate, hoverCreateHandlers] = useWebHover();
+  const [hoverSectionIconKey, setHoverSectionIconKey] = useState<string | null>(null);
 
   const handleAdd = () => {
     const trimmed = name.trim();
@@ -551,8 +843,23 @@ function AddSectionRow({
   return (
     <View style={styles.addSectionRow}>
       <View style={styles.addSectionTopRow}>
-        <Pressable onPress={() => setShowIcons((v) => !v)}>
-          <MaterialCommunityIcons name={icon as any} size={22} color={listBrand} />
+        <Pressable
+          onPress={() => setShowIcons((v) => !v)}
+          style={({ pressed }) => [
+            styles.addSectionIconBtn,
+            Platform.OS === "web" && hoverLocPicker && styles.addSectionIconBtnHover,
+            pressed && styles.listPressablePressed,
+          ]}
+          // @ts-ignore web-only pointer hover
+          {...hoverLocPickerHandlers}
+        >
+          <View
+            style={{
+              transform: [{ scale: Platform.OS === "web" && hoverLocPicker ? 1.1 : 1 }],
+            }}
+          >
+            <MaterialCommunityIcons name={icon as any} size={22} color={listBrand} />
+          </View>
         </Pressable>
         <TextInput
           style={styles.addSectionInput}
@@ -567,7 +874,16 @@ function AddSectionRow({
           returnKeyType="done"
         />
         {name.trim().length > 0 && (
-          <Pressable onPress={handleAdd} style={styles.addSectionBtn}>
+          <Pressable
+            onPress={handleAdd}
+            style={({ pressed }) => [
+              styles.addSectionBtn,
+              Platform.OS === "web" && hoverCreate && styles.addSectionBtnHover,
+              pressed && styles.listPressablePressed,
+            ]}
+            // @ts-ignore web-only pointer hover
+            {...hoverCreateHandlers}
+          >
             <Text style={styles.addSectionBtnText}>Create</Text>
           </Pressable>
         )}
@@ -582,13 +898,36 @@ function AddSectionRow({
               style={[
                 styles.iconPickerItem,
                 icon === ic && styles.iconPickerItemActive,
+                Platform.OS === "web" &&
+                  hoverSectionIconKey === ic &&
+                  !(icon === ic) &&
+                  styles.chipInactiveHover,
+                Platform.OS === "web" &&
+                  hoverSectionIconKey === ic &&
+                  icon === ic &&
+                  styles.chipActiveHover,
               ]}
+              // @ts-ignore web-only pointer hover
+              onMouseEnter={() => Platform.OS === "web" && setHoverSectionIconKey(ic)}
+              // @ts-ignore web-only pointer hover
+              onMouseLeave={() =>
+                Platform.OS === "web" &&
+                setHoverSectionIconKey((k) => (k === ic ? null : k))
+              }
             >
-              <MaterialCommunityIcons
-                name={ic as any}
-                size={20}
-                color={icon === ic ? "#fff" : "#666"}
-              />
+              <View
+                style={{
+                  transform: [
+                    { scale: Platform.OS === "web" && hoverSectionIconKey === ic ? 1.08 : 1 },
+                  ],
+                }}
+              >
+                <MaterialCommunityIcons
+                  name={ic as any}
+                  size={20}
+                  color={icon === ic ? "#fff" : "#666"}
+                />
+              </View>
             </Pressable>
           ))}
         </View>
@@ -631,6 +970,7 @@ function AuthenticatedListScreen() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [householdName, setHouseholdName] = useState<string | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>(null);
+  const [hoverRetry, hoverRetryHandlers] = useWebHover();
 
   // Fetch all features + tasks from the server and map them into our local class instances
   const loadFromApi = useCallback(() => {
@@ -900,8 +1240,24 @@ function AuthenticatedListScreen() {
   ) : error ? (
     <View style={[styles.root, { justifyContent: "center", alignItems: "center" }]}>
       <Text style={[styles.subtitle, { color: "#f44336" }]}>{error}</Text>
-      <Pressable onPress={loadFromApi} style={{ marginTop: 12 }}>
-        <Text style={{ color: listBrand, fontWeight: "600" }}>Retry</Text>
+      <Pressable
+        onPress={loadFromApi}
+        style={({ pressed }) => [
+          styles.retryBtn,
+          Platform.OS === "web" && hoverRetry && styles.retryBtnHover,
+          pressed && styles.listPressablePressed,
+        ]}
+        // @ts-ignore web-only pointer hover
+        {...hoverRetryHandlers}
+      >
+        <Text
+          style={[
+            styles.retryBtnText,
+            Platform.OS === "web" && hoverRetry && styles.retryBtnTextHover,
+          ]}
+        >
+          Retry
+        </Text>
       </Pressable>
     </View>
   ) : (
@@ -1044,6 +1400,66 @@ const styles = StyleSheet.create({
         paddingHorizontal: 8,
         paddingBottom: 8,
     },
+    retryBtn: {
+        marginTop: 12,
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        borderRadius: 8,
+    },
+    retryBtnHover: {
+        backgroundColor: listSelection,
+    },
+    retryBtnText: {
+        color: listBrand,
+        fontWeight: "600",
+        fontSize: 15,
+    },
+    retryBtnTextHover: {
+        textDecorationLine: "underline",
+    },
+    listPressablePressed: {
+        opacity: 0.88,
+    },
+    /** Web: shared faint darken when hovering a single row (section header, task row, add-task row) */
+    listRowHoverDarken: {
+        backgroundColor: "rgba(22, 30, 42, 0.055)",
+    },
+    chipInactiveHover: {
+        borderColor: listBrand,
+        backgroundColor: listSelection,
+    },
+    chipActiveHover: {
+        borderColor: "#B8D4F5",
+        shadowColor: listBrand,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 3,
+        elevation: 2,
+    },
+    addTaskCancelBtnHover: {
+        backgroundColor: "#EBEEF2",
+        borderRadius: 8,
+    },
+    addTaskSubmitBtnHover: {
+        backgroundColor: "#2568D4",
+    },
+    batchDeleteBtnHover: {
+        backgroundColor: "#fcd4d0",
+    },
+    headerActionBtnHover: {
+        backgroundColor: listSelection,
+        borderRadius: 8,
+    },
+    addSectionIconBtn: {
+        padding: 4,
+        borderRadius: 8,
+    },
+    addSectionIconBtnHover: {
+        backgroundColor: listSelection,
+    },
+    addSectionBtnHover: {
+        backgroundColor: "#2568D4",
+    },
     featureGroup: {
         backgroundColor: "#fff",
         borderRadius: 14,
@@ -1142,6 +1558,13 @@ const styles = StyleSheet.create({
     },
     taskRowSelected: {
         backgroundColor: listSelection,
+    },
+    taskRowControlHover: {
+        backgroundColor: listSelection,
+        borderRadius: 8,
+    },
+    taskRowControlPressed: {
+        opacity: 0.88,
     },
     checkbox: {
         marginRight: 6,

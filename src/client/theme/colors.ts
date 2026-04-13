@@ -28,3 +28,29 @@ export const heroGradient = ["#3B5FA0", "#6D90CF", "#7B9BDB"] as const;
 
 /** Primary CTA button fill */
 export const primaryButtonGradient = ["#3B6DB5", "#5B8AD4"] as const;
+
+/**
+ * Navy-bar logout cluster (web): same tokens on home and household ViewToggle
+ * Fixed shell size + hover pill + label tint; avatar fill is not changed on hover
+ */
+export const navLogoutHover = {
+  pillBg: "rgba(255, 255, 255, 0.2)",
+  label: "#F0F7FF",
+} as const;
+
+export const navLogoutWebShell = {
+  paddingVertical: 6,
+  paddingHorizontal: 8,
+  borderRadius: 12,
+  backgroundColor: "transparent" as const,
+};
+
+export const navLogoutWebShellCompact = {
+  paddingVertical: 4,
+  paddingHorizontal: 6,
+  borderRadius: 10,
+};
+
+export const navLogoutWebShellHover = {
+  backgroundColor: navLogoutHover.pillBg,
+};

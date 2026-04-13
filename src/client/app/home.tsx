@@ -8,6 +8,7 @@ Revision date:
   - 4/6/26: Major UI redesign - navbar, hero banner, two-column layout, household count badge
   - 4/9/26: Add AuthGuard to protect the screen and redirect unauthenticated users to login
   - 4/10/26: Added new menu to each household card with options to view members, edit household (admin only), and leave household
+  - 4/13/26: Wide layout — household column height matches measured YHYP column; list scrolls inside right card
 Preconditions: User is authenticated before reaching this screen
 Postconditions: Renders either an empty state or a list of households the user belongs to
 Errors: None
@@ -19,7 +20,7 @@ Known faults: None.
 // Imports
 import React, { useEffect, useMemo, useState } from "react";
 import { AuthLoadingScreen, useAuthGuard } from "../utils/useAuthGuard";
-import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Alert, Image, LayoutChangeEvent, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -32,6 +33,10 @@ import {
   heroGradient,
   navy,
   pageBg,
+  navLogoutHover,
+  navLogoutWebShell,
+  navLogoutWebShellCompact,
+  navLogoutWebShellHover,
   primaryButtonGradient,
   surfaceSoft,
   textPrimary,
@@ -41,6 +46,12 @@ import {
 // Base URL for backend API requests, set through environment variable in app config
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
+/** Web hover: slightly darker primary CTA gradient (color-only feedback) */
+const PRIMARY_BUTTON_GRADIENT_HOVER = ["#2F5494", "#4A7ABF"] as const;
+/** Web hover: secondary outline button */
+const SECONDARY_BUTTON_BG_HOVER = "#E8EEF8";
+const SECONDARY_BUTTON_BORDER_HOVER = "#2E5FA3";
+const SECONDARY_BUTTON_LABEL_HOVER = "#254A82";
 // The local Household model shape used by HomeScreen state and rendering
 const HOUSEHOLD_ORDER_KEY = "household_order";
 
@@ -151,6 +162,9 @@ function AuthenticatedHomeScreen() {
 
   // Store the username decoded from the JWT for the welcome message
   const [username, setUsername] = useState<string | null>(null);
+
+  // Wide two-column --> right-hand card height tracks the left
+  const [wideYhypColumnHeight, setWideYhypColumnHeight] = useState<number | null>(null);
 
   // Define the possible messages that can appear in the quote card
   const carouselMessages = [
@@ -263,7 +277,7 @@ function AuthenticatedHomeScreen() {
   const isEmpty = useMemo(() => households.length === 0, [households]);
 
   // Responsive layout: get the current screen width and determine if the layout should be wide
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { width: windowWidth } = useWindowDimensions();
   const isWide = windowWidth > 860;
   const isNavCompact = windowWidth < 480;
   const isContentCompact = windowWidth < 720;
@@ -274,16 +288,28 @@ function AuthenticatedHomeScreen() {
   const householdDotsSize = isContentCompact ? 20 : 22;
   const emptyStateIconSize = isContentCompact ? 52 : 64;
   const secondaryLinkIconSize = isContentCompact ? 19 : 22;
-  const householdListMaxHeight = Math.min(480, Math.max(280, windowHeight * 0.42));
 
-  // Welcome banner: smaller type that stays readable; extra bottom pad on banner and on last line above the curve
-  const heroTitleFontSize = Math.max(17, Math.min(25, windowWidth * 0.058));
+  // Welcome banner: headline + quote line --> scaled slightly for readability
+  const heroTitleFontSize = Math.max(18, Math.min(26, windowWidth * 0.062));
   const heroCarouselFontSize = isNavCompact
-    ? Math.max(13, Math.min(15, windowWidth * 0.036))
-    : 15;
+    ? Math.max(14, Math.min(17, windowWidth * 0.039))
+    : 17;
   const heroCarouselLineHeight = Math.round(heroCarouselFontSize * (isNavCompact ? 1.45 : 1.4));
   const heroBannerPaddingBottom = isNavCompact ? 56 : 60;
   const heroCarouselLastLinePad = isNavCompact ? 14 : 16;
+
+  useEffect(() => {
+    if (!isWide) {
+      setWideYhypColumnHeight(null);
+    }
+  }, [isWide]);
+
+  function onWideLeftColumnLayout(event: LayoutChangeEvent) {
+    if (!isWide) return;
+    const next = Math.round(event.nativeEvent.layout.height);
+    if (next < 8) return;
+    setWideYhypColumnHeight((prev) => (prev === next ? prev : next));
+  }
 
   // Logs the user out by clearing the auth token and redirecting to login
   async function handleLogout() {
@@ -526,6 +552,10 @@ function AuthenticatedHomeScreen() {
 
   // UI state: which household card is hovered (for web hover effect)
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // Web-only hover for navbar logout and illustration CTAs (color only)
+  const [hoverLogout, setHoverLogout] = useState(false);
+  const [hoverCreateHousehold, setHoverCreateHousehold] = useState(false);
+  const [hoverJoinCode, setHoverJoinCode] = useState(false);
   // UI state: which household card's menu is open
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   // UI state: which household is pending leave confirmation
@@ -862,11 +892,32 @@ function AuthenticatedHomeScreen() {
             <MaterialCommunityIcons name="home" size={navHomeIconSize} color="#FFFFFF" />
             <Text style={[styles.navLinkText, isNavCompact && styles.navLinkTextCompact]}>Home</Text>
           </Pressable>
-          <Pressable style={[styles.navLogout, isNavCompact && styles.navLogoutCompact]} onPress={handleLogout}>
+          <Pressable
+            style={[
+              styles.navLogout,
+              isNavCompact && styles.navLogoutCompact,
+              Platform.OS === "web" && styles.navLogoutWebShell,
+              Platform.OS === "web" && isNavCompact && styles.navLogoutWebShellCompact,
+              Platform.OS === "web" && hoverLogout && styles.navLogoutWebShellHover,
+            ]}
+            onPress={handleLogout}
+            // @ts-ignore web-only pointer hover
+            onMouseEnter={() => Platform.OS === "web" && setHoverLogout(true)}
+            // @ts-ignore web-only pointer hover
+            onMouseLeave={() => Platform.OS === "web" && setHoverLogout(false)}
+          >
             <View style={[styles.avatarCircle, isNavCompact && styles.avatarCircleCompact]}>
               <Text style={[styles.avatarText, isNavCompact && styles.avatarTextCompact]}>{avatarLetter}</Text>
             </View>
-            <Text style={[styles.navLinkText, isNavCompact && styles.navLinkTextCompact]}>Logout</Text>
+            <Text
+              style={[
+                styles.navLinkText,
+                isNavCompact && styles.navLinkTextCompact,
+                Platform.OS === "web" && hoverLogout && { color: navLogoutHover.label },
+              ]}
+            >
+              Logout
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -935,8 +986,17 @@ function AuthenticatedHomeScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
       >
-        <View style={[styles.mainContent, isWide && styles.mainContentWide, isWide && isContentCompact && styles.mainContentWideCompact]}>
-          <View style={[styles.leftColumn, isWide && styles.leftColumnWide]}>
+        <View
+          style={[
+            styles.mainContent,
+            isWide && styles.mainContentWide,
+            isWide && isContentCompact && styles.mainContentWideCompact,
+          ]}
+        >
+          <View
+            style={[styles.leftColumn, isWide && styles.leftColumnWide]}
+            onLayout={onWideLeftColumnLayout}
+          >
             <View style={[styles.illustrationCard, isContentCompact && styles.illustrationCardCompact]}>
               <Image
                 source={require("../assets/images/home_icon.png")}
@@ -945,19 +1005,73 @@ function AuthenticatedHomeScreen() {
               />
               <Text style={[styles.illustrationTitle, isContentCompact && styles.illustrationTitleCompact]}>Your Homes, Your Progress</Text>
               <Text style={[styles.illustrationDesc, isContentCompact && styles.illustrationDescCompact]}>Manage your households, keep things clean, and build healthier habits together.</Text>
-              <Pressable style={styles.primaryButton} onPress={() => setCreateOpen(true)}>
-                <LinearGradient colors={[...primaryButtonGradient]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={[styles.primaryButtonFill, isContentCompact && styles.primaryButtonFillCompact]}>
+              <Pressable
+                style={styles.primaryButton}
+                onPress={() => setCreateOpen(true)}
+                // @ts-ignore web-only pointer hover
+                onMouseEnter={() => Platform.OS === "web" && setHoverCreateHousehold(true)}
+                // @ts-ignore web-only pointer hover
+                onMouseLeave={() => Platform.OS === "web" && setHoverCreateHousehold(false)}
+              >
+                <LinearGradient
+                  colors={Platform.OS === "web" && hoverCreateHousehold ? [...PRIMARY_BUTTON_GRADIENT_HOVER] : [...primaryButtonGradient]}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={[styles.primaryButtonFill, isContentCompact && styles.primaryButtonFillCompact]}
+                >
                   <Text style={[styles.primaryButtonText, isContentCompact && styles.primaryButtonTextCompact]}>+ Create New Household</Text>
                 </LinearGradient>
               </Pressable>
-              <Pressable style={[styles.secondaryButton, isContentCompact && styles.secondaryButtonCompact]} onPress={() => setJoinOpen(true)}>
-                <MaterialCommunityIcons name="link-variant" size={secondaryLinkIconSize} color={brand} />
-                <Text style={[styles.secondaryButtonText, isContentCompact && styles.secondaryButtonTextCompact]}>Join with a Code</Text>
+              <Pressable
+                style={[
+                  styles.secondaryButton,
+                  isContentCompact && styles.secondaryButtonCompact,
+                  Platform.OS === "web" &&
+                    hoverJoinCode && {
+                      backgroundColor: SECONDARY_BUTTON_BG_HOVER,
+                      borderColor: SECONDARY_BUTTON_BORDER_HOVER,
+                    },
+                ]}
+                onPress={() => setJoinOpen(true)}
+                // @ts-ignore web-only pointer hover
+                onMouseEnter={() => Platform.OS === "web" && setHoverJoinCode(true)}
+                // @ts-ignore web-only pointer hover
+                onMouseLeave={() => Platform.OS === "web" && setHoverJoinCode(false)}
+              >
+                <MaterialCommunityIcons
+                  name="link-variant"
+                  size={secondaryLinkIconSize}
+                  color={Platform.OS === "web" && hoverJoinCode ? SECONDARY_BUTTON_LABEL_HOVER : brand}
+                />
+                <Text
+                  style={[
+                    styles.secondaryButtonText,
+                    isContentCompact && styles.secondaryButtonTextCompact,
+                    Platform.OS === "web" && hoverJoinCode && { color: SECONDARY_BUTTON_LABEL_HOVER },
+                  ]}
+                >
+                  Join with a Code
+                </Text>
               </Pressable>
             </View>
           </View>
-          <View style={[styles.rightColumn, isWide && styles.rightColumnWide]}>
-            <View style={[styles.rightColumnCard, isContentCompact && styles.rightColumnCardCompact]}>
+          <View
+            style={[
+              styles.rightColumn,
+              isWide && styles.rightColumnWide,
+              isWide && {
+                height: wideYhypColumnHeight ?? 0,
+                overflow: "hidden",
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.rightColumnCard,
+                isContentCompact && styles.rightColumnCardCompact,
+                isWide && styles.rightColumnCardWide,
+              ]}
+            >
               <View style={styles.listHeader}>
                 <View style={[styles.listHeaderLeft, isContentCompact && styles.listHeaderLeftCompact]}>
                   <View style={[styles.sectionIconCircle, isContentCompact && styles.sectionIconCircleCompact]}>
@@ -975,9 +1089,11 @@ function AuthenticatedHomeScreen() {
                 <Text style={[styles.listSubtitle, isContentCompact && styles.listSubtitleCompact]}>Select a household to view and manage it</Text>
               )}
               {isLoading ? (
-                <Text style={[styles.loadingText, isContentCompact && styles.loadingTextCompact]}>Loading your households...</Text>
+                <View style={isWide ? styles.wideListBody : undefined}>
+                  <Text style={[styles.loadingText, isContentCompact && styles.loadingTextCompact]}>Loading your households...</Text>
+                </View>
               ) : isEmpty ? (
-                <View style={[styles.emptyState, isContentCompact && styles.emptyStateCompact]}>
+                <View style={[styles.emptyState, isContentCompact && styles.emptyStateCompact, isWide && styles.wideListBody]}>
                   <MaterialCommunityIcons name="home-plus-outline" size={emptyStateIconSize} color="#BCC5D1" />
                   <Text style={[styles.emptyTitle, isContentCompact && styles.emptyTitleCompact]}>No households yet</Text>
                   <Text style={[styles.emptySubtitle, isContentCompact && styles.emptySubtitleCompact]}>Create a household or join one with a code to get started.</Text>
@@ -1039,13 +1155,17 @@ function AuthenticatedHomeScreen() {
                     );
                   });
                   return isWide ? (
-                    <ScrollView
-                      style={[styles.householdListScroll, { maxHeight: householdListMaxHeight }]}
-                      nestedScrollEnabled
-                      keyboardShouldPersistTaps="handled"
-                    >
-                      {householdCards}
-                    </ScrollView>
+                    <View style={styles.householdListOuterWide}>
+                      <ScrollView
+                        style={styles.householdListScrollWide}
+                        contentContainerStyle={styles.householdListScrollContentWide}
+                        nestedScrollEnabled
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator
+                      >
+                        {householdCards}
+                      </ScrollView>
+                    </View>
                   ) : (
                     <View style={styles.householdListStack}>{householdCards}</View>
                   );
@@ -1534,6 +1654,10 @@ const styles = StyleSheet.create({
   navLinkTextCompact: { fontSize: 13 },
   navLogout: { flexDirection: "row", alignItems: "center", gap: 8 },
   navLogoutCompact: { gap: 6 },
+  /** Web: fixed box so hover only swaps background — no layout shift (tokens in theme/colors) */
+  navLogoutWebShell: { ...navLogoutWebShell },
+  navLogoutWebShellCompact: { ...navLogoutWebShellCompact },
+  navLogoutWebShellHover: { ...navLogoutWebShellHover },
   avatarCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#5B8AD4", alignItems: "center", justifyContent: "center" },
   avatarCircleCompact: { width: 28, height: 28, borderRadius: 14 },
   avatarText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
@@ -1569,7 +1693,7 @@ const styles = StyleSheet.create({
   scrollContent: { paddingTop: 8, paddingBottom: 30, paddingHorizontal: 20 },
   scrollContentCompact: { paddingTop: 6, paddingBottom: 28, paddingHorizontal: 14 },
   mainContent: { width: "100%", maxWidth: 1100, alignSelf: "center" },
-  mainContentWide: { flexDirection: "row", gap: 28 },
+  mainContentWide: { flexDirection: "row", alignItems: "flex-start", gap: 28 },
   mainContentWideCompact: { gap: 20 },
   leftColumn: { marginBottom: 24 },
   leftColumnWide: { width: "36%", marginBottom: 0 },
@@ -1591,8 +1715,9 @@ const styles = StyleSheet.create({
   secondaryButtonText: { fontSize: 16, fontWeight: "700", color: brand },
   secondaryButtonTextCompact: { fontSize: 15 },
   rightColumn: { flex: 1 },
-  rightColumnWide: { flex: 1 },
+  rightColumnWide: { flex: 1, minWidth: 0 },
   rightColumnCard: { backgroundColor: "#FFFFFF", borderRadius: 20, padding: 24, borderWidth: 1, borderColor: border, shadowColor: "#AAB6C5", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 3 },
+  rightColumnCardWide: { flex: 1, minHeight: 0, width: "100%", alignSelf: "stretch", flexDirection: "column" },
   rightColumnCardCompact: { borderRadius: 16, padding: 18 },
   listHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
   listHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
@@ -1634,7 +1759,11 @@ const styles = StyleSheet.create({
   listSubtitle: { fontSize: 14, color: textSecondary, marginBottom: 18, marginLeft: 38 },
   listSubtitleCompact: { fontSize: 13, marginBottom: 14, marginLeft: 32 },
   householdListScroll: { flexGrow: 0 },
+  householdListOuterWide: { flex: 1, minHeight: 0, minWidth: 0 },
+  householdListScrollWide: { flex: 1 },
+  householdListScrollContentWide: { flexGrow: 1, paddingBottom: 4 },
   householdListStack: { width: "100%", paddingBottom: 4 },
+  wideListBody: { flex: 1, minHeight: 0, justifyContent: "center" },
   loadingText: { textAlign: "center", fontSize: 16, color: textSecondary, paddingVertical: 40 },
   loadingTextCompact: { fontSize: 15, paddingVertical: 32 },
   emptyState: { alignItems: "center", paddingVertical: 36 },

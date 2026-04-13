@@ -15,6 +15,7 @@ Revision date:
   - 4/9/26: Add AuthGuard to protect the screen and redirect unauthenticated users to login
   - 4/13/26: Add room selection UI & rotate position widget in edit menu to match rotation angle
   - 4/13/26: Add consolidation to current room selection UI for mobile devices
+  - 4/13/26: Web hover on Edit button and room chevrons (chevron scale via transform)
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -33,7 +34,7 @@ import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
 // Import required components
 import React, { useEffect, useState, useSyncExternalStore, useRef } from 'react';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
-import { LayoutChangeEvent, Pressable, View, useWindowDimensions, ActivityIndicator } from "react-native";
+import { ActivityIndicator, LayoutChangeEvent, Platform, Pressable, View, useWindowDimensions } from "react-native";
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@react-navigation/elements';
@@ -293,9 +294,14 @@ function ColorButtons() {
 }
 
 // A window that will appear to edit feature info
+/** Room nav chevron default / web-hover (brighter green on hover) */
+const ROOM_CHEVRON_COLOR = "#29ff46";
+const ROOM_CHEVRON_COLOR_HOVER = "#5EFF9A";
+
 function EditWindow() {
   // if in edit mode or not
   const [isEditing, setIsEditing] = useState(false);
+  const [hoverEditButton, setHoverEditButton] = useState(false);
   // get the currently selected edit feature
   const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
   // Set the chore selected for our feature
@@ -321,20 +327,61 @@ function EditWindow() {
           gap: 10,
         }}
       >
-        {/* Edit button */}
-        <Button 
-          mode="contained" 
-          style={{backgroundColor: "white"}}
-          onPress={() => {
-            // We cannot assume isEditing changes sequentially here
-            currentTool = isEditing ? Tool.TOOL_FEATURE : Tool.TOOL_EDIT_FEATURE;
-            rdr.selectedEditFeature = null; // should handle updating selectedFeature through callbacks
-            setIsEditing(!isEditing); 
-            setSelectedChore(0);
-          }}>
-          <MaterialCommunityIcons name='wrench' color={isEditing ? "rgb(255, 0, 0)" : listBrand}/>
-          <Text>  {isEditing ? "View" : "Edit" }</Text>
-        </Button>
+        {/* Edit button — web: slight scale on hover (transform only, no layout shift) */}
+        <View
+          style={{
+            alignSelf: "flex-start",
+            transform: [{ scale: Platform.OS === "web" && hoverEditButton ? 1.06 : 1 }],
+          }}
+        >
+          <Button
+            mode="contained"
+            style={{
+              backgroundColor:
+                Platform.OS === "web" && hoverEditButton
+                  ? (isEditing ? "#FFE4E4" : "#E8EEF6")
+                  : "#FFFFFF",
+            }}
+            onPress={() => {
+              // We cannot assume isEditing changes sequentially here
+              currentTool = isEditing ? Tool.TOOL_FEATURE : Tool.TOOL_EDIT_FEATURE;
+              rdr.selectedEditFeature = null; // should handle updating selectedFeature through callbacks
+              setIsEditing(!isEditing);
+              setSelectedChore(0);
+            }}
+            // @ts-ignore web-only pointer hover
+            onMouseEnter={() => Platform.OS === "web" && setHoverEditButton(true)}
+            // @ts-ignore web-only pointer hover
+            onMouseLeave={() => Platform.OS === "web" && setHoverEditButton(false)}
+          >
+            <MaterialCommunityIcons
+              name="wrench"
+              color={
+                isEditing
+                  ? Platform.OS === "web" && hoverEditButton
+                    ? "#FF4444"
+                    : "rgb(255, 0, 0)"
+                  : Platform.OS === "web" && hoverEditButton
+                    ? "#2A6BC8"
+                    : listBrand
+              }
+            />
+            <Text
+              style={{
+                color: isEditing
+                  ? Platform.OS === "web" && hoverEditButton
+                    ? "#CC0000"
+                    : "#B50505"
+                  : Platform.OS === "web" && hoverEditButton
+                    ? "#2A6BC8"
+                    : listBrand,
+              }}
+            >
+              {"  "}
+              {isEditing ? "View" : "Edit"}
+            </Text>
+          </Button>
+        </View>
 
         {/* Context Edit Window 
               In the menu we display:
@@ -439,6 +486,8 @@ function AuthenticatedGraphicsScreen() {
 
   // Track which household room we're viewing
   const [currentViewingRoom, setCurrentViewingRoom] = useState(rdrRef.current.currentViewingRoom);
+  const [hoverRoomArrowLeft, setHoverRoomArrowLeft] = useState(false);
+  const [hoverRoomArrowRight, setHoverRoomArrowRight] = useState(false);
 
   ///////////////////////////
   ///  Mouse Gestures     ///
@@ -642,13 +691,29 @@ function AuthenticatedGraphicsScreen() {
             accessibilityRole="button"
             accessibilityLabel="Previous room"
             hitSlop={8}
-            style={{ padding: 4, minWidth: 40, minHeight: 40, justifyContent: "center", alignItems: "center" }}
+            style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
             onPress={() => {
               rdrRef.current.currentViewingRoom -= 1;
               setCurrentViewingRoom(rdrRef.current.currentViewingRoom);
             }}
+            // @ts-ignore web-only pointer hover
+            onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowLeft(true)}
+            // @ts-ignore web-only pointer hover
+            onMouseLeave={() => Platform.OS === "web" && setHoverRoomArrowLeft(false)}
           >
-            <MaterialCommunityIcons name="chevron-left" size={roomChevronSize} color="#29ff46" />
+            <View
+              style={{
+                justifyContent: "center",
+                alignItems: "center",
+                transform: [{ scale: Platform.OS === "web" && hoverRoomArrowLeft ? 1.14 : 1 }],
+              }}
+            >
+              <MaterialCommunityIcons
+                name="chevron-left"
+                size={roomChevronSize}
+                color={Platform.OS === "web" && hoverRoomArrowLeft ? ROOM_CHEVRON_COLOR_HOVER : ROOM_CHEVRON_COLOR}
+              />
+            </View>
           </Pressable>
           <Text
             numberOfLines={1}
@@ -671,13 +736,29 @@ function AuthenticatedGraphicsScreen() {
             accessibilityRole="button"
             accessibilityLabel="Next room"
             hitSlop={8}
-            style={{ padding: 4, minWidth: 40, minHeight: 40, justifyContent: "center", alignItems: "center" }}
+            style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
             onPress={() => {
               rdrRef.current.currentViewingRoom += 1;
               setCurrentViewingRoom(rdrRef.current.currentViewingRoom);
             }}
+            // @ts-ignore web-only pointer hover
+            onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowRight(true)}
+            // @ts-ignore web-only pointer hover
+            onMouseLeave={() => Platform.OS === "web" && setHoverRoomArrowRight(false)}
           >
-            <MaterialCommunityIcons name="chevron-right" size={roomChevronSize} color="#29ff46" />
+            <View
+              style={{
+                justifyContent: "center",
+                alignItems: "center",
+                transform: [{ scale: Platform.OS === "web" && hoverRoomArrowRight ? 1.14 : 1 }],
+              }}
+            >
+              <MaterialCommunityIcons
+                name="chevron-right"
+                size={roomChevronSize}
+                color={Platform.OS === "web" && hoverRoomArrowRight ? ROOM_CHEVRON_COLOR_HOVER : ROOM_CHEVRON_COLOR}
+              />
+            </View>
           </Pressable>
         </View>
 
