@@ -38,6 +38,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@react-navigation/elements';
 import { Button, PaperProvider, Card, Menu, TextInput } from 'react-native-paper';
 import { useLocalSearchParams } from "expo-router";
+import { appPaperLightTheme } from "../../../theme/paperTheme";
+import { listBrand } from "../../../theme/colors";
 
 // Import graphics utilities
 import {
@@ -293,7 +295,7 @@ function EditWindow() {
             setIsEditing(!isEditing); 
             setSelectedChore(0);
           }}>
-          <MaterialCommunityIcons name='wrench' color={isEditing ? "rgb(255, 0, 0)": "rgb(47, 47, 255)"}/>
+          <MaterialCommunityIcons name='wrench' color={isEditing ? "rgb(255, 0, 0)" : listBrand}/>
           <Text>  {isEditing ? "View" : "Edit" }</Text>
         </Button>
 
@@ -315,10 +317,18 @@ function EditWindow() {
           >
             <Card.Title title={selectedFeature.feature_name + "[" + selectedFeature.id + "]"}/>
             <Card.Actions>
-              <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}><MaterialCommunityIcons name='arrow-left'/></Button>
-              <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}><MaterialCommunityIcons name='arrow-right'/></Button>
-              <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_Z)}}><MaterialCommunityIcons name='arrow-up'/></Button>
-              <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_Z)}}><MaterialCommunityIcons name='arrow-down'/></Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}>
+                <MaterialCommunityIcons name="arrow-left" size={18} color="#FFFFFF" />
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}>
+                <MaterialCommunityIcons name="arrow-right" size={18} color="#FFFFFF" />
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_Z)}}>
+                <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF" />
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_Z)}}>
+                <MaterialCommunityIcons name="arrow-down" size={18} color="#FFFFFF" />
+              </Button>
             </Card.Actions>
             {/* Display chore cycle button if needed */}
             {selectedFeature.tasks.length > 1 ? (
@@ -525,7 +535,7 @@ function AuthenticatedGraphicsScreen() {
   windowHeight = useWindowDimensions().height;
   return (
     featureFetchSuccess ? (
-      <PaperProvider>
+      <PaperProvider theme={appPaperLightTheme}>
       <View
         onLayout={handleLayout}
         style={{

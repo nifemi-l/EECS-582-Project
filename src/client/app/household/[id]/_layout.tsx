@@ -6,7 +6,8 @@ Description: Define the shared household layout for the household-scoped routes.
              Keeps navigation and shared UI scoped to the active household id.
 Programmers: Logan Smith
 Creation date: 3/18/26
-Revision date: N/A
+Revision date:
+  - 4/12/26: Shared household toolbar (ViewToggle) for list and 3D routes
 Preconditions: A valid household ID is present in the route parameters
 Postconditions: Renders the shared household view toggle and the matched child route
 Errors: None
@@ -58,11 +59,8 @@ function AuthenticatedHouseholdLayout() {
   }
 
   return (
-    // Shared household shell: one toggle for both graphics and list routes
     <View style={styles.container}>
-      {/* Household layout owns the toggle for /household/[id]/graphics and /household/[id]/list */}
       <ViewToggle active={active} onChange={handleToggle} householdId={householdId} />
-      {/* Slot swaps in the matched household route's component below the toggle */}
       <Slot />
     </View>
   );

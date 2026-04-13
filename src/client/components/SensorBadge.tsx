@@ -8,6 +8,7 @@ Creation date: 2/14/26
 Revision date:
   - 2/23/26: Add hover tooltip, click-to-expand detail card, and bucket classification
            * Add close button, controlled open state, z-index fixes, tooltip suppression
+  - 4/12/26: Sensor chips for the toolbar; labels and popups stay on-screen on phones and the web
 Preconditions: Must receive a valid icon name, value string, and label as props
 Postconditions: Renders a pressable badge with tooltip on hover and detail card on tap
 Errors: None. Falls back gracefully if label has no metadata
@@ -17,16 +18,17 @@ Known faults: None
 */
 
 // Pull in react hooks we need for state and refs
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useLayoutEffect } from "react";
 // Grab the RN primitives plus Pressable so the badge can be tapped and hovered
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 // Icon library for the sensor icons
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-
-// Main accent color reused across the app
-const ACCENT = "#4169E1";
+import { brand } from "../theme/colors";
 // How long in ms the user must hover before the tooltip appears
 const TOOLTIP_DELAY = 400;
+
+/** Minimum gap between detail popover and viewport left/right */
+const DETAIL_EDGE_PAD = 12;
 
 // A single bucket defines an upper bound and what it means
 interface Bucket {
@@ -106,16 +108,30 @@ const SENSOR_META: Record<string, SensorMeta> = {
   */
 };
 
-// Take a label and value string, return the matching bucket or a fallback
-function classify(label: string, value: string) {
-  const meta = SENSOR_META[label]; // Look up metadata for this sensor
-  if (!meta) return null; // No metadata means we cant classify
-  const num = parseFloat(value); // Pull the numeric part out of the string
-  // Find the first bucket where our value fits under the max
-  const bucket = meta.buckets.find((b) => num <= b.max);
-  // Return the bucket or fall back to the last one just in case
-  return { meta, bucket: bucket || meta.buckets[meta.buckets.length - 1] };
+/** Parse a numeric reading from display strings like "72°F", "45%", or treat N/A as missing. */
+function parseSensorNumeric(value: string): number | null {
+  const trimmed = value.trim();
+  const lower = trimmed.toLowerCase();
+  if (!lower || lower === "n/a" || lower === "na" || lower === "--") return null;
+  const stripped = trimmed.replace(/[^\d.-]/g, "");
+  if (!stripped) return null;
+  const num = parseFloat(stripped);
+  return Number.isFinite(num) ? num : null;
 }
+
+// Take a label and value string; bucket is null when there is no valid reading to classify
+function classify(label: string, value: string): { meta: SensorMeta; bucket: Bucket | null } | null {
+  const meta = SENSOR_META[label];
+  if (!meta) return null;
+  const num = parseSensorNumeric(value);
+  if (num === null) {
+    return { meta, bucket: null };
+  }
+  const bucket = meta.buckets.find((b) => num <= b.max);
+  return { meta, bucket: bucket ?? meta.buckets[meta.buckets.length - 1] };
+}
+
+export type SensorDetailAlign = "start" | "end";
 
 // Props the badge component expects from its parent
 export interface SensorBadgeProps {
@@ -125,14 +141,33 @@ export interface SensorBadgeProps {
   isOpen?: boolean; // Whether the detail card is currently shown (controlled by parent)
   onToggle?: () => void; // Callback to open or close the detail card
   darkBg?: boolean; // True when rendered over a dark background like the 3D view
+  /** Align the detail popover from the badge's left (start) or right (end) to reduce screen overflow */
+  detailAlign?: SensorDetailAlign;
+  /** Compact inline pill chip for the dark household toolbar (not the circular badge) */
+  toolbar?: boolean;
 }
 
 // The badge component that shows an icon, value, tooltip, and detail card
-export function SensorBadge({ icon, value, label, isOpen, onToggle, darkBg }: SensorBadgeProps) {
+export function SensorBadge({
+  icon,
+  value,
+  label,
+  isOpen,
+  onToggle,
+  darkBg,
+  detailAlign = "start",
+  toolbar,
+}: SensorBadgeProps) {
+  const { width: windowWidth } = useWindowDimensions();
   // Track whether the tooltip is visible
   const [tip, setTip] = useState(false);
   // Ref to hold the hover timer so we can cancel it
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const anchorRef = useRef<View | null>(null);
+  /** Horizontal shift so the detail card stays within the screen (native: anchor-relative). */
+  const [detailTranslateX, setDetailTranslateX] = useState(0);
+  /** Web: viewport-fixed coordinates so the popover is not clipped by toolbar/overflow ancestors. */
+  const [detailFixedPos, setDetailFixedPos] = useState<{ left: number; top: number } | null>(null);
 
   // When the cursor enters the badge, start a delayed tooltip
   const hoverIn = useCallback(() => {
@@ -148,42 +183,142 @@ export function SensorBadge({ icon, value, label, isOpen, onToggle, darkBg }: Se
   // Run classification to get the ranking info for this sensor
   const result = label ? classify(label, value) : null;
 
-  return (
-    // Wrapper view; z-index bumped when open so the card floats above sibling badges
-    <View style={[styles.anchor, isOpen && { zIndex: 100 }]}>
-      {/* Pressable badge that darkens on hover and opens detail on tap */}
-      <Pressable
-        onPress={onToggle}
-        onHoverIn={hoverIn}
-        onHoverOut={hoverOut}
-        style={({ hovered }: { hovered?: boolean }) => [
-          styles.badge, // Base circle styles
-          hovered && styles.badgeHover, // Darken background on hover
-        ]}
-      >
-        {/* Sensor icon centered in the badge */}
-        <MaterialCommunityIcons name={icon} size={20} color={ACCENT} />
-        {/* Numeric reading text underneath the icon */}
-        <Text style={styles.value}>{value}</Text>
-      </Pressable>
+  const cardMaxWidth = Math.min(280, Math.max(160, windowWidth - 24));
+  const detailPanelWidth = Math.min(cardMaxWidth, windowWidth - DETAIL_EDGE_PAD * 2);
+  const tooltipMaxWidth = Math.min(260, Math.max(120, windowWidth - 24));
+  /** Toolbar value column: shrink on narrow viewports so two chips fit beside the pill. */
+  const chipValueMaxWidth = Math.min(100, Math.max(40, Math.floor(windowWidth * 0.13)));
+  const chipMaxWidth = Math.min(200, Math.max(96, Math.floor(windowWidth * 0.28)));
 
-      {/* Tooltip that appears after hovering for 400ms, hidden when card is open */}
+  const tooltipTop = toolbar ? TOOLBAR_CHIP_HEIGHT + 4 : SIZE + 4;
+  const detailTop = toolbar ? TOOLBAR_CHIP_HEIGHT + 6 : SIZE + 6;
+
+  const tooltipPositionStyle = toolbar
+    ? detailAlign === "end"
+      ? { left: undefined as number | undefined, right: 0, alignItems: "flex-end" as const }
+      : { left: 0, right: undefined as number | undefined, alignItems: "flex-start" as const }
+    : {
+        left: -Math.round(Math.min(100, Math.max(40, windowWidth * 0.12))),
+        right: -Math.round(Math.min(100, Math.max(40, windowWidth * 0.12))),
+        alignItems: "center" as const,
+      };
+
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setDetailTranslateX(0);
+      setDetailFixedPos(null);
+      return;
+    }
+    const cw = detailPanelWidth;
+    let cancelled = false;
+    const applyMeasure = () => {
+      anchorRef.current?.measureInWindow((x, y, w, h) => {
+        if (cancelled) return;
+        const desiredLeft = detailAlign === "end" ? x + w - cw : x;
+        const maxLeft = windowWidth - DETAIL_EDGE_PAD - cw;
+        const minLeft = DETAIL_EDGE_PAD;
+        const clampedLeft = Math.max(minLeft, Math.min(desiredLeft, maxLeft));
+        const top = y + detailTop;
+        if (Platform.OS === "web") {
+          setDetailFixedPos({ left: clampedLeft, top });
+          setDetailTranslateX(0);
+        } else {
+          setDetailFixedPos(null);
+          setDetailTranslateX(clampedLeft - x);
+        }
+      });
+    };
+    applyMeasure();
+    requestAnimationFrame(applyMeasure);
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, windowWidth, detailAlign, detailPanelWidth, detailTop]);
+
+  return (
+    <View
+      ref={anchorRef}
+      collapsable={false}
+      style={[styles.anchor, toolbar && styles.anchorToolbar, isOpen && { zIndex: 100 }]}
+    >
+      {toolbar ? (
+        <Pressable
+          onPress={onToggle}
+          onHoverIn={hoverIn}
+          onHoverOut={hoverOut}
+          style={({ hovered }: { hovered?: boolean }) => [
+            styles.chip,
+            { maxWidth: chipMaxWidth },
+            hovered && styles.chipHover,
+          ]}
+        >
+          <MaterialCommunityIcons name={icon} size={17} color={brand} />
+          <Text style={[styles.chipValue, { maxWidth: chipValueMaxWidth }]} numberOfLines={1}>
+            {value}
+          </Text>
+        </Pressable>
+      ) : (
+        <Pressable
+          onPress={onToggle}
+          onHoverIn={hoverIn}
+          onHoverOut={hoverOut}
+          style={({ hovered }: { hovered?: boolean }) => [
+            styles.badge,
+            hovered && styles.badgeHover,
+          ]}
+        >
+          <MaterialCommunityIcons name={icon} size={20} color={brand} />
+          <Text style={styles.value} numberOfLines={2}>
+            {value}
+          </Text>
+        </Pressable>
+      )}
+
       {tip && label && !isOpen && (
-        <View style={styles.tooltip}>
-          {/* Show the sensor name, inverted colors on dark backgrounds */}
-          <Text style={darkBg ? styles.tooltipTextLight : styles.tooltipText}>{label}</Text>
+        <View style={[styles.tooltip, { top: tooltipTop }, tooltipPositionStyle]}>
+          <Text
+            style={[
+              darkBg || toolbar ? styles.tooltipTextLight : styles.tooltipText,
+              { maxWidth: tooltipMaxWidth },
+            ]}
+            numberOfLines={3}
+          >
+            {label}
+          </Text>
         </View>
       )}
 
-      {/* Detail card that appears when the badge is tapped */}
-      {isOpen && result && (
-        <View style={styles.detail}>
+      {isOpen &&
+        result &&
+        (Platform.OS !== "web" || detailFixedPos) && (
+        <View
+          style={[
+            styles.detail,
+            Platform.OS === "web" && detailFixedPos
+              ? [
+                  styles.detailFixed,
+                  {
+                    left: detailFixedPos.left,
+                    top: detailFixedPos.top,
+                    width: detailPanelWidth,
+                    maxWidth: detailPanelWidth,
+                  },
+                ]
+              : {
+                  left: 0,
+                  top: detailTop,
+                  width: detailPanelWidth,
+                  maxWidth: detailPanelWidth,
+                  transform: [{ translateX: detailTranslateX }],
+                },
+          ]}
+        >
           {/* Header row with title on the left and close X on the right */}
           <View style={styles.detailHeader}>
             {/* Sensor name as the card title */}
             <Text style={styles.detailTitle}>{label}</Text>
             {/* Small X button to dismiss the card */}
-            <Pressable onPress={onToggle} hitSlop={8}>
+            <Pressable onPress={onToggle} hitSlop={8} style={styles.detailClose}>
               <MaterialCommunityIcons name="close" size={14} color="#999" />
             </Pressable>
           </View>
@@ -191,23 +326,25 @@ export function SensorBadge({ icon, value, label, isOpen, onToggle, darkBg }: Se
           <Text style={styles.detailText}>{result.meta.measures}</Text>
           {/* What that measurement means to the user */}
           <Text style={styles.detailText}>{result.meta.represents}</Text>
-          {/* Row with colored dot and the rank label */}
-          <View style={styles.rankRow}>
-            {/* Small circle colored by the bucket */}
-            <View style={[styles.rankDot, { backgroundColor: result.bucket.color }]} />
-            {/* Rank name and explanation in one line */}
-            <Text style={styles.rankText}>
-              {result.bucket.rank} — {result.bucket.explanation}
-            </Text>
-          </View>
+          {/* Rank only when we have a numeric reading */}
+          {result.bucket && (
+            <View style={styles.rankRow}>
+              <View style={[styles.rankDot, { backgroundColor: result.bucket.color }]} />
+              <Text style={styles.rankText}>
+                {result.bucket.rank} — {result.bucket.explanation}
+              </Text>
+            </View>
+          )}
         </View>
       )}
     </View>
   );
 }
 
-// Diameter of the badge circle
+// Diameter of the circular badge (non-toolbar)
 const SIZE = 56;
+// Toolbar chip height = ViewToggle pill (pad 3+3 + segment pad 6+6 + icon 17) = 35
+const TOOLBAR_CHIP_HEIGHT = 35;
 
 // All styles for the badge, tooltip, and detail card
 const styles = StyleSheet.create({
@@ -215,6 +352,10 @@ const styles = StyleSheet.create({
   anchor: {
     position: "relative", // So tooltip and detail can use absolute positioning
     zIndex: 1, // Default low z so closed badges dont overlap open ones
+  },
+  anchorToolbar: {
+    minWidth: 0,
+    flexShrink: 1,
   },
   // The circular badge container
   badge: {
@@ -231,22 +372,44 @@ const styles = StyleSheet.create({
   badgeHover: {
     backgroundColor: "rgba(210,215,230,0.7)", // Darker on hover
   },
+  chip: {
+    height: TOOLBAR_CHIP_HEIGHT,
+    minHeight: TOOLBAR_CHIP_HEIGHT,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: 10,
+    paddingRight: 12,
+    borderRadius: 22,
+    backgroundColor: "#b8cce4",
+    borderWidth: 1,
+    borderColor: "rgba(45, 74, 122, 0.22)",
+    gap: 6,
+    flexShrink: 1,
+  },
+  chipHover: {
+    backgroundColor: "#a8bdd8",
+    borderColor: "rgba(45, 74, 122, 0.32)",
+  },
+  chipValue: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: brand,
+    flexShrink: 1,
+  },
   // Text style for the sensor reading
   value: {
     fontSize: 10, // Small text
     fontWeight: "600", // Semi-bold
-    color: ACCENT, // Matches the app accent color
+    color: brand, // Matches the app accent color
     marginTop: 2, // Tiny gap between icon and text
+    textAlign: "center",
+    paddingHorizontal: 2,
   },
-  // Tooltip container positioned below the badge
+  // Tooltip container: horizontal placement comes from tooltipPositionStyle (edge-aligned on toolbar)
   tooltip: {
-    position: "absolute", // Float below the badge
-    top: SIZE + 4, // Just below the circle
-    alignSelf: "center", // Center horizontally
-    left: -10, // Nudge left a bit so it centers better
-    right: -10, // Nudge right symmetrically
-    alignItems: "center", // Center the text inside
-    zIndex: 100, // Sit above neighboring badges
+    position: "absolute",
+    zIndex: 100,
   },
   // The actual tooltip label text (default: dark bg for light screens)
   tooltipText: {
@@ -270,10 +433,7 @@ const styles = StyleSheet.create({
   },
   // The expanded detail card
   detail: {
-    position: "absolute", // Float below the badge
-    top: SIZE + 6, // A bit below the circle
-    left: -52, // Offset left so the card is roughly centered
-    width: 160, // Fixed width for the card
+    position: "absolute", // web may override with detailFixed
     backgroundColor: "#fff", // White card background
     borderRadius: 10, // Rounded corners
     padding: 10, // Inner padding
@@ -284,29 +444,41 @@ const styles = StyleSheet.create({
     shadowRadius: 6, // Soft shadow blur
     zIndex: 999, // Topmost element on the screen
   },
+  /** Web-only: pin popover to the visual viewport so it is not clipped by overflow:hidden ancestors */
+  detailFixed: {
+    position: "fixed" as const,
+    zIndex: 50_000,
+  },
   // Row that holds the title and the close button side by side
   detailHeader: {
     flexDirection: "row", // Title and X sit next to each other
     justifyContent: "space-between", // Push X to the far right
-    alignItems: "center", // Vertically center them
+    alignItems: "flex-start", // Top-align so wrapped title stays readable
     marginBottom: 4, // Gap below the header
+    gap: 6,
+  },
+  detailClose: {
+    marginTop: 1,
   },
   // Bold title at the top of the detail card
   detailTitle: {
+    flex: 1,
+    flexShrink: 1,
     fontSize: 12, // Slightly larger than body
     fontWeight: "700", // Bold
-    color: ACCENT, // Accent blue
+    color: brand, // Accent blue
   },
   // Body text lines in the detail card
   detailText: {
     fontSize: 10, // Small body text
     color: "#555", // Muted gray
     marginBottom: 3, // Gap between lines
+    flexWrap: "wrap",
   },
   // Row that holds the colored dot and rank text
   rankRow: {
     flexDirection: "row", // Dot and text side by side
-    alignItems: "center", // Vertically center them
+    alignItems: "flex-start", // Top-align when text wraps to multiple lines
     marginTop: 4, // Space above the rank section
   },
   // Small colored circle indicating the ranking
@@ -315,9 +487,12 @@ const styles = StyleSheet.create({
     height: 8, // Dot height
     borderRadius: 4, // Make it a circle
     marginRight: 6, // Gap between dot and text
+    marginTop: 2,
   },
   // Text showing the rank name and explanation
   rankText: {
+    flex: 1,
+    flexShrink: 1,
     fontSize: 10, // Same size as detail text
     fontWeight: "600", // Semi-bold so it stands out
     color: "#333", // Dark gray for readability
