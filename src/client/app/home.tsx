@@ -1485,7 +1485,7 @@ const styles = StyleSheet.create({
   primaryButtonText: { fontSize: 16, fontWeight: "700", color: "#FFFFFF", letterSpacing: 0.2 },
   secondaryButton: { width: "100%", height: 52, borderRadius: 14, borderWidth: 2, borderColor: brand, backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 18 },
   secondaryButtonText: { fontSize: 16, fontWeight: "700", color: brand },
-  quoteCard: { width: "100%", backgroundColor: surfaceSoft, borderRadius: 14, paddingVertical: 18, paddingHorizontal: 20, alignItems: "center", borderLeftWidth: 4, borderLeftColor: brand },
+  quoteCard: { width: "100%", backgroundColor: surfaceSoft, borderRadius: 14, paddingVertical: 18, paddingHorizontal: 20, alignItems: "center"},
   quoteText: { fontSize: 15, fontWeight: "600", color: "#4A6FA5", textAlign: "center", lineHeight: 24 },
   rightColumn: { flex: 1 },
   rightColumnWide: { flex: 1 },
