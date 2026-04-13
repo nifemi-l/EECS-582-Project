@@ -1,7 +1,7 @@
 /* PROLOGUE
 File name: graphics.tsx
 Description: Provide a home page with a WebGL context for graphical rendering
-Programmer: Jack Bauer
+Programmer: Jack Bauer, Logan Smith
 Creation date: 2/15/26
 Revision date: 
   - 2/15/26: Move graphical context and related code from index.tsx to here. Add comments. 
@@ -12,6 +12,7 @@ Revision date:
   - 3/28/26: Add remove feature, walls with visibility changes, edit mode and edit menu, floor resize, zoom
   - 3/29/26: Major refactor (split to graphicsUtils and renderUtils)
   - 4/6/26: Convert to use FeatureType enum & support model loading
+  - 4/9/26: Add AuthGuard to protect the screen and redirect unauthenticated users to login
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -24,6 +25,9 @@ Known faults: None
 //                      Needed Imports
 // ***********************************************************
 
+// Prevents URL changing to bypass login.
+import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
+
 // Import required components
 import React, { useEffect, useState, useSyncExternalStore, useRef } from 'react';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
@@ -34,6 +38,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@react-navigation/elements';
 import { Button, PaperProvider, Card, Menu, TextInput } from 'react-native-paper';
 import { useLocalSearchParams } from "expo-router";
+import { appPaperLightTheme } from "../../../theme/paperTheme";
+import { listBrand } from "../../../theme/colors";
 
 // Import graphics utilities
 import {
@@ -308,7 +314,7 @@ function EditWindow() {
             setIsEditing(!isEditing); 
             setSelectedChore(0);
           }}>
-          <MaterialCommunityIcons name='wrench' color={isEditing ? "rgb(255, 0, 0)": "rgb(47, 47, 255)"}/>
+          <MaterialCommunityIcons name='wrench' color={isEditing ? "rgb(255, 0, 0)" : listBrand}/>
           <Text>  {isEditing ? "View" : "Edit" }</Text>
         </Button>
 
@@ -330,10 +336,18 @@ function EditWindow() {
           >
             <Card.Title title={selectedFeature.feature_name + "[" + selectedFeature.id + "]"}/>
             <Card.Actions>
-              <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}><MaterialCommunityIcons name='arrow-left'/></Button>
-              <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}><MaterialCommunityIcons name='arrow-right'/></Button>
-              <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_Z)}}><MaterialCommunityIcons name='arrow-up'/></Button>
-              <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_Z)}}><MaterialCommunityIcons name='arrow-down'/></Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}>
+                <MaterialCommunityIcons name="arrow-left" size={18} color="#FFFFFF" />
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}>
+                <MaterialCommunityIcons name="arrow-right" size={18} color="#FFFFFF" />
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_Z)}}>
+                <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF" />
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_Z)}}>
+                <MaterialCommunityIcons name="arrow-down" size={18} color="#FFFFFF" />
+              </Button>
             </Card.Actions>
             {/* Display chore cycle button if needed */}
             {selectedFeature.tasks.length > 1 ? (
@@ -379,6 +393,16 @@ export default function Index() {
   ///////////////////////////
   ///  Renderer State.    ///
   ///////////////////////////
+  const { isCheckingAuth, isAuthenticated } = useAuthGuard();
+
+  if (isCheckingAuth || !isAuthenticated) {
+    return <AuthLoadingScreen />;
+  }
+
+  return <AuthenticatedGraphicsScreen />;
+}
+
+function AuthenticatedGraphicsScreen() {
   const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
   const rdrRef = useRef(rdr);
   useEffect(() => {
@@ -543,7 +567,7 @@ export default function Index() {
   windowHeight = useWindowDimensions().height;
   return (
     featureFetchSuccess ? (
-      <PaperProvider>
+      <PaperProvider theme={appPaperLightTheme}>
       <View
         onLayout={handleLayout}
         style={{

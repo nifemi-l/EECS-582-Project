@@ -5,6 +5,9 @@ Programmers: Logan Smith, Nifemi Lawal
 Creation date: 2/14/26
 Revision date:
   - 3/29/26: Replace hardcoded localhost URL with EXPO_PUBLIC_API_URL env variable
+  - 4/9/26: Add AuthGuard to protect the screen and redirect unauthenticated users to login
+  - 4/10/26: Add alert on successful registration redirect to login
+  - 4/12/26: Login errors show on the page; you can send the form from the keyboard with enter/return key
 Preconditions: A React application requesting the login screen route ("/login")
 Postconditions: A login screen component is ready for rendering; on sign-in, user is navigated to /home
 Errors: None
@@ -13,10 +16,10 @@ Invariants: None
 Known faults: Login not storing data until backend database is established.
 */
 
-// Imports 
+// Imports
 import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { saveToken } from "../utils/authStorage";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -25,7 +28,9 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL;
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
   const { registered } = useLocalSearchParams();
+  const passwordRef = useRef<TextInput>(null);
 
   // Show success message if redirected from registration
   useEffect(() => {
@@ -36,8 +41,16 @@ export default function LoginScreen() {
 
   // Runs when the user presses the Sign In button
   async function handleLogin() {
+    setAuthError(null);
     if (!email || !password) {
       Alert.alert("Missing fields", "Please enter your email and password.");
+      return;
+    }
+
+    // Email format validation (simple regex)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      Alert.alert("Invalid Email", "Please enter a valid email address.");
       return;
     }
 
@@ -57,25 +70,24 @@ export default function LoginScreen() {
       const data = await response.json();
 
       if (!response.ok) {
-        Alert.alert("Login Failed", data.error || "Invalid credentials");
+        setAuthError(
+          typeof data?.error === "string" && data.error.trim()
+            ? data.error.trim()
+            : "Invalid email or password."
+        );
         return;
       }
 
-      // Extract the token from the response data
       const token = data.token;
 
-      // If no token is returned, show an error message
       if (!token) {
-        Alert.alert("Login Failed", "No token returned");
+        setAuthError("Invalid email or password.");
         return;
       }
 
-      // Store the token securely (mobile: SecureStore, web: AsyncStorage)
       try {
         await saveToken(token);
-        // DEBUG: Alert to confirm token is saved before navigating
-        Alert.alert("Debug", "Token saved! Redirecting to home...");
-      } catch (e) {
+      } catch {
         Alert.alert("Error", "Failed to store authentication token.");
         return;
       }
@@ -84,7 +96,7 @@ export default function LoginScreen() {
       router.replace("/home");
 
     } catch (error: any) {
-      Alert.alert("Network Error", error.message);
+      Alert.alert("Network Error", error.message ?? "Something went wrong.");
     }
   }
 
@@ -99,18 +111,45 @@ export default function LoginScreen() {
           placeholder="Email"
           style={styles.input}
           autoCapitalize="none"
+          keyboardType="email-address"
+          autoComplete="email"
+          textContentType="emailAddress"
+          returnKeyType="next"
+          blurOnSubmit={false}
+          onSubmitEditing={() => {
+            if (email.trim() && password.trim()) void handleLogin();
+            else passwordRef.current?.focus();
+          }}
           value={email}
-          onChangeText={setEmail}
+          onChangeText={(t) => {
+            setEmail(t);
+            setAuthError(null);
+          }}
         />
-        
-        {/* Password input field */}
+
         <TextInput
+          ref={passwordRef}
           placeholder="Password"
           secureTextEntry
           style={styles.input}
+          autoComplete="password"
+          textContentType="password"
+          returnKeyType="go"
+          onSubmitEditing={() => {
+            void handleLogin();
+          }}
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(t) => {
+            setPassword(t);
+            setAuthError(null);
+          }}
         />
+
+        {authError ? (
+          <View style={styles.authErrorBox} accessibilityRole="alert">
+            <Text style={styles.authErrorText}>{authError}</Text>
+          </View>
+        ) : null}
 
         {/* Sign In button */}
         <Pressable style={styles.button} onPress={handleLogin}>
@@ -165,6 +204,23 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     borderRadius: 8,
     width: "100%",
+  },
+
+  authErrorBox: {
+    width: "100%",
+    marginBottom: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: "#fff0f0",
+    borderWidth: 1,
+    borderColor: "#e8a0a0",
+  },
+  authErrorText: {
+    color: "#7a1f1f",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "left",
   },
 
   // Sign In button styling

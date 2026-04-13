@@ -6,7 +6,8 @@ Description: Define the shared household layout for the household-scoped routes.
              Keeps navigation and shared UI scoped to the active household id.
 Programmers: Logan Smith
 Creation date: 3/18/26
-Revision date: N/A
+Revision date:
+  - 4/12/26: Shared household toolbar (ViewToggle) for list and 3D routes
 Preconditions: A valid household ID is present in the route parameters
 Postconditions: Renders the shared household view toggle and the matched child route
 Errors: None
@@ -15,14 +16,23 @@ Invariants: None
 Known faults: None
 */
 
-// Slot renders the matched household child route with no extra stack wrapper
+
 import { Slot, useLocalSearchParams, usePathname, router } from "expo-router";
-// Basic React Native building blocks for the shared household shell
 import { StyleSheet, View } from "react-native";
-// Shared toggle bar between the 3D and list views
 import ViewToggle from "../../../components/ViewToggle";
+import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
 
 export default function HouseholdLayout() {
+  const { isCheckingAuth, isAuthenticated } = useAuthGuard();
+
+  if (isCheckingAuth || !isAuthenticated) {
+    return <AuthLoadingScreen />;
+  }
+
+  return <AuthenticatedHouseholdLayout />;
+}
+
+function AuthenticatedHouseholdLayout() {
   // Read the household id from the dynamic route so toggle navigation stays in the same household
   const { id } = useLocalSearchParams<{ id: string }>();
   const householdId = Number(id);
@@ -49,11 +59,8 @@ export default function HouseholdLayout() {
   }
 
   return (
-    // Shared household shell: one toggle for both graphics and list routes
     <View style={styles.container}>
-      {/* Household layout owns the toggle for /household/[id]/graphics and /household/[id]/list */}
       <ViewToggle active={active} onChange={handleToggle} householdId={householdId} />
-      {/* Slot swaps in the matched household route's component below the toggle */}
       <Slot />
     </View>
   );

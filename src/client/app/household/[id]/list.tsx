@@ -17,6 +17,7 @@ Revision date:
              with EXPO_PUBLIC_API_URL env variable
   - 4/5/26: Add support for viewing next due date of a task
   - 4/6/26: Convert to use FeatureType enum
+  - 4/12/26: Phone-sized layout fixes and in-app delete prompts instead of system popups
 Preconditions: Flask server reachable at EXPO_PUBLIC_API_URL with the household's data in the DB
 Postconditions: Renders an interactive task list that stays in sync with the database
 Errors: Shows error state with retry button if API is unreachable
@@ -30,11 +31,12 @@ Known faults: None
 //TODO: make all ids use numbers 
 //TODO: fix highlight not working
 
+// Prevents URL changing to bypass login.
+import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
 // Import react hooks we need for state, lifecycle, and performance
 import React, { useCallback, useEffect, useRef, useState } from "react";
 // Import RN components for building the UI
 import {
-    Alert,
     Platform,
     Pressable,
     ScrollView,
@@ -43,6 +45,8 @@ import {
     TextInput,
     View,
 } from "react-native";
+import { Button, Dialog, PaperProvider, Portal, Text as PaperText } from "react-native-paper";
+import { appPaperLightTheme } from "../../../theme/paperTheme";
 // Material design icons
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 // Need this to grab the household id from the URL (e.g. /household/3/list)
@@ -67,6 +71,7 @@ import {
 // Aliased with "api" prefix so they don't clash with handler names in this file
 import {
   fetchHouseholdFeatures,
+  fetchMyHouseholds,
   createFeature as apiCreateFeature,
   updateFeature as apiUpdateFeature,
   deleteFeature as apiDeleteFeature,
@@ -74,9 +79,14 @@ import {
   deleteTask as apiDeleteTask,
   completeTask as apiCompleteTask,
 } from "../../../data/api";
-
-const ACCENT = "#4169E1";
-const BG = "#f0f2f5";
+import {
+  listBorder,
+  listBrand,
+  listPageBg,
+  listSelection,
+  listSurfaceSoft,
+  textPrimary,
+} from "../../../theme/colors";
 
 // Health bar component that shows how "healthy" a task is as a colored bar
 function HealthBar({ task }: { task: Task }) {
@@ -103,15 +113,19 @@ function TaskRow({
     task,
     isSelected,
     onToggleSelect,
-    onDeleteTask,
+    onRequestDeleteTask,
     onCompleteTask,
 }: {
     task: Task;
     isSelected: boolean;
     onToggleSelect: (id: number) => void;
-    onDeleteTask: (id: number) => void;
+    /** Opens the styled delete confirmation (parent performs delete on confirm). */
+    onRequestDeleteTask: (task: Task) => void;
     onCompleteTask: (id: number) => void;
 }) {
+  const daysLeft = daysUntilNextDue(task);
+  const duePhrase = `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left`;
+
   return (
     <View style={[styles.taskRow, isSelected && styles.taskRowSelected]}>
       <Pressable
@@ -122,7 +136,7 @@ function TaskRow({
         <MaterialCommunityIcons
           name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"}
           size={22}
-          color={isSelected ? ACCENT : "#ccc"}
+          color={isSelected ? listBrand : "#ccc"}
         />
       </Pressable>
 
@@ -130,7 +144,7 @@ function TaskRow({
         <MaterialCommunityIcons
           name={task.icon as any}
           size={20}
-          color={ACCENT}
+          color={listBrand}
         />
       </View>
 
@@ -139,11 +153,11 @@ function TaskRow({
           {task.name}  
         </Text>
         <HealthBar task={task} />
-        <Text style={styles.taskDueText}> 
-        Time Until Due: 
-            <Text style={[styles.taskDueText, { color: healthColor(task.healthPercent)}]} >
-                {daysUntilNextDue(task)} days left              
-            </Text>
+        <Text style={styles.taskDueText}>
+          Time Until Due:{" "}
+          <Text style={[styles.taskDueText, { color: healthColor(task.healthPercent) }]}>
+            {duePhrase}
+          </Text>
         </Text>
       </View>
 
@@ -161,7 +175,7 @@ function TaskRow({
       </Pressable>
 
       <Pressable
-        onPress={() => onDeleteTask(task.id)}
+        onPress={() => onRequestDeleteTask(task)}
         hitSlop={8}
         style={styles.taskDeleteBtn}
       >
@@ -218,7 +232,7 @@ function AddTaskCard({
         <MaterialCommunityIcons
           name="plus"
           size={18}
-          color={ACCENT}
+          color={listBrand}
           style={{ marginRight: 8 }}
         />
         <Text style={styles.addTaskPlaceholder}>Add a task...</Text>
@@ -247,7 +261,7 @@ function AddTaskCard({
             <MaterialCommunityIcons
               name={p.icon as any}
               size={14}
-              color={name === p.name ? "#fff" : ACCENT}
+              color={name === p.name ? "#fff" : listBrand}
               style={{ marginRight: 4 }}
             />
             <Text
@@ -374,20 +388,20 @@ function FeatureGroup({
   selectedIds,
   onToggleSelect,
   onDeleteSelected,
-  onDeleteTask,
+  onRequestDeleteTask,
   onAddTask,
   onRenameFeature,
-  onDeleteFeature,
+  onRequestDeleteSection,
   onCompleteTask,
 }: {
   feature: Feature;
   selectedIds: Set<number>;
   onToggleSelect: (id: number) => void;
   onDeleteSelected: (featureId: number) => void;
-  onDeleteTask: (featureId: number, taskId: number) => void;
+  onRequestDeleteTask: (featureId: number, task: Task) => void;
   onAddTask: (featureId: number, name: string, icon: string, freqDays: number) => void;
   onRenameFeature: (featureId: number, newName: string) => void;
-  onDeleteFeature: (featureId: number) => void;
+  onRequestDeleteSection: (featureId: number, sectionName: string) => void;
   onCompleteTask: (taskId: number) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -415,24 +429,7 @@ function FeatureGroup({
   };
 
   const confirmDeleteFeature = () => {
-    if (Platform.OS === "web") {
-      if (window.confirm(`Delete "${feature.name}" and all its tasks?`)) {
-        onDeleteFeature(feature.id);
-      }
-    } else {
-      Alert.alert(
-        "Delete Section",
-        `Delete "${feature.name}" and all its tasks?`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Delete",
-            style: "destructive",
-            onPress: () => onDeleteFeature(feature.id),
-          },
-        ]
-      );
-    }
+    onRequestDeleteSection(feature.id, feature.name);
   };
 
   return (
@@ -444,7 +441,7 @@ function FeatureGroup({
         <MaterialCommunityIcons
           name={feature.icon as any}
           size={24}
-          color={ACCENT}
+          color={listBrand}
         />
 
         {isEditing ? (
@@ -459,9 +456,13 @@ function FeatureGroup({
             selectTextOnFocus
           />
         ) : (
-          <Pressable onLongPress={handleStartEdit} style={{ flex: 1 }}>
-            <Text style={styles.featureName}>{feature.name}</Text>
-          </Pressable>
+          <View style={styles.featureTitleWrap}>
+            <Pressable onLongPress={handleStartEdit} style={styles.featureTitlePressable}>
+              <Text style={styles.featureName} numberOfLines={2} ellipsizeMode="tail">
+                {feature.name}
+              </Text>
+            </Pressable>
+          </View>
         )}
 
         <Text style={styles.taskCount}>{Array.from(feature.tasks).length}</Text>
@@ -510,7 +511,7 @@ function FeatureGroup({
                   task={task}
                   isSelected={selectedIds.has(task.id)}
                   onToggleSelect={onToggleSelect}
-                  onDeleteTask={(taskId) => onDeleteTask(feature.id, taskId)}
+                  onRequestDeleteTask={(t) => onRequestDeleteTask(feature.id, t)}
                   onCompleteTask={onCompleteTask}
                 />
               ))}
@@ -551,7 +552,7 @@ function AddSectionRow({
     <View style={styles.addSectionRow}>
       <View style={styles.addSectionTopRow}>
         <Pressable onPress={() => setShowIcons((v) => !v)}>
-          <MaterialCommunityIcons name={icon as any} size={22} color={ACCENT} />
+          <MaterialCommunityIcons name={icon as any} size={22} color={listBrand} />
         </Pressable>
         <TextInput
           style={styles.addSectionInput}
@@ -596,8 +597,30 @@ function AddSectionRow({
   );
 }
 
+/** React Native Paper dialog payload for task / batch / section delete confirmation */
+type DeleteDialogState =
+  | null
+  | {
+      mode: "task";
+      featureId: number;
+      taskId: number;
+      taskName: string;
+    }
+  | { mode: "batch"; featureId: number; taskIds: number[] }
+  | { mode: "section"; featureId: number; sectionName: string };
+
 // Main list screen (connected to the database via the Flask API) 
 export default function ListScreen() {
+  const { isCheckingAuth, isAuthenticated } = useAuthGuard();
+
+  if (isCheckingAuth || !isAuthenticated) {
+    return <AuthLoadingScreen />;
+  }
+
+  return <AuthenticatedListScreen />;
+}
+
+function AuthenticatedListScreen() {
   // Grab the household id from the route (e.g. /household/3/list -> id = "3")
   const { id } = useLocalSearchParams<{ id: string }>();
   const householdId = Number(id) || 1; // fallback to 1 if somehow missing
@@ -606,6 +629,8 @@ export default function ListScreen() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [householdName, setHouseholdName] = useState<string | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>(null);
 
   // Fetch all features + tasks from the server and map them into our local class instances
   const loadFromApi = useCallback(() => {
@@ -654,6 +679,23 @@ export default function ListScreen() {
     loadFromApi();
   }, [loadFromApi]);
 
+  // Resolve display name for this household (same source as home: /household/mine)
+  useEffect(() => {
+    let cancelled = false;
+    fetchMyHouseholds()
+      .then((res) => {
+        if (cancelled) return;
+        const row = res.households?.find((h) => Number(h.household_id) === householdId);
+        setHouseholdName(row?.household_name?.trim() || null);
+      })
+      .catch(() => {
+        if (!cancelled) setHouseholdName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [householdId]);
+
   const handleToggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -663,23 +705,18 @@ export default function ListScreen() {
     });
   }, []);
 
-  // Delete all selected tasks at once (fires off delete requests in parallel)
+  // Opens styled dialog to delete all selected tasks in one section
   const handleDeleteSelected = useCallback(
     (featureId: number) => {
-      const toDelete = Array.from(selectedIds);
-      Promise.all(toDelete.map((taskId) => apiDeleteTask(taskId).catch(console.error)));
-      setFeatures((prev) =>
-        prev.map((loc) => {
-          if (loc.id !== featureId) return loc;
-          return {
-            ...loc,
-            tasks: Array.from(loc.tasks).filter((t) => !selectedIds.has(t.id)),
-          } as any;
-        })
-      );
-      setSelectedIds(new Set());
+      const feature = features.find((f) => f.id === featureId);
+      if (!feature) return;
+      const toDelete = Array.from(feature.tasks)
+        .filter((t) => selectedIds.has(t.id))
+        .map((t) => t.id);
+      if (toDelete.length === 0) return;
+      setDeleteDialog({ mode: "batch", featureId, taskIds: toDelete });
     },
-    [selectedIds]
+    [selectedIds, features]
   );
 
   // Delete a single task (tell the server first, then remove from local state)
@@ -758,6 +795,52 @@ export default function ListScreen() {
     setFeatures((prev) => prev.filter((loc) => loc.id !== featureId));
   }, []);
 
+  const openDeleteTaskDialog = useCallback((featureId: number, task: Task) => {
+    setDeleteDialog({
+      mode: "task",
+      featureId,
+      taskId: task.id,
+      taskName: task.name?.trim() ? task.name.trim() : "Unnamed task",
+    });
+  }, []);
+
+  const openDeleteSectionDialog = useCallback((featureId: number, sectionName: string) => {
+    setDeleteDialog({
+      mode: "section",
+      featureId,
+      sectionName,
+    });
+  }, []);
+
+  const confirmPendingDelete = useCallback(() => {
+    if (!deleteDialog) return;
+    const d = deleteDialog;
+    setDeleteDialog(null);
+    if (d.mode === "task") {
+      handleDeleteTask(d.featureId, d.taskId);
+      return;
+    }
+    if (d.mode === "batch") {
+      Promise.all(d.taskIds.map((taskId) => apiDeleteTask(taskId).catch(console.error)));
+      setFeatures((prev) =>
+        prev.map((loc) => {
+          if (loc.id !== d.featureId) return loc;
+          return {
+            ...loc,
+            tasks: Array.from(loc.tasks).filter((t) => !d.taskIds.includes(t.id)),
+          } as any;
+        })
+      );
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        d.taskIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      return;
+    }
+    handleDeleteFeature(d.featureId);
+  }, [deleteDialog, handleDeleteTask, handleDeleteFeature]);
+
   // Add a new section/feature (POST to the server and use the returned id)
   const handleAddFeature = useCallback(
     (name: string, icon: string) => {
@@ -790,29 +873,43 @@ export default function ListScreen() {
     );
   }, []);
 
-  if (!loaded) {
-    return (
-      <View style={[styles.root, { justifyContent: "center", alignItems: "center" }]}>
-        <Text style={styles.subtitle}>Loading...</Text>
-      </View>
-    );
-  }
+  const deleteDialogTitle =
+    deleteDialog?.mode === "task"
+      ? "Delete task?"
+      : deleteDialog?.mode === "batch"
+        ? "Delete selected tasks?"
+        : deleteDialog?.mode === "section"
+          ? "Delete section?"
+          : "";
 
-  if (error) {
-    return (
-      <View style={[styles.root, { justifyContent: "center", alignItems: "center" }]}>
-        <Text style={[styles.subtitle, { color: "#f44336" }]}>{error}</Text>
-        <Pressable onPress={loadFromApi} style={{ marginTop: 12 }}>
-          <Text style={{ color: ACCENT, fontWeight: "600" }}>Retry</Text>
-        </Pressable>
-      </View>
-    );
-  }
+  const deleteDialogBody =
+    deleteDialog?.mode === "task"
+      ? `“${deleteDialog.taskName}” will be removed. This cannot be undone.`
+      : deleteDialog?.mode === "batch"
+        ? `${deleteDialog.taskIds.length} selected task${
+            deleteDialog.taskIds.length === 1 ? "" : "s"
+          } will be permanently removed.`
+        : deleteDialog?.mode === "section"
+          ? `“${deleteDialog.sectionName}” and every task in this section will be removed. This cannot be undone.`
+          : "";
 
-  return (
+  const listBody = !loaded ? (
+    <View style={[styles.root, { justifyContent: "center", alignItems: "center" }]}>
+      <Text style={styles.subtitle}>Loading...</Text>
+    </View>
+  ) : error ? (
+    <View style={[styles.root, { justifyContent: "center", alignItems: "center" }]}>
+      <Text style={[styles.subtitle, { color: "#f44336" }]}>{error}</Text>
+      <Pressable onPress={loadFromApi} style={{ marginTop: 12 }}>
+        <Text style={{ color: listBrand, fontWeight: "600" }}>Retry</Text>
+      </Pressable>
+    </View>
+  ) : (
     <View style={styles.root}>
       <View style={styles.titleBar}>
-        <Text style={styles.title}>Household</Text>
+        <Text style={styles.title} numberOfLines={2}>
+          {householdName || "Household"}
+        </Text>
         <Text style={styles.subtitle}>
           {features.length} section{features.length !== 1 ? "s" : ""} ·{" "}
           {features.reduce((n, l) => n + Array.from(l.tasks).length, 0)} tasks
@@ -832,10 +929,10 @@ export default function ListScreen() {
             selectedIds={selectedIds}
             onToggleSelect={handleToggleSelect}
             onDeleteSelected={handleDeleteSelected}
-            onDeleteTask={handleDeleteTask}
+            onRequestDeleteTask={openDeleteTaskDialog}
             onAddTask={handleAddTask}
             onRenameFeature={handleRenameFeature}
-            onDeleteFeature={handleDeleteFeature}
+            onRequestDeleteSection={openDeleteSectionDialog}
             onCompleteTask={handleCompleteTask}
           />
         ))}
@@ -844,84 +941,163 @@ export default function ListScreen() {
       </ScrollView>
     </View>
   );
+
+  return (
+    <PaperProvider theme={appPaperLightTheme}>
+      {listBody}
+      <Portal>
+        <Dialog
+          visible={deleteDialog != null}
+          onDismiss={() => setDeleteDialog(null)}
+          style={styles.deleteDialogWrap}
+        >
+          <Dialog.Title style={styles.deleteDialogTitle}>{deleteDialogTitle}</Dialog.Title>
+          <Dialog.Content>
+            <PaperText variant="bodyMedium" style={styles.deleteDialogBody}>
+              {deleteDialogBody}
+            </PaperText>
+          </Dialog.Content>
+          <Dialog.Actions style={styles.deleteDialogActions}>
+            <Button mode="text" onPress={() => setDeleteDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              mode="contained"
+              buttonColor="#c62828"
+              textColor="#fff"
+              onPress={confirmPendingDelete}
+            >
+              Delete
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+    </PaperProvider>
+  );
 }
 
 const styles = StyleSheet.create({
     root: {
         flex: 1,
-        backgroundColor: BG,
+        backgroundColor: listPageBg,
+        minWidth: 0,
+        width: "100%",
+        maxWidth: "100%",
     },
     scroll: {
         flex: 1,
+        minWidth: 0,
+        maxWidth: "100%",
     },
     webScroll: Platform.select({
         web: {
             overflowY: "scroll",
             scrollbarGutter: "stable",
+            width: "100%",
+            maxWidth: "100%",
         } as any,
         default: {},
     }),
     scrollContent: {
         padding: 16,
         paddingBottom: 48,
+        maxWidth: "100%",
     },
     titleBar: {
-        paddingHorizontal: 20,
-        paddingTop: 4,
-        paddingBottom: 10,
+        paddingLeft: 20,
+        paddingRight: 22,
+        paddingTop: 16,
+        paddingBottom: 12,
     },
     title: {
         fontSize: 22,
         fontWeight: "700",
-        color: "#1a1a2e",
+        color: textPrimary,
     },
     subtitle: {
         fontSize: 13,
-        color: "#888",
+        color: "#5A6B7E",
         marginTop: 2,
+    },
+    deleteDialogWrap: {
+        borderRadius: 16,
+        maxWidth: 400,
+        width: "92%",
+        alignSelf: "center",
+        transform: [{ translateY: -100 }],
+    },
+    deleteDialogTitle: {
+        fontSize: 18,
+        fontWeight: "700",
+        color: textPrimary,
+    },
+    deleteDialogBody: {
+        color: textPrimary,
+        lineHeight: 22,
+        paddingTop: 4,
+    },
+    deleteDialogActions: {
+        flexDirection: "row",
+        justifyContent: "flex-end",
+        flexWrap: "wrap",
+        gap: 8,
+        paddingHorizontal: 8,
+        paddingBottom: 8,
     },
     featureGroup: {
         backgroundColor: "#fff",
         borderRadius: 14,
         marginBottom: 14,
+        maxWidth: "100%",
         overflow: "hidden",
-        elevation: 1,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.06,
-        shadowRadius: 4,
+        elevation: 2,
+        shadowColor: listBrand,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
     },
     featureHeader: {
         flexDirection: "row",
         alignItems: "center",
         paddingVertical: 12,
         paddingHorizontal: 14,
-        backgroundColor: "#fafbfd",
+        backgroundColor: "#F7FAFE",
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: "#e8e8e8",
+        borderBottomColor: listBorder,
+        minWidth: 0,
+    },
+    featureTitleWrap: {
+        flex: 1,
+        minWidth: 0,
+    },
+    featureTitlePressable: {
+        flex: 1,
+        minWidth: 0,
     },
     featureName: {
         fontSize: 16,
         fontWeight: "600",
-        color: "#1a1a2e",
+        color: textPrimary,
         marginLeft: 10,
+        flexShrink: 1,
     },
     featureNameInput: {
         flex: 1,
+        minWidth: 0,
         fontSize: 16,
         fontWeight: "600",
-        color: "#1a1a2e",
+        color: textPrimary,
         marginLeft: 10,
         borderBottomWidth: 2,
-        borderBottomColor: ACCENT,
+        borderBottomColor: listBrand,
         paddingVertical: 2,
         paddingHorizontal: 4,
     },
     taskCount: {
         fontSize: 12,
         fontWeight: "600",
-        color: "#bbb",
-        backgroundColor: "#f0f0f0",
+        color: "#6B7C8F",
+        backgroundColor: listSurfaceSoft,
         borderRadius: 10,
         paddingHorizontal: 8,
         paddingVertical: 2,
@@ -962,9 +1138,10 @@ const styles = StyleSheet.create({
         marginHorizontal: 4,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: "#f0f0f0",
+        minWidth: 0,
     },
     taskRowSelected: {
-        backgroundColor: "#f3f0ff",
+        backgroundColor: listSelection,
     },
     checkbox: {
         marginRight: 6,
@@ -973,13 +1150,14 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 8,
-        backgroundColor: "#eef0ff",
+        backgroundColor: listSurfaceSoft,
         alignItems: "center",
         justifyContent: "center",
         marginRight: 10,
     },
     taskInfo: {
         flex: 1,
+        minWidth: 0,
     },
     taskName: {
         fontSize: 14,
@@ -987,12 +1165,13 @@ const styles = StyleSheet.create({
         color: "#333",
         marginBottom: 4,
     },
-    taskDueText :{
+    taskDueText: {
         fontSize: 12,
         fontWeight: "300",
         color: "#333",
         marginBottom: 4,
-    },    
+        flexShrink: 1,
+    },
     completeBtn: {
         padding: 6,
         marginLeft: 4,
@@ -1004,12 +1183,14 @@ const styles = StyleSheet.create({
     healthBarRow: {
         flexDirection: "row",
         alignItems: "center",
+        minWidth: 0,
     },
     healthBarOuter: {
         flex: 1,
+        minWidth: 0,
         height: 5,
         borderRadius: 3,
-        backgroundColor: "#ececec",
+        backgroundColor: "#E2EAF2",
         overflow: "hidden",
     },
     healthBarInner: {
@@ -1048,13 +1229,13 @@ const styles = StyleSheet.create({
       paddingHorizontal: 14,
       paddingVertical: 12,
       borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: "#eee",
-      backgroundColor: "#fbfbfd",
+      borderTopColor: listBorder,
+      backgroundColor: "#FAFCFE",
     },
     addTaskLabel: {
       fontSize: 11,
       fontWeight: "600",
-      color: "#999",
+      color: "#6A7A8C",
       textTransform: "uppercase",
       letterSpacing: 0.5,
       marginTop: 8,
@@ -1065,7 +1246,7 @@ const styles = StyleSheet.create({
       color: "#333",
       backgroundColor: "#fff",
       borderWidth: 1,
-      borderColor: "#e8e8e8",
+      borderColor: listBorder,
       borderRadius: 8,
       paddingVertical: 8,
       paddingHorizontal: 10,
@@ -1083,18 +1264,18 @@ const styles = StyleSheet.create({
       paddingHorizontal: 10,
       paddingVertical: 5,
       borderRadius: 14,
-      backgroundColor: "#eef0ff",
+      backgroundColor: listSurfaceSoft,
       borderWidth: 1,
-      borderColor: "#dde0f0",
+      borderColor: listBorder,
     },
     presetChipActive: {
-      backgroundColor: ACCENT,
-      borderColor: ACCENT,
+      backgroundColor: listBrand,
+      borderColor: listBrand,
     },
     presetChipText: {
       fontSize: 12,
       fontWeight: "500",
-      color: ACCENT,
+      color: listBrand,
     },
     presetChipTextActive: {
       color: "#fff",
@@ -1109,12 +1290,12 @@ const styles = StyleSheet.create({
       width: 36,
       height: 36,
       borderRadius: 8,
-      backgroundColor: "#f0f0f0",
+      backgroundColor: listSurfaceSoft,
       alignItems: "center",
       justifyContent: "center",
     },
     iconPickerItemActive: {
-      backgroundColor: ACCENT,
+      backgroundColor: listBrand,
     },
     freqRow: {
       flexDirection: "row",
@@ -1126,13 +1307,13 @@ const styles = StyleSheet.create({
       paddingHorizontal: 12,
       paddingVertical: 5,
       borderRadius: 14,
-      backgroundColor: "#f0f0f0",
+      backgroundColor: "#EFF4FA",
       borderWidth: 1,
-      borderColor: "#e0e0e0",
+      borderColor: listBorder,
     },
     freqPillActive: {
-      backgroundColor: ACCENT,
-      borderColor: ACCENT,
+      backgroundColor: listBrand,
+      borderColor: listBrand,
     },
     freqPillText: {
       fontSize: 12,
@@ -1181,7 +1362,7 @@ const styles = StyleSheet.create({
       color: "#999",
     },
     addTaskSubmitBtn: {
-      backgroundColor: ACCENT,
+      backgroundColor: listBrand,
       paddingHorizontal: 18,
       paddingVertical: 7,
       borderRadius: 8,
@@ -1201,7 +1382,7 @@ const styles = StyleSheet.create({
       paddingVertical: 14,
       marginBottom: 14,
       borderWidth: 1.5,
-      borderColor: "#e0e4f0",
+      borderColor: listBorder,
       borderStyle: "dashed",
     },
     addSectionTopRow: {
@@ -1217,7 +1398,7 @@ const styles = StyleSheet.create({
       paddingHorizontal: 10,
     },
     addSectionBtn: {
-      backgroundColor: ACCENT,
+      backgroundColor: listBrand,
       paddingHorizontal: 16,
       paddingVertical: 7,
       borderRadius: 8,
