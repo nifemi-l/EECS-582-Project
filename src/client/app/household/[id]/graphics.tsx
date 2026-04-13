@@ -13,6 +13,7 @@ Revision date:
   - 3/29/26: Major refactor (split to graphicsUtils and renderUtils)
   - 4/6/26: Convert to use FeatureType enum & support model loading
   - 4/9/26: Add AuthGuard to protect the screen and redirect unauthenticated users to login
+  - 4/13/26: Add room selection UI & rotate position widget in edit menu to match rotation angle
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -31,7 +32,6 @@ import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
 // Import required components
 import React, { useEffect, useState, useSyncExternalStore, useRef } from 'react';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
-import * as GLM from 'gl-matrix';
 import { LayoutChangeEvent, Pressable, View, useWindowDimensions, ActivityIndicator } from "react-native";
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -45,9 +45,8 @@ import { listBrand } from "../../../theme/colors";
 import {
   MoveDirection, Tool,
   FEATURE_ORANGE, FEATURE_BLUE, FEATURE_GREEN, FEATURE_RED,
-  cellFromCoords, RenderPass,
-  getPixelFromRaw, getPickedObjectFromPointOnScreen,
-  setPixelFrustrum
+  RenderPass,getPixelFromRaw, getPickedObjectFromPointOnScreen,
+  setPixelFrustrum,
 } from "../../../data/graphicsUtils"
 
 // Import renderer classes
@@ -84,6 +83,9 @@ let currentTool = Tool.TOOL_FEATURE;
 // The renderer
 let rdr = new Renderer();
 
+// Axis-aligned screen angles from the camera right vector in world space
+let xAxisAngle = 0;
+
 // ***********************************************************
 //                      React UI PubSub System
 // ***********************************************************
@@ -110,6 +112,17 @@ function setSelectedEditFeature(feature: RenderableFeature | null) {
 // getter for listeners
 function getSelectedEditFeature() {
   return rdr.selectedEditFeature;
+}
+
+// setter(s) for x axis aligned angles
+function setXAxisAngle() {
+  xAxisAngle = rdr.getAngleFromCameraRight(MoveDirection.POS_X);
+  reactListeners.forEach((cb) => cb(xAxisAngle));
+}
+
+// getter(s) for axis aligned angles
+function getXAxisAngle() {
+  return xAxisAngle;
 }
 
 // ***********************************************************
@@ -154,6 +167,7 @@ const handlePan = Gesture.Pan()
     panLastX = 0;
     panLastY = 0;
     panYDir = 0;
+    setXAxisAngle();
   })
 
   // Handle gesture updates and calculate the difference between frames, then update the velocity
@@ -168,6 +182,7 @@ const handlePan = Gesture.Pan()
     panYDir = deltaY > 0 ? 1 : -1;
 
     updateVelocityPan(deltaX, deltaY);
+    setXAxisAngle();
   })
 
   // When we let go of the drag, we no longer want to rotate so we set the rotation value to 0
@@ -288,6 +303,8 @@ function EditWindow() {
   const [showIntervalMenu, setShowIntervalMenu] = useState(false);
   // The frequency update value we want to store for updates
   const [newFrequency, setNewFrequency] = useState("");
+  // The angle between the camera and the x axis
+  const xAxisAngle = useSyncExternalStore(subListener, getXAxisAngle); // will be updated externally to react, triggers a re-render on change
 
   return (
     <View 
@@ -336,17 +353,27 @@ function EditWindow() {
           >
             <Card.Title title={selectedFeature.feature_name + "[" + selectedFeature.id + "]"}/>
             <Card.Actions>
-              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}>
-                <MaterialCommunityIcons name="arrow-left" size={18} color="#FFFFFF" />
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" 
+                onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}
+              >
+                <View style={{transform: [{rotate: `${xAxisAngle}rad`}]}}>
+                  <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
+                </View>
               </Button>
               <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}>
-                <MaterialCommunityIcons name="arrow-right" size={18} color="#FFFFFF" />
+                <View style={{transform: [{rotate: `${xAxisAngle + Math.PI}rad`}]}}>
+                  <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
+                </View>
               </Button>
               <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_Z)}}>
-                <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF" />
+                <View style={{transform: [{rotate: `${xAxisAngle + Math.PI / 2}rad`}]}}>
+                  <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
+                </View>
               </Button>
               <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_Z)}}>
-                <MaterialCommunityIcons name="arrow-down" size={18} color="#FFFFFF" />
+                <View style={{transform: [{rotate: `${xAxisAngle + 3 * Math.PI / 2}rad`}]}}>
+                  <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
+                </View>
               </Button>
             </Card.Actions>
             {/* Display chore cycle button if needed */}
@@ -390,9 +417,6 @@ function EditWindow() {
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
 // the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
 export default function Index() {
-  ///////////////////////////
-  ///  Renderer State.    ///
-  ///////////////////////////
   const { isCheckingAuth, isAuthenticated } = useAuthGuard();
 
   if (isCheckingAuth || !isAuthenticated) {
@@ -403,6 +427,9 @@ export default function Index() {
 }
 
 function AuthenticatedGraphicsScreen() {
+  ///////////////////////////
+  ///  Renderer State.    ///
+  ///////////////////////////
   const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
   const rdrRef = useRef(rdr);
   useEffect(() => {
@@ -411,9 +438,6 @@ function AuthenticatedGraphicsScreen() {
 
   // Track which household room we're viewing
   const [currentViewingRoom, setCurrentViewingRoom] = useState(rdrRef.current.currentViewingRoom);
-  if (currentViewingRoom !== rdrRef.current.currentViewingRoom) {
-    setCurrentViewingRoom(currentViewingRoom);
-  }
 
   ///////////////////////////
   ///  Mouse Gestures     ///
@@ -452,6 +476,9 @@ function AuthenticatedGraphicsScreen() {
     if (success) { 
       const highlightedObjectID = rdrRef.current.highlightedFeatureID; // Get the highlighted feature ID
       if (isUsingEditTool()) {
+        // Update axis angles for the edit window display
+        setXAxisAngle();
+
         // If we're editing, 
         //    1. Check if we're highlighting a feature. If we're not, do nothing
         //    1A. If it's selected, deselect it. (Done)
