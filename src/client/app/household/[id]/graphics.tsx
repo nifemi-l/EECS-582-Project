@@ -14,6 +14,7 @@ Revision date:
   - 4/6/26: Convert to use FeatureType enum & support model loading
   - 4/9/26: Add AuthGuard to protect the screen and redirect unauthenticated users to login
   - 4/13/26: Add room selection UI & rotate position widget in edit menu to match rotation angle
+  - 4/13/26: Add consolidation to current room selection UI for mobile devices
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -316,7 +317,7 @@ function EditWindow() {
           top: 10,
           left: 20,
           padding: 10,
-          zIndex: 10,
+          zIndex: 11,
           gap: 10,
         }}
       >
@@ -589,9 +590,17 @@ function AuthenticatedGraphicsScreen() {
     }
   }, []);
 
-  // Get dims of entire screen
-  windowWidth = useWindowDimensions().width; 
-  windowHeight = useWindowDimensions().height;
+  // Get dims of entire screen (also used to keep room controls from overlapping the Edit column)
+  const { width: layoutWidth, height: layoutHeight } = useWindowDimensions();
+  windowWidth = layoutWidth;
+  windowHeight = layoutHeight;
+
+  // Reserve left band for Edit pill + padding; room row is confined to [inset, right] so chevrons do not encroach on Edit
+  const roomBarLeftInset = Math.min(Math.max(Math.round(layoutWidth * 0.34), 116), 210);
+  const roomChevronSize = layoutWidth < 360 ? 28 : layoutWidth < 480 ? 32 : 36;
+  const roomLabelFontSize = layoutWidth < 360 ? 11 : layoutWidth < 480 ? 12 : 14;
+  const roomLabelShort = layoutWidth < 420;
+
   return (
     featureFetchSuccess ? (
       <PaperProvider theme={appPaperLightTheme}>
@@ -612,26 +621,63 @@ function AuthenticatedGraphicsScreen() {
           />
         </GestureDetector>
 
-        {/* Room change buttons */}
+        {/* Room change buttons —> inset from left so narrow screens never overlap Edit; scaled type/icons */}
         <View
           style={{
+            position: "absolute",
+            left: roomBarLeftInset,
+            right: 12,
+            top: 8,
+            paddingVertical: 6,
+            paddingHorizontal: 4,
+            zIndex: 9,
             flexDirection: "row",
             alignItems: "center",
-            justifyContent: "center",
-            position: "absolute",
-            right: 20,
-            top: 10,
-            padding: 10,
-            zIndex: 10,
-        }}>         
+            justifyContent: "flex-end",
+            gap: 2,
+            minWidth: 0,
+          }}
+        >
           <Pressable
-            onPress={() => {rdrRef.current.currentViewingRoom -= 1; setCurrentViewingRoom(rdrRef.current.currentViewingRoom)}}>
-              <MaterialCommunityIcons name="chevron-left" size={40} color="#29ff46" />
+            accessibilityRole="button"
+            accessibilityLabel="Previous room"
+            hitSlop={8}
+            style={{ padding: 4, minWidth: 40, minHeight: 40, justifyContent: "center", alignItems: "center" }}
+            onPress={() => {
+              rdrRef.current.currentViewingRoom -= 1;
+              setCurrentViewingRoom(rdrRef.current.currentViewingRoom);
+            }}
+          >
+            <MaterialCommunityIcons name="chevron-left" size={roomChevronSize} color="#29ff46" />
           </Pressable>
-          <Text style={{color:"white"}}>Currently viewing room: ({rdrRef.current.currentViewingRoom})</Text>
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={{
+              color: "white",
+              fontSize: roomLabelFontSize,
+              fontWeight: "600",
+              flexShrink: 1,
+              textAlign: "right",
+              minWidth: 0,
+              paddingHorizontal: 4,
+            }}
+          >
+            {roomLabelShort
+              ? `Room (${currentViewingRoom})`
+              : `Currently viewing room: (${currentViewingRoom})`}
+          </Text>
           <Pressable
-            onPress={() => {rdrRef.current.currentViewingRoom += 1; setCurrentViewingRoom(rdrRef.current.currentViewingRoom)}}>
-              <MaterialCommunityIcons name="chevron-right" size={40} color="#29ff46" />
+            accessibilityRole="button"
+            accessibilityLabel="Next room"
+            hitSlop={8}
+            style={{ padding: 4, minWidth: 40, minHeight: 40, justifyContent: "center", alignItems: "center" }}
+            onPress={() => {
+              rdrRef.current.currentViewingRoom += 1;
+              setCurrentViewingRoom(rdrRef.current.currentViewingRoom);
+            }}
+          >
+            <MaterialCommunityIcons name="chevron-right" size={roomChevronSize} color="#29ff46" />
           </Pressable>
         </View>
 
