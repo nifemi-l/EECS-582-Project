@@ -23,7 +23,6 @@ import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext } from 'expo-gl';
 import { Platform } from 'react-native';
 import * as OBJ from 'webgl-obj-loader';
-import { FeatureType } from './feature';
 import * as GLM from 'gl-matrix';
 
 

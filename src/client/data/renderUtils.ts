@@ -743,6 +743,49 @@ export class Renderer {
   ///  Utilities  ///
   ///////////////////
 
+  // Return the angle difference between the local direction vector (e.g. straight right on the +x axis)
+  // and the camera forward vector
+  getAngleFromCameraRight(localDirVec: MoveDirection): number {
+    // Get our normal direction vector in world space
+    let sideVec = GLM.vec3.create();
+    switch(localDirVec) {
+      case MoveDirection.POS_X:
+        sideVec = GLM.vec3.fromValues(1, 0, 0); 
+        break;
+      case MoveDirection.NEG_X:
+        sideVec = GLM.vec3.fromValues(-1, 0, 0);
+        break;
+      case MoveDirection.POS_Z:
+        sideVec = GLM.vec3.fromValues(0, 0, 1);
+        break;
+      case MoveDirection.NEG_Z:
+        sideVec = GLM.vec3.fromValues(0, 0, -1);
+        break;
+    }
+
+    // Since we invert the view matrix every frame, we should have an inverse view matrix ready. 
+    // If not, we will have draw failures and bigger issues.
+    // Now, get the camera forward angle in world space from the inverse view matrix
+    const camFwdVec = GLM.vec3.fromValues(
+      this.inverseView[2], this.inverseView[6], this.inverseView[10]
+    );
+    GLM.vec3.normalize(camFwdVec, camFwdVec);
+
+    // Get the angle between the camera right in world space and the normal
+    const angle = GLM.vec3.angle(sideVec, camFwdVec);
+
+    // Now, check if we are rotated counter clockwise or clockwise around the Y axis (up) by calculating the 
+    // cross product to determine the sign
+    const cross = GLM.vec3.create();
+    GLM.vec3.cross(cross, GLM.vec3.fromValues(0, 1, 0), camFwdVec);
+
+    // Check the sign and return the angle according to sign (we check against the correct normal)
+    if (GLM.vec3.dot(sideVec, cross) < 0) {
+      return angle * -1;
+    }
+    return angle
+  }
+
   // Switch which pass we're rendering
   switchRenderpass(pass: RenderPass) {
     if (!this.glRef || !this.vaoManager) {
