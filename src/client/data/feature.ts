@@ -56,8 +56,10 @@ export default class Feature {
     z_pos: number;
     tasks: Task[];
     icon: string; // for compatibility
+    room_number: number; // store which room the feature is in
+    room_name: string; // store the name of the current room
 
-    constructor(feature_name: string, household_id: number, feature_type: FeatureType = FeatureType.UNDEFINED, x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline") {
+    constructor(feature_name: string, household_id: number, feature_type: FeatureType = FeatureType.UNDEFINED, x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline", room_number: number = 0, room_name: string = "default") {
         this.feature_name = feature_name;
         this.name = feature_name;
         this.household_id = household_id;
@@ -69,6 +71,8 @@ export default class Feature {
         this.id = feature_id;
         this.tasks = [];
         this.icon = icon;
+        this.room_number = room_number;
+        this.room_name = room_name;
     }
 
     addTask(task : Task) {

@@ -116,7 +116,8 @@ export class Renderer {
   currentDrawingColor: Material; // the current color used for drawing our objects
   featuresDirty: boolean; // flag so we know if we need to apply feature updates or not
   features: Feature[]; // store the fetched feature list for our household
-  highlightedFeatureID: number | null;
+  highlightedFeatureID: number | null; // which feature the user's mouse is hovering over
+  currentViewingRoom: number; // which room of the household we're currently viewing
 
   // Model data
   meshManager: MeshManager | null;
@@ -389,6 +390,7 @@ export class Renderer {
     this.features = [];
     this.featuresDirty = false;
     this.currentDrawPass = RenderPass.MAIN;
+    this.currentViewingRoom = 0;
 
     // These will be set as needed
     this.frameId = null;
@@ -604,8 +606,9 @@ export class Renderer {
       const f = this.house.renderableFeatures[i];
       const fVao = !f.mesh ? this.house.vao : this.meshManager.getVaoForMesh(f.mesh); 
 
-      if (!f.visible) {
-        // Skip invisible features
+      if (!f.visible || (f.room_number !== this.currentViewingRoom && i > 4)) {
+        // Skip invisible features or (features that are not in the current room and not walls or floors)
+        // The first four features should always be the walls and floor
         continue;
       }
 
@@ -719,6 +722,11 @@ export class Renderer {
       gl.uniformMatrix4fv(this.bbLocs.inverseView, false, this.inverseView as Float32Array);
       // Now iterate through
       for (let i = 0; i < this.house.renderableFeatures.length; i++) {
+        // Skip if we're not displaying the current room
+        if (this.house.renderableFeatures[i].room_number !== this.currentViewingRoom) {
+          continue;
+        }
+
         // Get the feature position
         gl.uniformMatrix4fv(this.bbLocs.model, false, this.house.renderableFeatures[i].modelMatrix as Float32Array);
         for (let j = 0; j < this.house.renderableFeatures[i].tasks.length; j++) {
