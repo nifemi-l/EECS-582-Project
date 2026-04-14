@@ -50,7 +50,7 @@ import {
 } from "../../../data/renderUtils"
 
 // Import local api utilities
-import { fetchHouseholdFeatures } from "../../../data/api";
+import { fetchHouseholdFeatures } from "../../../data/encryptedApi";
 import Feature, { getFeatureTypeFromString } from "../../../data/feature";
 import Task from "../../../data/task";
 

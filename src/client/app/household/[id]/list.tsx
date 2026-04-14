@@ -64,14 +64,17 @@ import {
 // API functions for talking to the Flask backend
 // Aliased with "api" prefix so they don't clash with handler names in this file
 import {
-  fetchHouseholdFeatures,
-  createFeature as apiCreateFeature,
-  updateFeature as apiUpdateFeature,
   deleteFeature as apiDeleteFeature,
-  createTask as apiCreateTask,
   deleteTask as apiDeleteTask,
   completeTask as apiCompleteTask,
 } from "../../../data/api";
+
+import {
+  fetchHouseholdFeatures,
+  createFeature as apiCreateFeature,
+  updateFeature as apiUpdateFeature,
+  createTask as apiCreateTask,
+} from "../../../data/encryptedApi";
 
 const ACCENT = "#4169E1";
 const BG = "#f0f2f5";

@@ -44,9 +44,13 @@ import {
 
 // Import API utilities
 import { 
-  createFeature as apiCreateFeature, deleteFeature as apiDeleteFeature,
-  createTask as apiCreateTask
+  deleteFeature as apiDeleteFeature,
 } from "./api";
+
+import {
+createFeature as apiCreateFeature,
+  createTask as apiCreateTask
+} from "./encryptedApi";
 
 // ***********************************************************
 //                      Constants

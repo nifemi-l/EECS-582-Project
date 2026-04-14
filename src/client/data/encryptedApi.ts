@@ -19,7 +19,7 @@ async function authHeaders(withBody = false): Promise<Record<string, string>> {
 }
 
 // FETCH & DECRYPT
-export async function fetchHouseholdFeaturesEncrypted(
+export async function fetchHouseholdFeatures(
     householdId: number,
     password: string,
 ) {
@@ -78,7 +78,9 @@ export async function createFeature(data: {
   icon?: string;
 }) {
   const encName = await encryptData(data.feature_name);
+    console.log("CREATNIG FEATURE")
   const encType = await encryptData(data.feature_type);
+
 
   const res = await fetch(`${API_BASE}/feature`, {
     method: "POST",
