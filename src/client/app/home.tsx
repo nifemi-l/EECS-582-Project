@@ -888,10 +888,14 @@ function AuthenticatedHomeScreen() {
           </View>
         </View>
         <View style={[styles.navRight, isNavCompact && styles.navRightCompact]}>
-          <Pressable style={[styles.navLink, isNavCompact && styles.navLinkCompact]} onPress={() => router.replace("/home")}>
+          <View
+            style={[styles.navLink, isNavCompact && styles.navLinkCompact]}
+            accessible={false}
+            importantForAccessibility="no-hide-descendants"
+          >
             <MaterialCommunityIcons name="home" size={navHomeIconSize} color="#FFFFFF" />
             <Text style={[styles.navLinkText, isNavCompact && styles.navLinkTextCompact]}>Home</Text>
-          </Pressable>
+          </View>
           <Pressable
             style={[
               styles.navLogout,
