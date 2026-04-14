@@ -7,6 +7,8 @@ Creation date: 2/6/26
 Revision date:
   - 2/14/26: Add sensor badges and improve layout
   - 4/12/26: Household header bar rework for small screens
+  - 4/13/26: Logout cluster matches home web hover (shared theme tokens)
+    ---> Web hover on back button (pill + chevron scale/tint)
 Preconditions: Must receive the currently active view mode as a prop
 Postconditions: Renders the household chrome bar and can navigate between views
 Errors: None. Will always render successfully
@@ -28,7 +30,14 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { SensorBadge, SensorBadgeProps } from "./SensorBadge";
 import { clearToken, getToken } from "../utils/authStorage";
-import { brand, navy } from "../theme/colors";
+import {
+  brand,
+  navy,
+  navLogoutHover,
+  navLogoutWebShell,
+  navLogoutWebShellCompact,
+  navLogoutWebShellHover,
+} from "../theme/colors";
 
 /** Below this width, sensors move to a second row so the pill and auth cluster fit phones. */
 const STACKED_TOOLBAR_BREAKPOINT = 560;
@@ -74,6 +83,8 @@ export default function ViewToggle({ active, onChange, householdId }: ViewToggle
   const [avatarLetter, setAvatarLetter] = useState("?");
 
   const [sensors, setSensors] = useState<SensorBadgeProps[]>(SENSORS_NA);
+  const [hoverLogout, setHoverLogout] = useState(false);
+  const [hoverBack, setHoverBack] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,12 +150,30 @@ export default function ViewToggle({ active, onChange, householdId }: ViewToggle
   const backButton = (
     <Pressable
       onPress={() => router.replace("/home")}
-      style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+      style={({ pressed }) => [
+        styles.backBtn,
+        Platform.OS === "web" && hoverBack && styles.backBtnHover,
+        pressed && styles.backBtnPressed,
+      ]}
       accessibilityRole="button"
       accessibilityLabel="Back to home"
       hitSlop={8}
+      // @ts-ignore web-only pointer hover
+      onMouseEnter={() => Platform.OS === "web" && setHoverBack(true)}
+      // @ts-ignore web-only pointer hover
+      onMouseLeave={() => Platform.OS === "web" && setHoverBack(false)}
     >
-      <MaterialCommunityIcons name="chevron-left" size={22} color="#FFFFFF" />
+      <View
+        style={{
+          transform: [{ scale: Platform.OS === "web" && hoverBack ? 1.08 : 1 }],
+        }}
+      >
+        <MaterialCommunityIcons
+          name="chevron-left"
+          size={22}
+          color={Platform.OS === "web" && hoverBack ? navLogoutHover.label : "#FFFFFF"}
+        />
+      </View>
     </Pressable>
   );
 
@@ -208,28 +237,44 @@ export default function ViewToggle({ active, onChange, householdId }: ViewToggle
   );
 
   const userCluster = (
-    <View style={styles.userCluster}>
+    <Pressable
+      onPress={() => {
+        void handleLogout();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel="Log out"
+      style={({ pressed }) => [
+        styles.userClusterPressable,
+        Platform.OS === "web" && navLogoutWebShell,
+        Platform.OS === "web" && compactChrome && navLogoutWebShellCompact,
+        Platform.OS === "web" && hoverLogout && navLogoutWebShellHover,
+        pressed && styles.userClusterPressed,
+      ]}
+      // @ts-ignore web-only pointer hover
+      onMouseEnter={() => Platform.OS === "web" && setHoverLogout(true)}
+      // @ts-ignore web-only pointer hover
+      onMouseLeave={() => Platform.OS === "web" && setHoverLogout(false)}
+    >
       <View style={styles.avatarCircle}>
         <Text style={styles.avatarText}>{avatarLetter}</Text>
       </View>
-      <Pressable
-        onPress={() => {
-          void handleLogout();
-        }}
-        accessibilityRole="button"
-        accessibilityLabel="Log out"
-        style={({ pressed }) => [
-          compactChrome ? styles.logoutBtnIcon : styles.logoutBtn,
-          pressed && (compactChrome ? styles.logoutBtnIconPressed : styles.logoutBtnPressed),
-        ]}
-      >
-        {compactChrome ? (
-          <MaterialCommunityIcons name="logout" size={20} color="#FFFFFF" />
-        ) : (
-          <Text style={styles.logoutText}>Logout</Text>
-        )}
-      </Pressable>
-    </View>
+      {compactChrome ? (
+        <MaterialCommunityIcons
+          name="logout"
+          size={20}
+          color={Platform.OS === "web" && hoverLogout ? navLogoutHover.label : "#FFFFFF"}
+        />
+      ) : (
+        <Text
+          style={[
+            styles.logoutText,
+            Platform.OS === "web" && hoverLogout && { color: navLogoutHover.label },
+          ]}
+        >
+          Logout
+        </Text>
+      )}
+    </Pressable>
   );
 
   return (
@@ -315,6 +360,10 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.06)",
     marginRight: 10,
   },
+  backBtnHover: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderColor: "rgba(255,255,255,0.42)",
+  },
   backBtnPressed: {
     backgroundColor: "rgba(255,255,255,0.12)",
   },
@@ -372,12 +421,15 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 8,
   },
-  userCluster: {
+  userClusterPressable: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     marginLeft: 8,
     flexShrink: 0,
+  },
+  userClusterPressed: {
+    opacity: 0.92,
   },
   avatarCircle: {
     width: 32,
@@ -391,30 +443,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "700",
-  },
-  logoutBtn: {
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.35)",
-    backgroundColor: "rgba(255,255,255,0.06)",
-  },
-  logoutBtnPressed: {
-    backgroundColor: "rgba(255,255,255,0.12)",
-  },
-  logoutBtnIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.35)",
-    backgroundColor: "rgba(255,255,255,0.06)",
-  },
-  logoutBtnIconPressed: {
-    backgroundColor: "rgba(255,255,255,0.12)",
   },
   logoutText: {
     color: "#FFFFFF",

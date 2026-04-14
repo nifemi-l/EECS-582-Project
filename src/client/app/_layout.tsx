@@ -7,8 +7,10 @@ Programmers: Jack Bauer, Nifemi Lawal, Logan Smith
 Creation date: 2/6/26
 Revision date: 
   - 2/9/26: Disable header for new list view
-  - 2/25/26: Replace Stack with Slot; hoist shared wrappers to layout level (NL)
+  - 2/25/26: Replace Stack with Slot; hoist shared wrappers to layout level
   - 3/18/26: Split up this layout file with secondary layout file in /household/[id]
+  - 4/13/26: Web viewport + root scroll CSS; remove legacy expo-reset so mobile zoom does not brick scroll
+
 Preconditions: None
 Postconditions: None
 Errors: None
@@ -30,6 +32,51 @@ export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS === "web") {
       document.title = "HomeSeeHome";
+
+      // Mobile web: lock initial scale to device width and avoid iOS font-based "zoom".
+      // Override expo-router default body overflow:hidden so pinch-zoom / visual viewport
+      const viewport = document.querySelector('meta[name="viewport"]');
+      const viewportContent = "width=device-width, initial-scale=1, viewport-fit=cover";
+      if (viewport) {
+        viewport.setAttribute("content", viewportContent);
+      } else {
+        const meta = document.createElement("meta");
+        meta.setAttribute("name", "viewport");
+        meta.setAttribute("content", viewportContent);
+        document.head.prepend(meta);
+      }
+
+      const scrollFixId = "expo-root-scroll-stable";
+      if (!document.getElementById(scrollFixId)) {
+        const scrollFix = document.createElement("style");
+        scrollFix.id = scrollFixId;
+        scrollFix.textContent = `
+html {
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  overflow-x: hidden;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+html, body, #root {
+  height: 100%;
+}
+#root {
+  display: flex;
+  flex-direction: column;
+}
+        `.trim();
+        document.head.appendChild(scrollFix);
+      }
+
+      const legacyReset = document.getElementById("expo-reset");
+      if (legacyReset) {
+        legacyReset.remove();
+      }
 
       // Make scrollbars larger and easier to grab on web (mostly Raspberry Pi)
       const styleId = "global-large-scrollbar-style";
