@@ -14,8 +14,7 @@ export const textSecondary = "#7B8A9C";
 export const border = "#E6EAF0";
 
 /**
- * Household task list — clearer sky blues and airy neutrals so dense UI feels less dull
- * than the global slate `brand` / `pageBg` pair.
+ * Household task list
  */
 export const listPageBg = "#F3F8FC";
 export const listBrand = "#2F80ED";
