@@ -603,7 +603,10 @@ function AuthenticatedGraphicsScreen() {
                   getFeatureTypeFromString(f.feature_type),
                   f.x_pos, f.y_pos, f.z_pos,
                   f.feature_id,
-                  f.icon || "home-outline"
+                  f.icon || "home-outline",
+                  0,
+                  "default",
+                  f.room_id != null ? Number(f.room_id) : null
                 );
                 feat.tasks = (f.tasks || []).map((t: any) => {
                   const task = new Task(

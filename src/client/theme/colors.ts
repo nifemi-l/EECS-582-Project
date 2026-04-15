@@ -14,14 +14,27 @@ export const textSecondary = "#7B8A9C";
 export const border = "#E6EAF0";
 
 /**
- * Household task list — clearer sky blues and airy neutrals so dense UI feels less dull
- * than the global slate `brand` / `pageBg` pair.
+ * Household task list
  */
 export const listPageBg = "#F3F8FC";
 export const listBrand = "#2F80ED";
 export const listSelection = "#E5F2FC";
 export const listSurfaceSoft = "#E0EEF9";
 export const listBorder = "#C8DCF0";
+
+/**
+ * Room band header swatches
+ */
+export const ROOM_BAND_SWATCHES = [
+  navy,
+  "#1d4ed8", // blue
+  "#0f766e", // teal
+  "#6d28d9", // purple
+  "#b45309", // orange
+  "#be123c", // red
+  "#15803d", // green
+  "#c026d3", // pink
+] as const;
 
 /** Hero / marketing gradient (top → bottom-ish diagonal); mid stop softened vs. older banner */
 export const heroGradient = ["#3B5FA0", "#6D90CF", "#7B9BDB"] as const;

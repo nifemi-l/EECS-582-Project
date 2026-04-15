@@ -52,6 +52,10 @@ def connect_to_db():
 
 conn = connect_to_db()
 
+# Sentinel: omit room_id from UPDATE Feature when not passed (vs. explicit NULL to unassign)
+_FEATURE_ROOM_ID_UNSET = object()
+_ROOM_FIELD_UNSET = object()
+
 
 """
 Functions for adding data to the database
@@ -84,16 +88,87 @@ def add_account(account_name: str, hashed_password: str, email: str):
 
     # Ex: add_feature(1, "Kitchen", "room", 0, 0, 0, "silverware-fork-knife")
     # icon param is optional, defaults to the generic home icon
-def add_feature(household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon='home-outline'):
+def add_feature(household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon='home-outline', room_id=None):
     with conn.cursor() as cursor:
         cursor.execute("""
-            INSERT INTO Feature (household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO Feature (household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon, room_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING feature_id
-        """, (household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon))
+        """, (household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon, room_id))
         feature_id = cursor.fetchone()[0]
     conn.commit()
     return feature_id
+
+
+def add_room(household_id, room_name, accent_color=None):
+    name = (room_name or "").strip()
+    if not name:
+        raise ValueError("room_name is required")
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            INSERT INTO Room (household_id, room_name, accent_color)
+            VALUES (%s, %s, %s)
+            RETURNING room_id
+        """, (household_id, name, accent_color))
+        room_id = cursor.fetchone()[0]
+    conn.commit()
+    return room_id
+
+
+def get_room_by_id(room_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT room_id, household_id, room_name, accent_color
+            FROM Room
+            WHERE room_id = %s
+        """, (room_id,))
+        return cursor.fetchone()
+
+
+def get_rooms_for_household(household_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT room_id, household_id, room_name, accent_color
+            FROM Room
+            WHERE household_id = %s
+            ORDER BY room_id ASC
+        """, (household_id,))
+        rows = cursor.fetchall()
+    return [
+        {
+            "room_id": r[0],
+            "household_id": r[1],
+            "room_name": r[2],
+            "accent_color": r[3],
+        }
+        for r in rows
+    ]
+
+
+def update_room(room_id, room_name=_ROOM_FIELD_UNSET, accent_color=_ROOM_FIELD_UNSET):
+    sets = []
+    params = []
+    if room_name is not _ROOM_FIELD_UNSET:
+        sets.append("room_name = %s")
+        params.append((room_name or "").strip() or "Room")
+    if accent_color is not _ROOM_FIELD_UNSET:
+        sets.append("accent_color = %s")
+        params.append(accent_color)
+    if not sets:
+        return
+    params.append(room_id)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"UPDATE Room SET {', '.join(sets)} WHERE room_id = %s",
+            tuple(params),
+        )
+    conn.commit()
+
+
+def delete_room(room_id):
+    with conn.cursor() as cursor:
+        cursor.execute("DELETE FROM Room WHERE room_id = %s", (room_id,))
+    conn.commit()
 
 
 # icon param is optional, defaults to clipboard icon
@@ -412,10 +487,17 @@ def get_household_tasks(household_id):
 # This is the main query the list view uses on load -- gives us everything we need in one call
 # Returns a list like: [{ "feature_id": 1, "feature_name": "Kitchen", ..., "tasks": [{ ... }, ...] }, ...]
 def get_features_with_tasks(household_id):
-    features = get_household_features(household_id)
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT feature_id, household_id, feature_name, feature_type,
+                   x_pos, y_pos, z_pos, icon, room_id
+            FROM Feature
+            WHERE household_id = %s
+            ORDER BY feature_id ASC
+        """, (household_id,))
+        features = cursor.fetchall()
     result = []
     for f in features:
-        # Map the raw tuple columns to a dict so the route can jsonify it easily
         feature_dict = {
             "feature_id": f[0],
             "household_id": f[1],
@@ -424,10 +506,10 @@ def get_features_with_tasks(household_id):
             "x_pos": f[4],
             "y_pos": f[5],
             "z_pos": f[6],
-            "icon": f[7] if len(f) > 7 else "home-outline",
-            "tasks": []
+            "icon": f[7] or "home-outline",
+            "room_id": f[8],
+            "tasks": [],
         }
-        # Grab all tasks that belong to this feature
         tasks = get_tasks_by_feature_id(f[0])
         for t in tasks:
             # Convert last_completed to ISO string so JSON serialization doesn't choke on datetime
@@ -496,7 +578,16 @@ def update_account_last_login(account_id: int):
 # Update any combination of feature fields (only the params passed in get changed)
 # This way the list view can rename a feature without touching positions, and
 # the 3D view can move a feature without touching the name
-def update_feature(feature_id, feature_name=None, feature_type=None, x_pos=None, y_pos=None, z_pos=None, icon=None):
+def update_feature(
+    feature_id,
+    feature_name=None,
+    feature_type=None,
+    x_pos=None,
+    y_pos=None,
+    z_pos=None,
+    icon=None,
+    room_id=_FEATURE_ROOM_ID_UNSET,
+):
     # Build the SET clause dynamically based on which args were actually provided
     sets = []
     params = []
@@ -518,6 +609,9 @@ def update_feature(feature_id, feature_name=None, feature_type=None, x_pos=None,
     if icon is not None:
         sets.append("icon = %s")
         params.append(icon)
+    if room_id is not _FEATURE_ROOM_ID_UNSET:
+        sets.append("room_id = %s")
+        params.append(room_id)
     if not sets:
         return
     # feature_id goes at the end for the WHERE clause

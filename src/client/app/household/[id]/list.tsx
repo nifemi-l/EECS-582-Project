@@ -19,6 +19,7 @@ Revision date:
   - 4/6/26: Convert to use FeatureType enum
   - 4/12/26: Phone-sized layout fixes and in-app delete prompts instead of system popups
   - 4/13/26: Web hover feedback on list rows, headers, add-task/section controls
+  - 4/14/26: Collapsible room grouping, room CRUD, feature room assignment
 Preconditions: Flask server reachable at EXPO_PUBLIC_API_URL with the household's data in the DB
 Postconditions: Renders an interactive task list that stays in sync with the database
 Errors: Shows error state with retry button if API is unreachable
@@ -35,15 +36,18 @@ Known faults: None
 // Prevents URL changing to bypass login.
 import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
 // Import react hooks we need for state, lifecycle, and performance
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Import RN components for building the UI
 import {
+    Keyboard,
+    Modal,
     Platform,
     Pressable,
     ScrollView,
     StyleSheet,
     Text,
     TextInput,
+    useWindowDimensions,
     View,
 } from "react-native";
 import { Button, Dialog, PaperProvider, Portal, Text as PaperText } from "react-native-paper";
@@ -52,10 +56,12 @@ import { appPaperLightTheme } from "../../../theme/paperTheme";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 // Need this to grab the household id from the URL (e.g. /household/3/list)
 import { useLocalSearchParams } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Import server classes
 import Task from "../../../data/task";
 import Feature, { FeatureType } from "../../../data/feature";
+import type { HouseholdRoom } from "../../../data/room";
 
 // Import data helpers, types, presets, and storage utilities
 import {
@@ -72,21 +78,27 @@ import {
 // Aliased with "api" prefix so they don't clash with handler names in this file
 import {
   fetchHouseholdFeatures,
+  fetchHouseholdRooms,
   fetchMyHouseholds,
   createFeature as apiCreateFeature,
+  createHouseholdRoom as apiCreateHouseholdRoom,
+  deleteHouseholdRoom as apiDeleteHouseholdRoom,
+  updateHouseholdRoom as apiUpdateHouseholdRoom,
   updateFeature as apiUpdateFeature,
   deleteFeature as apiDeleteFeature,
   createTask as apiCreateTask,
   deleteTask as apiDeleteTask,
   completeTask as apiCompleteTask,
 } from "../../../data/api";
+import { RoomContainer } from "../../../components/RoomContainer";
+import { normalizeHexColor } from "../../../utils/hexColor";
 import {
   listBorder,
   listBrand,
-  listPageBg,
   listSelection,
   listSurfaceSoft,
   textPrimary,
+  textSecondary,
 } from "../../../theme/colors";
 
 /** Web-only pointer hover; handlers are no-ops on native */
@@ -604,6 +616,38 @@ function AddTaskCard({
   );
 }
 
+/** Single row in the Assign to room modal —-> faint dividers + web hover fill */
+function RoomPickerOption({
+  label,
+  onSelect,
+  showTopRule,
+}: {
+  label: string;
+  onSelect: () => void;
+  /** Separator line above (not on first row under title) */
+  showTopRule?: boolean;
+}) {
+  const [hover, hoverHandlers] = useWebHover();
+  return (
+    <Pressable
+      onPress={onSelect}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        styles.roomModalOption,
+        showTopRule && styles.roomModalOptionTopRule,
+        Platform.OS === "web" && hover && styles.roomModalOptionHover,
+        pressed && styles.roomModalOptionPressed,
+        Platform.OS === "web" && styles.roomModalOptionWeb,
+      ]}
+      // @ts-ignore web-only pointer hover
+      {...hoverHandlers}
+    >
+      <Text style={styles.roomModalOptionText}>{label}</Text>
+    </Pressable>
+  );
+}
+
 // A collapsible group of tasks under one feature/room
 // onCompleteTask is passed down to each TaskRow so tapping the check button works
 function FeatureGroup({
@@ -616,6 +660,8 @@ function FeatureGroup({
   onRenameFeature,
   onRequestDeleteSection,
   onCompleteTask,
+  rooms,
+  onAssignFeatureRoom,
 }: {
   feature: Feature;
   selectedIds: Set<number>;
@@ -626,10 +672,13 @@ function FeatureGroup({
   onRenameFeature: (featureId: number, newName: string) => void;
   onRequestDeleteSection: (featureId: number, sectionName: string) => void;
   onCompleteTask: (taskId: number) => void;
+  rooms: HouseholdRoom[];
+  onAssignFeatureRoom: (featureId: number, roomId: number | null) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(feature.name);
   const [collapsed, setCollapsed] = useState(false);
+  const [roomPickerOpen, setRoomPickerOpen] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   const hasSelection = Array.from(feature.tasks).some((t) => selectedIds.has(t.id));
@@ -639,15 +688,25 @@ function FeatureGroup({
   const [hoverBatch, hoverBatchHandlers] = useWebHover();
   const [hoverEditBtn, hoverEditBtnHandlers] = useWebHover();
   const [hoverTrashBtn, hoverTrashBtnHandlers] = useWebHover();
+  const [hoverDoneEdit, hoverDoneEditHandlers] = useWebHover();
+  const { height: windowHeight } = useWindowDimensions();
 
-  const handleSaveRename = () => {
+  const persistRename = () => {
     const trimmed = editName.trim();
     if (trimmed && trimmed !== feature.name) {
       onRenameFeature(feature.id, trimmed);
     } else {
       setEditName(feature.name);
     }
+  };
+
+  const exitEditMode = () => {
     setIsEditing(false);
+  };
+
+  const commitRenameAndExit = () => {
+    persistRename();
+    exitEditMode();
   };
 
   const handleStartEdit = () => {
@@ -690,8 +749,8 @@ function FeatureGroup({
             style={styles.featureNameInput}
             value={editName}
             onChangeText={setEditName}
-            onBlur={handleSaveRename}
-            onSubmitEditing={handleSaveRename}
+            onBlur={persistRename}
+            onSubmitEditing={commitRenameAndExit}
             returnKeyType="done"
             selectTextOnFocus
           />
@@ -723,7 +782,33 @@ function FeatureGroup({
           </Pressable>
         )}
 
-        {!isEditing && (
+        {isEditing ? (
+          <Pressable
+            onPress={commitRenameAndExit}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="Done editing section"
+            style={({ pressed }) => [
+              styles.headerActionBtn,
+              Platform.OS === "web" && hoverDoneEdit && styles.headerActionBtnHover,
+              pressed && styles.listPressablePressed,
+            ]}
+            // @ts-ignore web-only pointer hover
+            {...hoverDoneEditHandlers}
+          >
+            <View
+              style={{
+                transform: [{ scale: Platform.OS === "web" && hoverDoneEdit ? 1.1 : 1 }],
+              }}
+            >
+              <MaterialCommunityIcons
+                name="check"
+                size={20}
+                color={Platform.OS === "web" && hoverDoneEdit ? listBrand : "#2e7d32"}
+              />
+            </View>
+          </Pressable>
+        ) : (
           <View style={styles.headerActions}>
             <Pressable
               onPress={handleStartEdit}
@@ -785,6 +870,73 @@ function FeatureGroup({
         />
       </Pressable>
 
+      {isEditing && (
+        <Pressable
+          onPress={() => {
+            Keyboard.dismiss();
+            setRoomPickerOpen(true);
+          }}
+          style={({ pressed }) => [
+            styles.roomAssignRow,
+            Platform.OS === "web" && pressed && styles.listRowHoverDarken,
+          ]}
+        >
+          <MaterialCommunityIcons name="door-open" size={18} color={listBrand} />
+          <Text style={styles.roomAssignText} numberOfLines={1}>
+            {feature.room_id == null
+              ? "Unassigned"
+              : rooms.find((r) => r.room_id === feature.room_id)?.room_name ?? "Unassigned"}
+          </Text>
+          <Text style={styles.roomAssignAction}>Change room</Text>
+        </Pressable>
+      )}
+
+      <Modal
+        visible={roomPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRoomPickerOpen(false)}
+      >
+        <View
+          style={[
+            styles.roomModalBackdrop,
+            { paddingTop: windowHeight * 0.35 },
+          ]}
+        >
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setRoomPickerOpen(false)}
+            accessibilityLabel="Dismiss room picker"
+          />
+          <View style={styles.roomModalCard}>
+            <Text style={styles.roomModalTitle}>Assign to room</Text>
+            <View style={styles.roomModalOptionList}>
+              <RoomPickerOption
+                label="Unassigned"
+                showTopRule={false}
+                onSelect={() => {
+                  onAssignFeatureRoom(feature.id, null);
+                  setRoomPickerOpen(false);
+                  setIsEditing(false);
+                }}
+              />
+              {rooms.map((r) => (
+                <RoomPickerOption
+                  key={r.room_id}
+                  label={r.room_name}
+                  showTopRule
+                  onSelect={() => {
+                    onAssignFeatureRoom(feature.id, r.room_id);
+                    setRoomPickerOpen(false);
+                    setIsEditing(false);
+                  }}
+                />
+              ))}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {!collapsed && (
         <>
           {Array.from(feature.tasks).length === 0 ? (
@@ -818,11 +970,14 @@ function FeatureGroup({
   );
 }
 
-// row at the bottom for creating a new section, with an icon picker
+// Creates a new feature (section) under a room group, with an icon picker
 function AddSectionRow({
   onAdd,
+  label,
 }: {
   onAdd: (name: string, icon: string) => void;
+  /** Shown above the row, e.g. inside each room container */
+  label?: string;
 }) {
   const [name, setName] = useState("");
   const [icon, setIcon] = useState(LOCATION_ICONS[0]);
@@ -842,6 +997,7 @@ function AddSectionRow({
 
   return (
     <View style={styles.addSectionRow}>
+      {label ? <Text style={styles.addSectionLabel}>{label}</Text> : null}
       <View style={styles.addSectionTopRow}>
         <Pressable
           onPress={() => setShowIcons((v) => !v)}
@@ -863,7 +1019,7 @@ function AddSectionRow({
         </Pressable>
         <TextInput
           style={styles.addSectionInput}
-          placeholder="New section name..."
+          placeholder="New feature name..."
           placeholderTextColor="#bbb"
           value={name}
           onChangeText={(t) => {
@@ -936,6 +1092,45 @@ function AddSectionRow({
   );
 }
 
+function AddRoomRow({ onCreate }: { onCreate: (roomName: string) => void }) {
+  const [name, setName] = useState("");
+  const [hoverAdd, hoverAddHandlers] = useWebHover();
+  const handleCreate = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onCreate(trimmed);
+    setName("");
+  };
+  return (
+    <View style={styles.addRoomRow}>
+      <Text style={styles.addRoomLabel}>Add room</Text>
+      <View style={styles.addRoomInner}>
+        <TextInput
+          style={styles.addRoomInput}
+          placeholder="e.g. Kitchen"
+          placeholderTextColor="#bbb"
+          value={name}
+          onChangeText={setName}
+          onSubmitEditing={handleCreate}
+          returnKeyType="done"
+        />
+        <Pressable
+          onPress={handleCreate}
+          style={({ pressed }) => [
+            styles.addRoomBtn,
+            Platform.OS === "web" && hoverAdd && styles.addRoomBtnHover,
+            pressed && styles.listPressablePressed,
+          ]}
+          // @ts-ignore web-only
+          {...hoverAddHandlers}
+        >
+          <Text style={styles.addRoomBtnText}>Create</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 /** React Native Paper dialog payload for task / batch / section delete confirmation */
 type DeleteDialogState =
   | null
@@ -946,7 +1141,9 @@ type DeleteDialogState =
       taskName: string;
     }
   | { mode: "batch"; featureId: number; taskIds: number[] }
-  | { mode: "section"; featureId: number; sectionName: string };
+  | { mode: "section"; featureId: number; sectionName: string }
+  | { mode: "room"; roomId: number; roomName: string }
+  | { mode: "unassignedLabel"; currentLabel: string };
 
 // Main list screen (connected to the database via the Flask API) 
 export default function ListScreen() {
@@ -965,6 +1162,10 @@ function AuthenticatedListScreen() {
   const householdId = Number(id) || 1; // fallback to 1 if somehow missing
 
   const [features, setFeatures] = useState<Feature[]>([]);
+  const [rooms, setRooms] = useState<HouseholdRoom[]>([]);
+  const [unassignedRoomLabel, setUnassignedRoomLabel] = useState("Unassigned");
+  /** Persisted locally (no Room row for the synthetic Unassigned band). */
+  const [unassignedAccent, setUnassignedAccent] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -975,18 +1176,28 @@ function AuthenticatedListScreen() {
   // Fetch all features + tasks from the server and map them into our local class instances
   const loadFromApi = useCallback(() => {
     setError(null);
-    fetchHouseholdFeatures(householdId)
-      .then((data: any[]) => {
-        // Convert the raw JSON objects into Feature/Task class instances
-        // so the health bar math and other methods still work
+    Promise.all([
+      fetchHouseholdFeatures(householdId),
+      fetchHouseholdRooms(householdId).catch((e) => {
+        console.warn("Rooms unavailable (migrate DB or update server):", e);
+        return [] as HouseholdRoom[];
+      }),
+    ])
+      .then(([data, roomsData]) => {
+        setRooms(Array.isArray(roomsData) ? roomsData : []);
         const mapped = data.map((f: any) => {
           const feat = new Feature(
             f.feature_name,
             f.household_id,
             f.feature_type || "",
-            f.x_pos, f.y_pos, f.z_pos,
+            f.x_pos,
+            f.y_pos,
+            f.z_pos,
             f.feature_id,
-            f.icon || "home-outline"
+            f.icon || "home-outline",
+            0,
+            "default",
+            f.room_id != null ? Number(f.room_id) : null
           );
           feat.tasks = (f.tasks || []).map((t: any) => {
             const task = new Task(
@@ -998,7 +1209,6 @@ function AuthenticatedListScreen() {
               t.created_by_account_id,
               t.task_id
             );
-            // Parse the ISO date string back into a Date object for health calculations
             task.last_completed = t.last_completed ? new Date(t.last_completed) : null;
             return task;
           });
@@ -1030,6 +1240,29 @@ function AuthenticatedListScreen() {
       })
       .catch(() => {
         if (!cancelled) setHouseholdName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [householdId]);
+
+  useEffect(() => {
+    setUnassignedRoomLabel("Unassigned");
+    setUnassignedAccent(null);
+    let cancelled = false;
+    const key = `list_unassigned_band_accent_${householdId}`;
+    AsyncStorage.getItem(key)
+      .then((raw) => {
+        if (cancelled) return;
+        if (raw == null || raw === "") {
+          setUnassignedAccent(null);
+          return;
+        }
+        const n = normalizeHexColor(raw);
+        setUnassignedAccent(n);
+      })
+      .catch(() => {
+        if (!cancelled) setUnassignedAccent(null);
       });
     return () => {
       cancelled = true;
@@ -1129,6 +1362,15 @@ function AuthenticatedListScreen() {
     []
   );
 
+  const handleAssignFeatureRoom = useCallback((featureId: number, roomId: number | null) => {
+    apiUpdateFeature(featureId, { room_id: roomId }).catch(console.error);
+    setFeatures((prev) =>
+      prev.map((loc) =>
+        loc.id === featureId ? ({ ...loc, room_id: roomId } as any) : loc
+      )
+    );
+  }, []);
+
   // Delete a feature and all its tasks (cascade delete happens in the DB)
   const handleDeleteFeature = useCallback((featureId: number) => {
     apiDeleteFeature(featureId).catch(console.error);
@@ -1151,6 +1393,21 @@ function AuthenticatedListScreen() {
       sectionName,
     });
   }, []);
+
+  const openDeleteRoomDialog = useCallback((roomId: number, roomName: string) => {
+    setDeleteDialog({
+      mode: "room",
+      roomId,
+      roomName: roomName?.trim() ? roomName.trim() : "this room",
+    });
+  }, []);
+
+  const openResetUnassignedLabelDialog = useCallback(() => {
+    setDeleteDialog({
+      mode: "unassignedLabel",
+      currentLabel: unassignedRoomLabel,
+    });
+  }, [unassignedRoomLabel]);
 
   const confirmPendingDelete = useCallback(() => {
     if (!deleteDialog) return;
@@ -1178,19 +1435,49 @@ function AuthenticatedListScreen() {
       });
       return;
     }
+    if (d.mode === "room") {
+      apiDeleteHouseholdRoom(d.roomId)
+        .then(() => {
+          setRooms((prev) => prev.filter((r) => r.room_id !== d.roomId));
+          setFeatures((prev) =>
+            prev.map((loc) =>
+              loc.room_id === d.roomId ? ({ ...loc, room_id: null } as any) : loc
+            )
+          );
+        })
+        .catch(console.error);
+      return;
+    }
+    if (d.mode === "unassignedLabel") {
+      setUnassignedRoomLabel("Unassigned");
+      return;
+    }
     handleDeleteFeature(d.featureId);
   }, [deleteDialog, handleDeleteTask, handleDeleteFeature]);
 
   // Add a new section/feature (POST to the server and use the returned id)
   const handleAddFeature = useCallback(
-    (name: string, icon: string) => {
+    (name: string, icon: string, roomId: number | null) => {
       apiCreateFeature({
         household_id: householdId,
         feature_name: name,
         icon,
+        room_id: roomId ?? undefined,
       })
         .then(({ feature_id }) => {
-          const newLoc = new Feature(name, householdId, FeatureType.UNDEFINED, 0, 0, 0, feature_id, icon);
+          const newLoc = new Feature(
+            name,
+            householdId,
+            FeatureType.UNDEFINED,
+            0,
+            0,
+            0,
+            feature_id,
+            icon,
+            0,
+            "default",
+            roomId
+          );
           setFeatures((prev) => [...prev, newLoc]);
         })
         .catch(console.error);
@@ -1220,6 +1507,10 @@ function AuthenticatedListScreen() {
         ? "Delete selected tasks?"
         : deleteDialog?.mode === "section"
           ? "Delete section?"
+          : deleteDialog?.mode === "room"
+            ? "Delete room?"
+            : deleteDialog?.mode === "unassignedLabel"
+              ? "Reset unassigned name?"
           : "";
 
   const deleteDialogBody =
@@ -1231,7 +1522,56 @@ function AuthenticatedListScreen() {
           } will be permanently removed.`
         : deleteDialog?.mode === "section"
           ? `“${deleteDialog.sectionName}” and every task in this section will be removed. This cannot be undone.`
+          : deleteDialog?.mode === "room"
+            ? `“${deleteDialog.roomName}” will be removed. Features in that room will be moved to the Unassigned group.`
+            : deleteDialog?.mode === "unassignedLabel"
+              ? `This will reset “${deleteDialog.currentLabel}” back to “Unassigned”.`
           : "";
+
+  const roomGroups = useMemo(() => {
+    const byRoom = new Map<number, Feature[]>();
+    for (const r of rooms) {
+      byRoom.set(r.room_id, []);
+    }
+    const unassigned: Feature[] = [];
+    for (const f of features) {
+      const rid = f.room_id;
+      if (rid == null || !byRoom.has(rid)) {
+        unassigned.push(f);
+      } else {
+        byRoom.get(rid)!.push(f);
+      }
+    }
+    const out: Array<{
+      key: string;
+      roomId: number | null;
+      displayName: string;
+      accent: string | null;
+      isUnassigned: boolean;
+      features: Feature[];
+    }> = [];
+    for (const r of rooms) {
+      out.push({
+        key: `room-${r.room_id}`,
+        roomId: r.room_id,
+        displayName: r.room_name,
+        accent: r.accent_color,
+        isUnassigned: false,
+        features: byRoom.get(r.room_id) ?? [],
+      });
+    }
+    if (unassigned.length > 0) {
+      out.push({
+        key: "unassigned",
+        roomId: null,
+        displayName: unassignedRoomLabel,
+        accent: null,
+        isUnassigned: true,
+        features: unassigned,
+      });
+    }
+    return out;
+  }, [rooms, features, unassignedRoomLabel]);
 
   const listBody = !loaded ? (
     <View style={[styles.root, { justifyContent: "center", alignItems: "center" }]}>
@@ -1272,28 +1612,117 @@ function AuthenticatedListScreen() {
         </Text>
       </View>
 
+      <AddRoomRow
+        onCreate={(roomName) => {
+          apiCreateHouseholdRoom({ household_id: householdId, room_name: roomName })
+            .then(({ room_id }) => {
+              const trimmed = roomName.trim();
+              setRooms((prev) => [
+                ...prev,
+                {
+                  room_id,
+                  household_id: householdId,
+                  room_name: trimmed,
+                  accent_color: null,
+                },
+              ]);
+            })
+            .catch(console.error);
+        }}
+      />
+
       <ScrollView
         style={[styles.scroll, styles.webScroll]}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator
         persistentScrollbar
       >
-        {features.map((loc) => (
-          <FeatureGroup
-            key={loc.id}
-            feature={loc}
-            selectedIds={selectedIds}
-            onToggleSelect={handleToggleSelect}
-            onDeleteSelected={handleDeleteSelected}
-            onRequestDeleteTask={openDeleteTaskDialog}
-            onAddTask={handleAddTask}
-            onRenameFeature={handleRenameFeature}
-            onRequestDeleteSection={openDeleteSectionDialog}
-            onCompleteTask={handleCompleteTask}
-          />
+        {roomGroups.map((g) => (
+          <RoomContainer
+            key={g.key}
+            room={{
+              id: g.key,
+              name: g.displayName,
+              accentColor: g.isUnassigned ? unassignedAccent : g.accent,
+            }}
+            featureCount={g.features.length}
+            onRenameRoom={
+              g.roomId == null
+                ? (nextName) => {
+                    setUnassignedRoomLabel(nextName);
+                  }
+                : (nextName) => {
+                    const roomId = g.roomId!;
+                    apiUpdateHouseholdRoom(roomId, { room_name: nextName })
+                      .then(() => {
+                        setRooms((prev) =>
+                          prev.map((r) =>
+                            r.room_id === roomId ? { ...r, room_name: nextName } : r
+                          )
+                        );
+                      })
+                      .catch(console.error);
+                  }
+            }
+            onCommitAccent={(hex) => {
+              if (g.roomId == null) {
+                const key = `list_unassigned_band_accent_${householdId}`;
+                setUnassignedAccent(hex);
+                if (hex == null) {
+                  AsyncStorage.removeItem(key).catch(console.error);
+                } else {
+                  AsyncStorage.setItem(key, hex).catch(console.error);
+                }
+                return;
+              }
+              const roomId = g.roomId;
+              apiUpdateHouseholdRoom(roomId, { accent_color: hex })
+                .then(() => {
+                  setRooms((prev) =>
+                    prev.map((r) =>
+                      r.room_id === roomId ? { ...r, accent_color: hex } : r
+                    )
+                  );
+                })
+                .catch(console.error);
+            }}
+            onDeleteRoom={
+              g.roomId == null
+                ? openResetUnassignedLabelDialog
+                : () => {
+                    openDeleteRoomDialog(g.roomId!, g.displayName);
+                  }
+            }
+          >
+            {g.features.map((loc) => (
+              <FeatureGroup
+                key={loc.id}
+                feature={loc}
+                selectedIds={selectedIds}
+                onToggleSelect={handleToggleSelect}
+                onDeleteSelected={handleDeleteSelected}
+                onRequestDeleteTask={openDeleteTaskDialog}
+                onAddTask={handleAddTask}
+                onRenameFeature={handleRenameFeature}
+                onRequestDeleteSection={openDeleteSectionDialog}
+                onCompleteTask={handleCompleteTask}
+                rooms={rooms}
+                onAssignFeatureRoom={handleAssignFeatureRoom}
+              />
+            ))}
+            <AddSectionRow
+              label="Add new feature"
+              onAdd={(name, icon) => handleAddFeature(name, icon, g.roomId)}
+            />
+          </RoomContainer>
         ))}
 
-        <AddSectionRow onAdd={handleAddFeature} />
+        {roomGroups.length === 0 && (
+          <AddSectionRow
+            label="Add new feature"
+            onAdd={(name, icon) => handleAddFeature(name, icon, null)}
+          />
+        )}
       </ScrollView>
     </View>
   );
@@ -1332,10 +1761,13 @@ function AuthenticatedListScreen() {
   );
 }
 
+/** Page wash behind bold navy room bands */
+const LIST_PAGE_BAND_BG = "#e8eef5";
+
 const styles = StyleSheet.create({
     root: {
         flex: 1,
-        backgroundColor: listPageBg,
+        backgroundColor: LIST_PAGE_BAND_BG,
         minWidth: 0,
         width: "100%",
         maxWidth: "100%",
@@ -1460,17 +1892,148 @@ const styles = StyleSheet.create({
     addSectionBtnHover: {
         backgroundColor: "#2568D4",
     },
+    addRoomRow: {
+        paddingHorizontal: 16,
+        paddingBottom: 10,
+        maxWidth: "100%",
+    },
+    addRoomLabel: {
+        fontSize: 12,
+        fontWeight: "500",
+        color: textSecondary,
+        marginBottom: 6,
+    },
+    addRoomInner: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        minWidth: 0,
+    },
+    addRoomInput: {
+        flex: 1,
+        minWidth: 0,
+        borderWidth: 1,
+        borderColor: listBorder,
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        fontSize: 15,
+        color: textPrimary,
+        backgroundColor: "#fff",
+    },
+    addRoomBtn: {
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 10,
+        backgroundColor: listBrand,
+    },
+    addRoomBtnHover: {
+        backgroundColor: "#2568D4",
+    },
+    addRoomBtnText: {
+        color: "#fff",
+        fontWeight: "600",
+        fontSize: 14,
+    },
+    roomAssignRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        gap: 8,
+        backgroundColor: listSelection,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: listBorder,
+    },
+    roomAssignText: {
+        flex: 1,
+        fontSize: 14,
+        fontWeight: "400",
+        color: textPrimary,
+        minWidth: 0,
+    },
+    roomAssignAction: {
+        fontSize: 13,
+        fontWeight: "500",
+        color: listBrand,
+    },
+    roomModalBackdrop: {
+        flex: 1,
+        backgroundColor: "rgba(45, 74, 122, 0.22)",
+        justifyContent: "flex-start",
+        alignItems: "center",
+    },
+    roomModalCard: {
+        width: "88%",
+        maxWidth: 380,
+        backgroundColor: "#fff",
+        borderRadius: 14,
+        paddingVertical: 0,
+        paddingHorizontal: 0,
+        zIndex: 2,
+        elevation: 6,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: "rgba(45, 74, 122, 0.18)",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        overflow: "hidden",
+    },
+    roomModalTitle: {
+        fontSize: 15,
+        fontWeight: "600",
+        color: textPrimary,
+        paddingHorizontal: 16,
+        paddingTop: 14,
+        paddingBottom: 12,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: "rgba(45, 74, 122, 0.12)",
+        backgroundColor: "#fafcfe",
+    },
+    roomModalOptionList: {
+        paddingVertical: 4,
+    },
+    roomModalOption: {
+        paddingVertical: 13,
+        paddingHorizontal: 16,
+        marginHorizontal: 6,
+        marginVertical: 2,
+        borderRadius: 8,
+    },
+    roomModalOptionTopRule: {
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: "rgba(45, 74, 122, 0.1)",
+        marginTop: 2,
+        paddingTop: 14,
+    },
+    roomModalOptionHover: {
+        backgroundColor: "rgba(45, 116, 200, 0.09)",
+    },
+    roomModalOptionPressed: {
+        backgroundColor: "rgba(45, 116, 200, 0.14)",
+    },
+    roomModalOptionWeb: {
+        cursor: "pointer" as const,
+    },
+    roomModalOptionText: {
+        fontSize: 15,
+        color: textPrimary,
+        fontWeight: "400",
+    },
     featureGroup: {
         backgroundColor: "#fff",
         borderRadius: 14,
-        marginBottom: 14,
+        marginBottom: 0,
         maxWidth: "100%",
         overflow: "hidden",
-        elevation: 2,
-        shadowColor: listBrand,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: listBorder,
+        elevation: 1,
+        shadowColor: "#2d4a7a",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
     },
     featureHeader: {
         flexDirection: "row",
@@ -1807,6 +2370,12 @@ const styles = StyleSheet.create({
       borderWidth: 1.5,
       borderColor: listBorder,
       borderStyle: "dashed",
+    },
+    addSectionLabel: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: textSecondary,
+      marginBottom: 8,
     },
     addSectionTopRow: {
       flexDirection: "row",

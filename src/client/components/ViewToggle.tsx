@@ -323,11 +323,22 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
   },
   backdrop: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 2000,
+    ...Platform.select({
+      web: {
+        position: "fixed" as const,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+      },
+      default: {
+        position: "absolute" as const,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+      },
+    }),
     zIndex: 0,
   },
   row: {

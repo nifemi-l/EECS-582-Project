@@ -8,6 +8,7 @@ Programmer: Nifemi Lawal
 Creation date: 3/29/26
 Revision date:
   - 3/29/26: Replace hardcoded localhost URL with EXPO_PUBLIC_API_URL env variable
+  - 4/14/26: Room CRUD + feature room_id
 Preconditions: Flask server must be reachable at EXPO_PUBLIC_API_URL; user must be logged in
 Postconditions: Returns parsed JSON from the server or throws on failure
 Errors: Throws an Error with the HTTP status if the response is not ok
@@ -17,6 +18,7 @@ Known faults: None
 */
 
 import { getToken } from "../utils/authStorage";
+import type { HouseholdRoom } from "./room";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const API_BASE = `${API_URL}/api`;
@@ -51,6 +53,51 @@ export async function fetchHouseholdFeatures(householdId: number) {
   return res.json();
 }
 
+export async function fetchHouseholdRooms(householdId: number): Promise<HouseholdRoom[]> {
+  const res = await fetch(`${API_BASE}/household/${householdId}/rooms`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch rooms: ${res.status}`);
+  return res.json();
+}
+
+export async function createHouseholdRoom(data: {
+  household_id: number;
+  room_name: string;
+  accent_color?: string | null;
+}): Promise<{ room_id: number }> {
+  const res = await fetch(`${API_BASE}/household/${data.household_id}/rooms`, {
+    method: "POST",
+    headers: await authHeaders(true),
+    body: JSON.stringify({
+      room_name: data.room_name,
+      accent_color: data.accent_color,
+    }),
+  });
+  if (!res.ok) throw new Error(`Failed to create room: ${res.status}`);
+  return res.json();
+}
+
+export async function updateHouseholdRoom(
+  roomId: number,
+  data: { room_name?: string; accent_color?: string | null }
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/room/${roomId}`, {
+    method: "PUT",
+    headers: await authHeaders(true),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to update room: ${res.status}`);
+}
+
+export async function deleteHouseholdRoom(roomId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/room/${roomId}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to delete room: ${res.status}`);
+}
+
 // Create a new feature (section/room) under a household
 // Returns the new feature_id from the database so we can use it locally
 export async function createFeature(data: {
@@ -61,6 +108,7 @@ export async function createFeature(data: {
   y_pos?: number;
   z_pos?: number;
   icon?: string;
+  room_id?: number | null;
 }): Promise<{ feature_id: number }> {
   const res = await fetch(`${API_BASE}/feature`, {
     method: "POST",
@@ -82,6 +130,7 @@ export async function updateFeature(
     y_pos?: number;
     z_pos?: number;
     icon?: string;
+    room_id?: number | null;
   }
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/feature/${featureId}`, {
