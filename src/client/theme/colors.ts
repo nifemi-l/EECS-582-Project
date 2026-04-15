@@ -22,6 +22,20 @@ export const listSelection = "#E5F2FC";
 export const listSurfaceSoft = "#E0EEF9";
 export const listBorder = "#C8DCF0";
 
+/**
+ * Room band header swatches
+ */
+export const ROOM_BAND_SWATCHES = [
+  navy,
+  "#1d4ed8", // blue
+  "#0f766e", // teal
+  "#6d28d9", // purple
+  "#b45309", // orange
+  "#be123c", // red
+  "#15803d", // green
+  "#c026d3", // pink
+] as const;
+
 /** Hero / marketing gradient (top → bottom-ish diagonal); mid stop softened vs. older banner */
 export const heroGradient = ["#3B5FA0", "#6D90CF", "#7B9BDB"] as const;
 

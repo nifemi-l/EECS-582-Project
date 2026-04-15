@@ -39,6 +39,7 @@ import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Import RN components for building the UI
 import {
+    Keyboard,
     Modal,
     Platform,
     Pressable,
@@ -46,6 +47,7 @@ import {
     StyleSheet,
     Text,
     TextInput,
+    useWindowDimensions,
     View,
 } from "react-native";
 import { Button, Dialog, PaperProvider, Portal, Text as PaperText } from "react-native-paper";
@@ -54,6 +56,7 @@ import { appPaperLightTheme } from "../../../theme/paperTheme";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 // Need this to grab the household id from the URL (e.g. /household/3/list)
 import { useLocalSearchParams } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Import server classes
 import Task from "../../../data/task";
@@ -88,6 +91,7 @@ import {
   completeTask as apiCompleteTask,
 } from "../../../data/api";
 import { RoomContainer } from "../../../components/RoomContainer";
+import { normalizeHexColor } from "../../../utils/hexColor";
 import {
   listBorder,
   listBrand,
@@ -612,6 +616,38 @@ function AddTaskCard({
   );
 }
 
+/** Single row in the Assign to room modal —-> faint dividers + web hover fill */
+function RoomPickerOption({
+  label,
+  onSelect,
+  showTopRule,
+}: {
+  label: string;
+  onSelect: () => void;
+  /** Separator line above (not on first row under title) */
+  showTopRule?: boolean;
+}) {
+  const [hover, hoverHandlers] = useWebHover();
+  return (
+    <Pressable
+      onPress={onSelect}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        styles.roomModalOption,
+        showTopRule && styles.roomModalOptionTopRule,
+        Platform.OS === "web" && hover && styles.roomModalOptionHover,
+        pressed && styles.roomModalOptionPressed,
+        Platform.OS === "web" && styles.roomModalOptionWeb,
+      ]}
+      // @ts-ignore web-only pointer hover
+      {...hoverHandlers}
+    >
+      <Text style={styles.roomModalOptionText}>{label}</Text>
+    </Pressable>
+  );
+}
+
 // A collapsible group of tasks under one feature/room
 // onCompleteTask is passed down to each TaskRow so tapping the check button works
 function FeatureGroup({
@@ -652,15 +688,25 @@ function FeatureGroup({
   const [hoverBatch, hoverBatchHandlers] = useWebHover();
   const [hoverEditBtn, hoverEditBtnHandlers] = useWebHover();
   const [hoverTrashBtn, hoverTrashBtnHandlers] = useWebHover();
+  const [hoverDoneEdit, hoverDoneEditHandlers] = useWebHover();
+  const { height: windowHeight } = useWindowDimensions();
 
-  const handleSaveRename = () => {
+  const persistRename = () => {
     const trimmed = editName.trim();
     if (trimmed && trimmed !== feature.name) {
       onRenameFeature(feature.id, trimmed);
     } else {
       setEditName(feature.name);
     }
+  };
+
+  const exitEditMode = () => {
     setIsEditing(false);
+  };
+
+  const commitRenameAndExit = () => {
+    persistRename();
+    exitEditMode();
   };
 
   const handleStartEdit = () => {
@@ -703,8 +749,8 @@ function FeatureGroup({
             style={styles.featureNameInput}
             value={editName}
             onChangeText={setEditName}
-            onBlur={handleSaveRename}
-            onSubmitEditing={handleSaveRename}
+            onBlur={persistRename}
+            onSubmitEditing={commitRenameAndExit}
             returnKeyType="done"
             selectTextOnFocus
           />
@@ -736,7 +782,33 @@ function FeatureGroup({
           </Pressable>
         )}
 
-        {!isEditing && (
+        {isEditing ? (
+          <Pressable
+            onPress={commitRenameAndExit}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="Done editing section"
+            style={({ pressed }) => [
+              styles.headerActionBtn,
+              Platform.OS === "web" && hoverDoneEdit && styles.headerActionBtnHover,
+              pressed && styles.listPressablePressed,
+            ]}
+            // @ts-ignore web-only pointer hover
+            {...hoverDoneEditHandlers}
+          >
+            <View
+              style={{
+                transform: [{ scale: Platform.OS === "web" && hoverDoneEdit ? 1.1 : 1 }],
+              }}
+            >
+              <MaterialCommunityIcons
+                name="check"
+                size={20}
+                color={Platform.OS === "web" && hoverDoneEdit ? listBrand : "#2e7d32"}
+              />
+            </View>
+          </Pressable>
+        ) : (
           <View style={styles.headerActions}>
             <Pressable
               onPress={handleStartEdit}
@@ -800,7 +872,10 @@ function FeatureGroup({
 
       {isEditing && (
         <Pressable
-          onPress={() => setRoomPickerOpen(true)}
+          onPress={() => {
+            Keyboard.dismiss();
+            setRoomPickerOpen(true);
+          }}
           style={({ pressed }) => [
             styles.roomAssignRow,
             Platform.OS === "web" && pressed && styles.listRowHoverDarken,
@@ -822,7 +897,12 @@ function FeatureGroup({
         animationType="fade"
         onRequestClose={() => setRoomPickerOpen(false)}
       >
-        <View style={styles.roomModalBackdrop}>
+        <View
+          style={[
+            styles.roomModalBackdrop,
+            { paddingTop: windowHeight * 0.35 },
+          ]}
+        >
           <Pressable
             style={StyleSheet.absoluteFillObject}
             onPress={() => setRoomPickerOpen(false)}
@@ -830,27 +910,29 @@ function FeatureGroup({
           />
           <View style={styles.roomModalCard}>
             <Text style={styles.roomModalTitle}>Assign to room</Text>
-            <Pressable
-              style={styles.roomModalOption}
-              onPress={() => {
-                onAssignFeatureRoom(feature.id, null);
-                setRoomPickerOpen(false);
-              }}
-            >
-              <Text style={styles.roomModalOptionText}>Unassigned</Text>
-            </Pressable>
-            {rooms.map((r) => (
-              <Pressable
-                key={r.room_id}
-                style={styles.roomModalOption}
-                onPress={() => {
-                  onAssignFeatureRoom(feature.id, r.room_id);
+            <View style={styles.roomModalOptionList}>
+              <RoomPickerOption
+                label="Unassigned"
+                showTopRule={false}
+                onSelect={() => {
+                  onAssignFeatureRoom(feature.id, null);
                   setRoomPickerOpen(false);
+                  setIsEditing(false);
                 }}
-              >
-                <Text style={styles.roomModalOptionText}>{r.room_name}</Text>
-              </Pressable>
-            ))}
+              />
+              {rooms.map((r) => (
+                <RoomPickerOption
+                  key={r.room_id}
+                  label={r.room_name}
+                  showTopRule
+                  onSelect={() => {
+                    onAssignFeatureRoom(feature.id, r.room_id);
+                    setRoomPickerOpen(false);
+                    setIsEditing(false);
+                  }}
+                />
+              ))}
+            </View>
           </View>
         </View>
       </Modal>
@@ -888,11 +970,14 @@ function FeatureGroup({
   );
 }
 
-// row at the bottom for creating a new section, with an icon picker
+// Creates a new feature (section) under a room group, with an icon picker
 function AddSectionRow({
   onAdd,
+  label,
 }: {
   onAdd: (name: string, icon: string) => void;
+  /** Shown above the row, e.g. inside each room container */
+  label?: string;
 }) {
   const [name, setName] = useState("");
   const [icon, setIcon] = useState(LOCATION_ICONS[0]);
@@ -912,6 +997,7 @@ function AddSectionRow({
 
   return (
     <View style={styles.addSectionRow}>
+      {label ? <Text style={styles.addSectionLabel}>{label}</Text> : null}
       <View style={styles.addSectionTopRow}>
         <Pressable
           onPress={() => setShowIcons((v) => !v)}
@@ -1078,6 +1164,8 @@ function AuthenticatedListScreen() {
   const [features, setFeatures] = useState<Feature[]>([]);
   const [rooms, setRooms] = useState<HouseholdRoom[]>([]);
   const [unassignedRoomLabel, setUnassignedRoomLabel] = useState("Unassigned");
+  /** Persisted locally (no Room row for the synthetic Unassigned band). */
+  const [unassignedAccent, setUnassignedAccent] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -1160,6 +1248,25 @@ function AuthenticatedListScreen() {
 
   useEffect(() => {
     setUnassignedRoomLabel("Unassigned");
+    setUnassignedAccent(null);
+    let cancelled = false;
+    const key = `list_unassigned_band_accent_${householdId}`;
+    AsyncStorage.getItem(key)
+      .then((raw) => {
+        if (cancelled) return;
+        if (raw == null || raw === "") {
+          setUnassignedAccent(null);
+          return;
+        }
+        const n = normalizeHexColor(raw);
+        setUnassignedAccent(n);
+      })
+      .catch(() => {
+        if (!cancelled) setUnassignedAccent(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [householdId]);
 
   const handleToggleSelect = useCallback((id: number) => {
@@ -1350,14 +1457,27 @@ function AuthenticatedListScreen() {
 
   // Add a new section/feature (POST to the server and use the returned id)
   const handleAddFeature = useCallback(
-    (name: string, icon: string) => {
+    (name: string, icon: string, roomId: number | null) => {
       apiCreateFeature({
         household_id: householdId,
         feature_name: name,
         icon,
+        room_id: roomId ?? undefined,
       })
         .then(({ feature_id }) => {
-          const newLoc = new Feature(name, householdId, FeatureType.UNDEFINED, 0, 0, 0, feature_id, icon);
+          const newLoc = new Feature(
+            name,
+            householdId,
+            FeatureType.UNDEFINED,
+            0,
+            0,
+            0,
+            feature_id,
+            icon,
+            0,
+            "default",
+            roomId
+          );
           setFeatures((prev) => [...prev, newLoc]);
         })
         .catch(console.error);
@@ -1520,7 +1640,11 @@ function AuthenticatedListScreen() {
         {roomGroups.map((g) => (
           <RoomContainer
             key={g.key}
-            room={{ id: g.key, name: g.displayName }}
+            room={{
+              id: g.key,
+              name: g.displayName,
+              accentColor: g.isUnassigned ? unassignedAccent : g.accent,
+            }}
             featureCount={g.features.length}
             onRenameRoom={
               g.roomId == null
@@ -1540,6 +1664,28 @@ function AuthenticatedListScreen() {
                       .catch(console.error);
                   }
             }
+            onCommitAccent={(hex) => {
+              if (g.roomId == null) {
+                const key = `list_unassigned_band_accent_${householdId}`;
+                setUnassignedAccent(hex);
+                if (hex == null) {
+                  AsyncStorage.removeItem(key).catch(console.error);
+                } else {
+                  AsyncStorage.setItem(key, hex).catch(console.error);
+                }
+                return;
+              }
+              const roomId = g.roomId;
+              apiUpdateHouseholdRoom(roomId, { accent_color: hex })
+                .then(() => {
+                  setRooms((prev) =>
+                    prev.map((r) =>
+                      r.room_id === roomId ? { ...r, accent_color: hex } : r
+                    )
+                  );
+                })
+                .catch(console.error);
+            }}
             onDeleteRoom={
               g.roomId == null
                 ? openResetUnassignedLabelDialog
@@ -1564,10 +1710,19 @@ function AuthenticatedListScreen() {
                 onAssignFeatureRoom={handleAssignFeatureRoom}
               />
             ))}
+            <AddSectionRow
+              label="Add new feature"
+              onAdd={(name, icon) => handleAddFeature(name, icon, g.roomId)}
+            />
           </RoomContainer>
         ))}
 
-        <AddSectionRow onAdd={handleAddFeature} />
+        {roomGroups.length === 0 && (
+          <AddSectionRow
+            label="Add new feature"
+            onAdd={(name, icon) => handleAddFeature(name, icon, null)}
+          />
+        )}
       </ScrollView>
     </View>
   );
@@ -1805,7 +1960,7 @@ const styles = StyleSheet.create({
     roomModalBackdrop: {
         flex: 1,
         backgroundColor: "rgba(45, 74, 122, 0.22)",
-        justifyContent: "center",
+        justifyContent: "flex-start",
         alignItems: "center",
     },
     roomModalCard: {
@@ -1813,26 +1968,53 @@ const styles = StyleSheet.create({
         maxWidth: 380,
         backgroundColor: "#fff",
         borderRadius: 14,
-        paddingVertical: 10,
-        paddingHorizontal: 6,
+        paddingVertical: 0,
+        paddingHorizontal: 0,
         zIndex: 2,
         elevation: 6,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: "rgba(45, 74, 122, 0.18)",
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.15,
         shadowRadius: 12,
+        overflow: "hidden",
     },
     roomModalTitle: {
         fontSize: 15,
         fontWeight: "600",
         color: textPrimary,
-        paddingHorizontal: 12,
-        paddingBottom: 8,
+        paddingHorizontal: 16,
+        paddingTop: 14,
+        paddingBottom: 12,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: "rgba(45, 74, 122, 0.12)",
+        backgroundColor: "#fafcfe",
+    },
+    roomModalOptionList: {
+        paddingVertical: 4,
     },
     roomModalOption: {
-        paddingVertical: 12,
-        paddingHorizontal: 12,
+        paddingVertical: 13,
+        paddingHorizontal: 16,
+        marginHorizontal: 6,
+        marginVertical: 2,
         borderRadius: 8,
+    },
+    roomModalOptionTopRule: {
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: "rgba(45, 74, 122, 0.1)",
+        marginTop: 2,
+        paddingTop: 14,
+    },
+    roomModalOptionHover: {
+        backgroundColor: "rgba(45, 116, 200, 0.09)",
+    },
+    roomModalOptionPressed: {
+        backgroundColor: "rgba(45, 116, 200, 0.14)",
+    },
+    roomModalOptionWeb: {
+        cursor: "pointer" as const,
     },
     roomModalOptionText: {
         fontSize: 15,
@@ -2188,6 +2370,12 @@ const styles = StyleSheet.create({
       borderWidth: 1.5,
       borderColor: listBorder,
       borderStyle: "dashed",
+    },
+    addSectionLabel: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: textSecondary,
+      marginBottom: 8,
     },
     addSectionTopRow: {
       flexDirection: "row",
