@@ -25,13 +25,19 @@ from flask_cors import CORS
 
 # Initialize Flask app and configure CORS
 app = Flask(__name__)
+# Explicit methods/headers so browser preflight (OPTIONS) succeeds for fetch + Authorization.
 CORS(app, resources={
-    r"/*": {"origins": [
-        "https://seehome.app",
-        "https://www.seehome.app",
-        "http://localhost:8081",
-        "http://127.0.0.1:8081",
-    ]}
+    r"/*": {
+        "origins": [
+            "https://seehome.app",
+            "https://www.seehome.app",
+            "http://localhost:8081",
+            "http://127.0.0.1:8081",
+        ],
+        "methods": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        "allow_headers": ["Authorization", "Content-Type"],
+        "expose_headers": ["Content-Type"],
+    }
 })
 
 # Register blueprints for route handling
