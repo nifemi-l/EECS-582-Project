@@ -6,6 +6,7 @@ Programmers: Delroy Wright, some code from Nifemi Lawal
 Creation date: 3/11/26
 Revision date: 3/29/26
     - Added error handling and validation for all routes.
+    - 4/16/26: Add 3D scale, rotation support
 Preconditions: db_commands.py contains necessary CRUD functions.
 Postconditions: Flask routes are available for managing tasks, households, and users.
 """
@@ -74,6 +75,8 @@ def edit_feature(feature_id):
             y_pos=data.get("y_pos"),
             z_pos=data.get("z_pos"),
             icon=data.get("icon"),
+            scale=data.get("scale"),
+            rotation_y=data.get("rotation_y"),
         )
         if "room_id" in data:
             rid = data.get("room_id")

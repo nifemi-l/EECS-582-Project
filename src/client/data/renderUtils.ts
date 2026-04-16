@@ -6,6 +6,7 @@ Creation date: 3/29/26
 Revision date: 
   - 4/6/26: Convert to use FeatureType enum & support model loading
   - 4/15/26: Add support for scaling, rotating, and moving features. Also rooms
+  - 4/16/26: Connect edit menu to database
 Preconditions: 
   - A proper draw / render loop is created outside of this file (Renderer does not contain its own loop, instead it has the pieces)
   - For the order of features in a renderable household's renderable features, the following are required:
@@ -46,7 +47,7 @@ import {
 // Import API utilities
 import { 
   createFeature as apiCreateFeature, deleteFeature as apiDeleteFeature,
-  createTask as apiCreateTask
+  createTask as apiCreateTask, updateFeature as apiUpdateFeature,
 } from "./api";
 import { HouseholdRoom } from './room';
 
@@ -160,7 +161,7 @@ export class Renderer {
       }
       this.features.push(f)
     }); // manually copy the features over
-    this.house.household_id = householdID; // NOTE: at some point we need to get all the household details
+    this.house.household_id = householdID; // Set household ID
     this.house.id = householdID; // for compatability
   }
 
@@ -447,7 +448,9 @@ export class Renderer {
     this.features.forEach((f) => {
       // Prepare the appropriate model matrix
       const transform = GLM.mat4.create();
-      GLM.mat4.translate(transform, transform, [f.x_pos, f.y_pos, f.z_pos]); // The 0.5s account for the difference between the cell center and edges
+      const yRot = GLM.quat.create();
+      GLM.quat.fromEuler(yRot, 0, f.rotation_y, 0);
+      GLM.mat4.fromRotationTranslationScale(transform, yRot, [f.x_pos, f.y_pos, f.z_pos], [f.scale, f.scale, f.scale]);
 
       // Select the correct material
       let mat = FEATURE_ORANGE;
@@ -1250,11 +1253,9 @@ export class RenderableFeature extends Feature {
    material: Material; // How the feature looks materially
    visible: boolean;
    mesh: string | undefined; // if null, draw a cube
-   scale: number;
-   rotationY: number;
 
-   constructor(name: string, household_id: number, feature_id: number, mm?: GLM.mat4, mat?: Material, x?: number, y?: number, z?: number, tasks?: Task[], type?: FeatureType, icon?: string, room_id?: number | null) {
-    super(name, household_id, type, x, y, z, feature_id, icon, room_id);
+   constructor(name: string, household_id: number, feature_id: number, mm?: GLM.mat4, mat?: Material, x?: number, y?: number, z?: number, tasks?: Task[], type?: FeatureType, icon?: string, room_id?: number | null, scale?: number, rotation_y?: number) {
+    super(name, household_id, type, x, y, z, feature_id, icon, room_id, scale, rotation_y);
 
     // Set up mesh if a type is provided
     this.mesh = !type ? undefined : getFeatureTypeToString(type);
@@ -1275,44 +1276,61 @@ export class RenderableFeature extends Feature {
 
     // Default to visibile
     this.visible = true;
-
-    // Set default transform values
-    this.scale = 1;
-    this.rotationY = 0;
    }
 
    setID(id: number) {
     this.id = id;
    }
 
-   scaleFeature(scaleAmt: number) {
-      // Figure out how much to scale the feature by
-      let scaleBy = this.scale + scaleAmt; // we will scale from the identity to this value
+   async scaleFeature(scaleAmt: number) {
+    // Figure out how much to scale the feature by
+    let scaleBy = this.scale + scaleAmt; // we will scale from the identity to this value
 
-      // Set scale to max or min depending on its sign (if we end to grow or shrink the feature) if it is out of bounds
-      scaleBy = scaleAmt > 0 ? (scaleBy > MAX_FEATURE_SCALE ? MAX_FEATURE_SCALE : scaleBy) : (scaleBy < MIN_FEATURE_SCALE ? MIN_FEATURE_SCALE : scaleBy)
+    // Set scale to max or min depending on its sign (if we end to grow or shrink the feature) if it is out of bounds
+    scaleBy = scaleAmt > 0 ? (scaleBy > MAX_FEATURE_SCALE ? MAX_FEATURE_SCALE : scaleBy) : (scaleBy < MIN_FEATURE_SCALE ? MIN_FEATURE_SCALE : scaleBy)
 
-      // First, reset the scale to 0. We save rotation and position, then set to identity.
-      // This helps us use a consistent scale factor and also helps avoid floating point error accumulation
-      // We already know the scale factor since it is an integer
-      const rot = GLM.quat.create(); // rotation as a quaternion
-      GLM.mat4.getRotation(rot, this.modelMatrix);
-      const pos = GLM.vec3.create();
-      GLM.mat4.getTranslation(pos, this.modelMatrix);
-      GLM.mat4.identity(this.modelMatrix); // reset to identity
-      
-      // Now, reapply the position and rotation values
-      GLM.mat4.fromRotationTranslationScale(this.modelMatrix, rot, pos, [scaleBy, scaleBy, scaleBy]);
+    // First, reset the scale to 0. We save rotation and position, then set to identity.
+    // This helps us use a consistent scale factor and also helps avoid floating point error accumulation
+    // We already know the scale factor since it is an integer
+    const rot = GLM.quat.create(); // rotation as a quaternion
+    GLM.mat4.getRotation(rot, this.modelMatrix);
+    const pos = GLM.vec3.create();
+    GLM.mat4.getTranslation(pos, this.modelMatrix);
+    GLM.mat4.identity(this.modelMatrix); // reset to identity
+    
+    // Now, reapply the position and rotation values
+    GLM.mat4.fromRotationTranslationScale(this.modelMatrix, rot, pos, [scaleBy, scaleBy, scaleBy]);
 
-      // Finally, update the current scale value
-      this.scale = scaleBy;
+    // Update the current scale value
+    this.scale = scaleBy;
+
+    // Now, update the DB
+    await apiUpdateFeature(this.id, {scale: this.scale});
    }
 
-   rotateFeatureY(rotAmt: number) {
-      GLM.mat4.rotateY(this.modelMatrix, this.modelMatrix, rotAmt);
+   async rotateFeatureY(rotAmt: number) {
+    GLM.mat4.rotateY(this.modelMatrix, this.modelMatrix, rotAmt);
+
+    // Save off our new rotation angle
+    const rotQuat = GLM.quat.create();
+    GLM.mat4.getRotation(rotQuat, this.modelMatrix);
+
+    // Convert the rotation value to a quaternion 
+    // See the following stack overflow atricle for how to get the current rotation angle
+    // https://stackoverflow.com/questions/15955358/javascript-gl-matrix-lib-how-to-get-euler-angles-from-quat-and-quat-from-angles
+    // First, get wxyz components. We use a quaternion specifically because it avoids gimbal lock and is typical for 3D rotation engines
+    const w = rotQuat[0];
+    const x = rotQuat[1];
+    const y = rotQuat[2];
+    const z = rotQuat[3];
+    const yRot = Math.asin(2 * (x * z + w * y));
+    this.rotation_y = yRot * 180 / Math.PI; // convert to degrees
+
+    // Now, update the DB
+    await apiUpdateFeature(this.id, {rotation_y: this.rotation_y});
    }
 
-   translateFeature(translationAmt: number, dir: MoveDirection) {
+   async translateFeature(translationAmt: number, dir: MoveDirection) {
     // We want to translate the feature in terms of world space, not local space. So, we have to pre-multiply our matrix
     // instead of the typical GLM post multiply
     const translationMatrix = GLM.mat4.create();
@@ -1339,6 +1357,13 @@ export class RenderableFeature extends Feature {
     // Now, actually apply the translation in world space
     GLM.mat4.fromTranslation(translationMatrix, translationVector);
     GLM.mat4.multiply(this.modelMatrix, translationMatrix, this.modelMatrix);
+
+    // Now, update the DB
+    await apiUpdateFeature(this.id, {
+      x_pos: this.x_pos,
+      y_pos: this.y_pos,
+      z_pos: this.z_pos
+    });
    }
 }
 

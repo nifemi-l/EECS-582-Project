@@ -17,6 +17,7 @@ Revision date:
   - 4/13/26: Add consolidation to current room selection UI for mobile devices
   - 4/13/26: Web hover on Edit button and room chevrons (chevron scale via transform)
   - 4/15/26: Add edit window buttons for feature rotation, scaling, and translation. Other tweaks. Also rooms
+    - 4/16/26: Add 3D scale, rotation database support
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -627,7 +628,9 @@ function AuthenticatedGraphicsScreen() {
                   f.x_pos, f.y_pos, f.z_pos,
                   f.feature_id,
                   f.icon || "home-outline",
-                  f.room_id != null ? Number(f.room_id) : null
+                  f.room_id != null ? Number(f.room_id) : null,
+                  f.scale,
+                  f.rotation_y
                 );
                 feat.tasks = (f.tasks || []).map((t: any) => {
                   const task = new Task(
