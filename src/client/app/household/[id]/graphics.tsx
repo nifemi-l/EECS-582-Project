@@ -16,6 +16,7 @@ Revision date:
   - 4/13/26: Add room selection UI & rotate position widget in edit menu to match rotation angle
   - 4/13/26: Add consolidation to current room selection UI for mobile devices
   - 4/13/26: Web hover on Edit button and room chevrons (chevron scale via transform)
+  - 4/15/26: Add edit window buttons for feature rotation, scaling, and translation. Other tweaks. Also rooms
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -42,6 +43,7 @@ import { Button, PaperProvider, Card, Menu, TextInput } from 'react-native-paper
 import { useLocalSearchParams } from "expo-router";
 import { appPaperLightTheme } from "../../../theme/paperTheme";
 import { listBrand } from "../../../theme/colors";
+import tinycolor from "tinycolor2";
 
 // Import graphics utilities
 import {
@@ -57,7 +59,7 @@ import {
 } from "../../../data/renderUtils"
 
 // Import local api utilities
-import { fetchHouseholdFeatures } from "../../../data/api";
+import { fetchHouseholdFeatures, fetchHouseholdRooms } from "../../../data/api";
 import Feature, { getFeatureTypeFromString } from "../../../data/feature";
 import Task from "../../../data/task";
 
@@ -268,8 +270,8 @@ function ColorButtons() {
           gap: 10,
         }}
       >
-        {/* Edit grid size buttons */}
-        <Pressable
+        {/* Edit grid size buttons - DISABLED for now */}
+        {/* <Pressable
           onPress={() => {rdr.grid.resize(rdr.grid.width + 2, rdr.grid.height); rdr.house.resizeFloorFeature()}}>
           <MaterialCommunityIcons name='arrow-right' color="#abcd" />
         </Pressable>
@@ -287,17 +289,13 @@ function ColorButtons() {
         <Pressable
           onPress={() => {rdr.grid.resize(rdr.grid.width, rdr.grid.height - 2); rdr.house.resizeFloorFeature()}}>
           <MaterialCommunityIcons name='arrow-down' color="#abcd" />
-        </Pressable>
+        </Pressable> */}
       </View>
     </View>
   );
 }
 
 // A window that will appear to edit feature info
-/** Room nav chevron default / web-hover (brighter green on hover) */
-const ROOM_CHEVRON_COLOR = "#29ff46";
-const ROOM_CHEVRON_COLOR_HOVER = "#5EFF9A";
-
 function EditWindow() {
   // if in edit mode or not
   const [isEditing, setIsEditing] = useState(false);
@@ -399,29 +397,41 @@ function EditWindow() {
           <Card
             mode='contained'
           >
-            <Card.Title title={selectedFeature.feature_name + "[" + selectedFeature.id + "]"}/>
+            <Card.Title title={selectedFeature.feature_name}/>
             <Card.Actions>
-              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" 
-                onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}
-              >
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.POS_X)}}>
                 <View style={{transform: [{rotate: `${xAxisAngle}rad`}]}}>
                   <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
                 </View>
               </Button>
-              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.NEG_X)}}>
                 <View style={{transform: [{rotate: `${xAxisAngle + Math.PI}rad`}]}}>
                   <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
                 </View>
               </Button>
-              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_Z)}}>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.POS_Z)}}>
                 <View style={{transform: [{rotate: `${xAxisAngle + Math.PI / 2}rad`}]}}>
                   <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
                 </View>
               </Button>
-              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_Z)}}>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.NEG_Z)}}>
                 <View style={{transform: [{rotate: `${xAxisAngle + 3 * Math.PI / 2}rad`}]}}>
                   <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
                 </View>
+              </Button>
+            </Card.Actions>
+            <Card.Actions>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.rotateSelectedFeatureY(25)}}>
+                <MaterialCommunityIcons name="axis-z-rotate-clockwise" size={18} color="#FFFFFF"/>
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.rotateSelectedFeatureY(-25)}}>
+                <MaterialCommunityIcons name="axis-z-rotate-counterclockwise" size={18} color="#FFFFFF"/>
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.scaleSelectedFeature(0.25)}}>
+                <MaterialCommunityIcons name="plus" size={18} color="#FFFFFF"/>
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.scaleSelectedFeature(-0.25)}}>
+                <MaterialCommunityIcons name="minus" size={18} color="#FFFFFF"/>
               </Button>
             </Card.Actions>
             {/* Display chore cycle button if needed */}
@@ -592,6 +602,19 @@ function AuthenticatedGraphicsScreen() {
   // Reload the features of our housewhenever the household ID changes.
   // Also mostly from list.tsx (thanks again Nifemi)
   useEffect(() => {
+    // Get household room data
+    fetchHouseholdRooms(householdId)
+      .then((roomsData) => {
+        // From our room data, get the list of room data objects
+        const rooms = Array.isArray(roomsData) ? roomsData : [];
+        rdrRef.current.setRooms(rooms);
+        setCurrentViewingRoom(rdrRef.current.setValidRoom());
+      }) 
+      .catch((e) => {
+        console.error("Failed to fetch rooms for household", householdId, e);
+      });
+
+    // Get household feature data
     fetchHouseholdFeatures(householdId)
       .then((data: any[]) => {
               // Convert the raw JSON objects into Feature/Task class instances
@@ -604,8 +627,6 @@ function AuthenticatedGraphicsScreen() {
                   f.x_pos, f.y_pos, f.z_pos,
                   f.feature_id,
                   f.icon || "home-outline",
-                  0,
-                  "default",
                   f.room_id != null ? Number(f.room_id) : null
                 );
                 feat.tasks = (f.tasks || []).map((t: any) => {
@@ -651,7 +672,11 @@ function AuthenticatedGraphicsScreen() {
   const roomBarLeftInset = Math.min(Math.max(Math.round(layoutWidth * 0.34), 116), 210);
   const roomChevronSize = layoutWidth < 360 ? 28 : layoutWidth < 480 ? 32 : 36;
   const roomLabelFontSize = layoutWidth < 360 ? 11 : layoutWidth < 480 ? 12 : 14;
-  const roomLabelShort = layoutWidth < 420;
+
+  /** Room nav chevron default / web-hover (brighter green on hover) */
+  const ROOM_ACCENT_COLOR = rdrRef.current.getRoomAccentColorFromId(currentViewingRoom);
+  const ROOM_CHEVRON_COLOR = !ROOM_ACCENT_COLOR ? "#29ff46" : ROOM_ACCENT_COLOR;
+  const ROOM_CHEVRON_COLOR_HOVER = !ROOM_ACCENT_COLOR ? "#5EFF9A" : tinycolor(ROOM_ACCENT_COLOR).brighten(10).toHexString();
 
   return (
     featureFetchSuccess ? (
@@ -696,8 +721,8 @@ function AuthenticatedGraphicsScreen() {
             hitSlop={8}
             style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
             onPress={() => {
-              rdrRef.current.currentViewingRoom -= 1;
-              setCurrentViewingRoom(rdrRef.current.currentViewingRoom);
+              setCurrentViewingRoom(rdrRef.current.goPrevRoom());
+              rdrRef.current.selectedEditFeature = null;
             }}
             // @ts-ignore web-only pointer hover
             onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowLeft(true)}
@@ -731,9 +756,7 @@ function AuthenticatedGraphicsScreen() {
               paddingHorizontal: 4,
             }}
           >
-            {roomLabelShort
-              ? `Room (${currentViewingRoom})`
-              : `Currently viewing room: (${currentViewingRoom})`}
+            {rdrRef.current.getRoomNameFromId(currentViewingRoom)}
           </Text>
           <Pressable
             accessibilityRole="button"
@@ -741,8 +764,8 @@ function AuthenticatedGraphicsScreen() {
             hitSlop={8}
             style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
             onPress={() => {
-              rdrRef.current.currentViewingRoom += 1;
-              setCurrentViewingRoom(rdrRef.current.currentViewingRoom);
+              setCurrentViewingRoom(rdrRef.current.goNextRoom());
+              rdrRef.current.selectedEditFeature = null;
             }}
             // @ts-ignore web-only pointer hover
             onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowRight(true)}
