@@ -960,7 +960,9 @@ export class Renderer {
     // Now, we need to check if the ray intersects any of the floor or wall features. Since these are known rectangles, this shouldn't be too bad.
     // We know that the floor and walls will be the first 4 features of the RenderableFeatures array.
     // We know that the ray will only ever intersect one of these features (we can't ever look at it from the back)
-    for (let i = 0; i < 5; i++) {
+    // NOTE: We actually disable this so we can only place on the floor. HOWEVER we leave the functionality here for later use. Set to 5 to allow wall placement.
+    const FEATURE_BOUND = 1; 
+    for (let i = 0; i < FEATURE_BOUND; i++) {
       const f = this.house.renderableFeatures[i];
       if (!f.visible) {
         continue; // skip hidden features (e.g. walls)
