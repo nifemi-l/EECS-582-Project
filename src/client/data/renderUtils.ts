@@ -1194,7 +1194,6 @@ export class RenderableFeature extends Feature {
 
       // Finally, update the current scale value
       this.scale = scaleBy;
-      console.log("Scaled to", scaleBy, "from", scaleAmt);
    }
 
    rotateFeatureY(rotAmt: number) {
