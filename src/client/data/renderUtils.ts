@@ -640,7 +640,7 @@ export class Renderer {
       if (!f.visible) {continue;} // Skip invisible features always
 
       if (f.room_id !== this.currentViewingRoom) {
-        if (i < 4) {
+        if (i < 5) {
           // The first four features are always the walls and floor, we render them
         } else if (f.room_id === null && this.currentViewingRoom === UNASSIGNED_ROOM_ID) {
           // If the room id is unassigned, and we're in the unassigned room, then render
