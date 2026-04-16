@@ -60,9 +60,6 @@ export const FAR_CLIP = 100.0;
 const MIN_WORLD_SCALE = 0.1;
 const MAX_WORLD_SCALE = 6.0;
 
-// Define the maximum number of attempts before we give up on placing a feature with a bad XYZ position
-const MAX_PLACE_ATTEMPTS = 10;
-
 // Radians FOV
 export const FOV_RADIANS = (45 * Math.PI / 180);
 
@@ -1063,31 +1060,43 @@ export class Renderer {
     return null;
   }
 
-  // Check if a block already exists in a cell without removing
-  checkCellFree(cellX: number, cellY: number, cellZ: number) {
-    // Iterate over the features and see if something is in the provided cell. If so, we know it is not free
-    for (let i = 0; i < this.house.renderableFeatures.length; i++) {
-      if (this.house.renderableFeatures[i].x_pos == cellX && this.house.renderableFeatures[i].y_pos == cellY && this.house.renderableFeatures[i].z_pos == cellZ) {
-        return false;
-      } 
-    }
-    return true;
-  }
-
   // See if a cell is within the bounds of the grid
-  checkCellInBounds(cellX: number, cellY: number, cellZ: number) {
+  checkValidMove(posX: number, posY: number, posZ: number, dir: MoveDirection) {
     // Disallow invalid block positions. For a grid of size 10,10 we allow range [-5, 4] in the xz directions. We lock to the xz plane (y=0)
     const halfGridWidth = Math.floor(this.grid.width / 2);
     const halfGridHeight = Math.floor(this.grid.height / 2);
-    if ((cellX < 0 - halfGridWidth || cellX >= halfGridWidth) || Math.abs(cellY) > 0 || (cellZ < 0 - halfGridHeight || cellZ >= halfGridHeight)) {
-      return false;
-    }
-    return true;
-  }
 
-  // A wrapper function to check if a cell is both free and within the grid
-  checkValidCell(cellX: number, cellY: number, cellZ: number) {
-    return this.checkCellInBounds(cellX, cellY, cellZ) && this.checkCellFree(cellX, cellY, cellZ);
+    // We want to allow movement if the direction of travel is in-bounds, otherwise we disallow it
+    switch (dir) {
+        // For each of these, we check if the direction of movement brings us closer or further from the edge
+        case MoveDirection.POS_X:
+          if (posX + 1 >= halfGridWidth) {
+            // we know we're out of bounds
+            return false;
+          }
+          break;
+        case MoveDirection.NEG_X:
+          if (posX - 1 <= 0 - halfGridWidth) {
+            // we know we're out of bounds
+            return false;
+          }
+          break;
+        case MoveDirection.POS_Z:
+          if (posZ + 1 >= halfGridHeight) {
+            // we know we're out of bounds
+            return false;
+          }
+          break;
+        case MoveDirection.NEG_Z:
+          if (posZ - 1 <= 0 - halfGridHeight) {
+            // we know we're out of bounds
+            return false;
+          }
+          break;
+      }
+    
+    // Otherwsie, we return true since movement is allowed
+    return true;
   }
 }
 
@@ -1124,6 +1133,8 @@ export class RenderableFeature extends Feature {
    material: Material; // How the feature looks materially
    visible: boolean;
    mesh: string | undefined; // if null, draw a cube
+   scale: number;
+   rotationY: number;
 
    constructor(name: string, household_id: number, feature_id: number, mm?: GLM.mat4, mat?: Material, x?: number, y?: number, z?: number, tasks?: Task[], type?: FeatureType, icon?: string, ) {
     super(name, household_id, type, x, y, z, feature_id, icon);
@@ -1147,10 +1158,70 @@ export class RenderableFeature extends Feature {
 
     // Default to visibile
     this.visible = true;
+
+    // Set default transform values
+    this.scale = 1;
+    this.rotationY = 0;
    }
 
    setID(id: number) {
     this.id = id;
+   }
+
+   scaleFeature(scaleAmt: number) {
+      // Figure out how much to scale the feature by
+      let scaleBy = this.scale + scaleAmt; // we will scale from the identity to this value
+      // Set scale to max or min depending on its sign (if we end to grow or shrink the feature) if it is out of bounds
+      scaleBy = scaleBy > 0 ? scaleBy > MAX_WORLD_SCALE ? MAX_WORLD_SCALE : scaleBy : scaleBy < MIN_WORLD_SCALE ? MIN_WORLD_SCALE : scaleBy
+
+      // First, reset the scale to 0. We save rotation and position, then set to identity.
+      // This helps us use a consistent scale factor and also helps avoid floating point error accumulation
+      // We already know the scale factor since it is an integer
+      const rot = GLM.quat.create(); // rotation as a quaternion
+      GLM.mat4.getRotation(rot, this.modelMatrix);
+      const pos = GLM.vec3.create();
+      GLM.mat4.getTranslation(pos, this.modelMatrix);
+      GLM.mat4.identity(this.modelMatrix); // reset to identity
+      
+      // Now, reapply the position and rotation values
+      GLM.mat4.fromRotationTranslationScale(this.modelMatrix, rot, pos, [scaleBy, scaleBy, scaleBy]);
+
+      // Finally, update the current scale value
+      this.scale = scaleBy;
+      console.log("Scaled to", scaleBy);
+   }
+
+   rotateFeatureY(rotAmt: number) {
+      GLM.mat4.rotateY(this.modelMatrix, this.modelMatrix, rotAmt);
+   }
+
+   translateFeatureByOne(dir: MoveDirection) {
+    // We want to translate the feature in terms of world space, not local space. So, we have to pre-multiply our matrix
+    // instead of the typical GLM post multiply
+    const translationMatrix = GLM.mat4.create();
+    let translationVector = [0, 0, 0];
+    switch (dir) {
+      case MoveDirection.POS_X:
+        translationVector[0] = 1;
+        this.x_pos += 1;
+        break;
+      case MoveDirection.NEG_X:
+        translationVector[0] = -1;
+        this.x_pos -= 1;
+        break;
+      case MoveDirection.POS_Z:
+        translationVector[2] = 1;
+        this.z_pos += 1;
+        break;
+      case MoveDirection.NEG_Z:
+        translationVector[2] = -1;
+        this.z_pos -= 1;
+        break;
+    }
+
+    // Now, actually apply the translation in world space
+    GLM.mat4.fromTranslation(translationMatrix, translationVector);
+    GLM.mat4.multiply(this.modelMatrix, translationMatrix, this.modelMatrix);
    }
 }
 
@@ -1169,6 +1240,28 @@ export class RenderableHousehold extends Household {
 
    // Active renderer
    rdr: Renderer;
+
+  // Scale a particular feature by a certain amount
+  scaleSelectedFeature(scaleAmt: number) {
+    // Ensure we have a feature selected
+    if (!this.rdr.selectedEditFeature) {
+      console.error("Attempting to scale null feature.");
+      return;
+    }
+
+    this.rdr.selectedEditFeature.scaleFeature(scaleAmt);
+  }
+
+  // Rotate a particular feature by a certain amount around the Y axis
+  rotateSelectedFeatureY(rotAmt: number) {
+    // Ensure we have a feature selected
+    if (!this.rdr.selectedEditFeature) {
+      console.error("Attempting to scale null feature.");
+      return;
+    }
+
+    this.rdr.selectedEditFeature.rotateFeatureY(rotAmt);
+  }
 
    // change the size of the floor feature to match the grid
    resizeFloorFeature() {
@@ -1192,27 +1285,23 @@ export class RenderableHousehold extends Household {
     // Apply movement. First, check if the proposed move would be within bounds. Then, apply updates to the model matrices and XYZ values.
     switch (dir) {
       case MoveDirection.POS_X:
-        if (this.rdr.checkValidCell(this.rdr.selectedEditFeature.x_pos + 1, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos)) {
-          this.rdr.selectedEditFeature.x_pos += 1;
-          GLM.mat4.translate(this.rdr.selectedEditFeature.modelMatrix, this.rdr.selectedEditFeature.modelMatrix, [1, 0, 0]);
+        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, MoveDirection.POS_X)) {
+          this.rdr.selectedEditFeature.translateFeatureByOne(MoveDirection.POS_X);
         }
         break;
       case MoveDirection.NEG_X:
-        if (this.rdr.checkValidCell(this.rdr.selectedEditFeature.x_pos - 1, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos)) {
-          this.rdr.selectedEditFeature.x_pos -= 1;
-          GLM.mat4.translate(this.rdr.selectedEditFeature.modelMatrix, this.rdr.selectedEditFeature.modelMatrix, [-1, 0, 0]);
+        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, MoveDirection.NEG_X)) {
+          this.rdr.selectedEditFeature.translateFeatureByOne(MoveDirection.NEG_X);
         }
         break;
       case MoveDirection.POS_Z:
-        if (this.rdr.checkValidCell(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos + 1)) {
-          this.rdr.selectedEditFeature.z_pos += 1;
-          GLM.mat4.translate(this.rdr.selectedEditFeature.modelMatrix, this.rdr.selectedEditFeature.modelMatrix, [0, 0, 1]);
+        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, MoveDirection.POS_Z)) {
+          this.rdr.selectedEditFeature.translateFeatureByOne(MoveDirection.POS_Z);
         }
         break;
       case MoveDirection.NEG_Z:
-        if (this.rdr.checkValidCell(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos - 1)) {
-          this.rdr.selectedEditFeature.z_pos -= 1;
-          GLM.mat4.translate(this.rdr.selectedEditFeature.modelMatrix, this.rdr.selectedEditFeature.modelMatrix, [0, 0, -1]);
+        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, MoveDirection.NEG_Z)) {
+          this.rdr.selectedEditFeature.translateFeatureByOne(MoveDirection.NEG_Z);
         }
         break;
       default:

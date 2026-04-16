@@ -268,8 +268,8 @@ function ColorButtons() {
           gap: 10,
         }}
       >
-        {/* Edit grid size buttons */}
-        <Pressable
+        {/* Edit grid size buttons - DISABLED for now */}
+        {/* <Pressable
           onPress={() => {rdr.grid.resize(rdr.grid.width + 2, rdr.grid.height); rdr.house.resizeFloorFeature()}}>
           <MaterialCommunityIcons name='arrow-right' color="#abcd" />
         </Pressable>
@@ -287,7 +287,7 @@ function ColorButtons() {
         <Pressable
           onPress={() => {rdr.grid.resize(rdr.grid.width, rdr.grid.height - 2); rdr.house.resizeFloorFeature()}}>
           <MaterialCommunityIcons name='arrow-down' color="#abcd" />
-        </Pressable>
+        </Pressable> */}
       </View>
     </View>
   );
@@ -422,6 +422,20 @@ function EditWindow() {
                 <View style={{transform: [{rotate: `${xAxisAngle + 3 * Math.PI / 2}rad`}]}}>
                   <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
                 </View>
+              </Button>
+            </Card.Actions>
+            <Card.Actions>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.rotateSelectedFeatureY(25)}}>
+                <MaterialCommunityIcons name="axis-z-rotate-clockwise" size={18} color="#FFFFFF"/>
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.rotateSelectedFeatureY(-25)}}>
+                <MaterialCommunityIcons name="axis-z-rotate-counterclockwise" size={18} color="#FFFFFF"/>
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.scaleSelectedFeature(0.25)}}>
+                <MaterialCommunityIcons name="plus" size={18} color="#FFFFFF"/>
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.scaleSelectedFeature(-0.25)}}>
+                <MaterialCommunityIcons name="minus" size={18} color="#FFFFFF"/>
               </Button>
             </Card.Actions>
             {/* Display chore cycle button if needed */}
