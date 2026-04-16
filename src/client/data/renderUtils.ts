@@ -841,6 +841,10 @@ export class Renderer {
     return this.roomList.find((r) => (r.room_id === roomId))?.room_name || "Unknown";
   }
 
+  getRoomAccentColorFromId(roomId: number) {
+    return this.roomList.find((r) => (r.room_id === roomId))?.accent_color;
+  }
+
   // Adds the unassigned room to the array if it isn't already present
   enableUnassignedRoom() {
     // Check if the unassigned room is already being used

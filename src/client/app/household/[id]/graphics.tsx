@@ -43,6 +43,7 @@ import { Button, PaperProvider, Card, Menu, TextInput } from 'react-native-paper
 import { useLocalSearchParams } from "expo-router";
 import { appPaperLightTheme } from "../../../theme/paperTheme";
 import { listBrand } from "../../../theme/colors";
+import tinycolor from "tinycolor2";
 
 // Import graphics utilities
 import {
@@ -295,10 +296,6 @@ function ColorButtons() {
 }
 
 // A window that will appear to edit feature info
-/** Room nav chevron default / web-hover (brighter green on hover) */
-const ROOM_CHEVRON_COLOR = "#29ff46";
-const ROOM_CHEVRON_COLOR_HOVER = "#5EFF9A";
-
 function EditWindow() {
   // if in edit mode or not
   const [isEditing, setIsEditing] = useState(false);
@@ -675,6 +672,11 @@ function AuthenticatedGraphicsScreen() {
   const roomBarLeftInset = Math.min(Math.max(Math.round(layoutWidth * 0.34), 116), 210);
   const roomChevronSize = layoutWidth < 360 ? 28 : layoutWidth < 480 ? 32 : 36;
   const roomLabelFontSize = layoutWidth < 360 ? 11 : layoutWidth < 480 ? 12 : 14;
+
+  /** Room nav chevron default / web-hover (brighter green on hover) */
+  const ROOM_ACCENT_COLOR = rdrRef.current.getRoomAccentColorFromId(currentViewingRoom);
+  const ROOM_CHEVRON_COLOR = !ROOM_ACCENT_COLOR ? "#29ff46" : ROOM_ACCENT_COLOR;
+  const ROOM_CHEVRON_COLOR_HOVER = !ROOM_ACCENT_COLOR ? "#5EFF9A" : tinycolor(ROOM_ACCENT_COLOR).brighten(10).toHexString();
 
   return (
     featureFetchSuccess ? (
