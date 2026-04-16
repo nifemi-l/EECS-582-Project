@@ -16,7 +16,7 @@ Revision date:
   - 4/13/26: Add room selection UI & rotate position widget in edit menu to match rotation angle
   - 4/13/26: Add consolidation to current room selection UI for mobile devices
   - 4/13/26: Web hover on Edit button and room chevrons (chevron scale via transform)
-  - 4/15/26: Add edit window buttons for feature rotation, scaling, and translation. Other tweaks
+  - 4/15/26: Add edit window buttons for feature rotation, scaling, and translation. Other tweaks. Also rooms
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -58,7 +58,7 @@ import {
 } from "../../../data/renderUtils"
 
 // Import local api utilities
-import { fetchHouseholdFeatures } from "../../../data/api";
+import { fetchHouseholdFeatures, fetchHouseholdRooms } from "../../../data/api";
 import Feature, { getFeatureTypeFromString } from "../../../data/feature";
 import Task from "../../../data/task";
 
@@ -400,7 +400,7 @@ function EditWindow() {
           <Card
             mode='contained'
           >
-            <Card.Title title={selectedFeature.feature_name + "[" + selectedFeature.id + "]"}/>
+            <Card.Title title={selectedFeature.feature_name}/>
             <Card.Actions>
               <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.POS_X)}}>
                 <View style={{transform: [{rotate: `${xAxisAngle}rad`}]}}>
@@ -605,6 +605,19 @@ function AuthenticatedGraphicsScreen() {
   // Reload the features of our housewhenever the household ID changes.
   // Also mostly from list.tsx (thanks again Nifemi)
   useEffect(() => {
+    // Get household room data
+    fetchHouseholdRooms(householdId)
+      .then((roomsData) => {
+        // From our room data, get the list of room data objects
+        const rooms = Array.isArray(roomsData) ? roomsData : [];
+        rdrRef.current.setRooms(rooms);
+        setCurrentViewingRoom(rdrRef.current.setValidRoom());
+      }) 
+      .catch((e) => {
+        console.error("Failed to fetch rooms for household", householdId, e);
+      });
+
+    // Get household feature data
     fetchHouseholdFeatures(householdId)
       .then((data: any[]) => {
               // Convert the raw JSON objects into Feature/Task class instances
@@ -617,8 +630,6 @@ function AuthenticatedGraphicsScreen() {
                   f.x_pos, f.y_pos, f.z_pos,
                   f.feature_id,
                   f.icon || "home-outline",
-                  0,
-                  "default",
                   f.room_id != null ? Number(f.room_id) : null
                 );
                 feat.tasks = (f.tasks || []).map((t: any) => {
@@ -664,7 +675,6 @@ function AuthenticatedGraphicsScreen() {
   const roomBarLeftInset = Math.min(Math.max(Math.round(layoutWidth * 0.34), 116), 210);
   const roomChevronSize = layoutWidth < 360 ? 28 : layoutWidth < 480 ? 32 : 36;
   const roomLabelFontSize = layoutWidth < 360 ? 11 : layoutWidth < 480 ? 12 : 14;
-  const roomLabelShort = layoutWidth < 420;
 
   return (
     featureFetchSuccess ? (
@@ -709,8 +719,7 @@ function AuthenticatedGraphicsScreen() {
             hitSlop={8}
             style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
             onPress={() => {
-              rdrRef.current.currentViewingRoom -= 1;
-              setCurrentViewingRoom(rdrRef.current.currentViewingRoom);
+              setCurrentViewingRoom(rdrRef.current.goPrevRoom());
               rdrRef.current.selectedEditFeature = null;
             }}
             // @ts-ignore web-only pointer hover
@@ -745,9 +754,7 @@ function AuthenticatedGraphicsScreen() {
               paddingHorizontal: 4,
             }}
           >
-            {roomLabelShort
-              ? `Room (${currentViewingRoom})`
-              : `Currently viewing room: (${currentViewingRoom})`}
+            {rdrRef.current.getRoomNameFromId(currentViewingRoom)}
           </Text>
           <Pressable
             accessibilityRole="button"
@@ -755,8 +762,7 @@ function AuthenticatedGraphicsScreen() {
             hitSlop={8}
             style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
             onPress={() => {
-              rdrRef.current.currentViewingRoom += 1;
-              setCurrentViewingRoom(rdrRef.current.currentViewingRoom);
+              setCurrentViewingRoom(rdrRef.current.goNextRoom());
               rdrRef.current.selectedEditFeature = null;
             }}
             // @ts-ignore web-only pointer hover

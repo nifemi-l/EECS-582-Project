@@ -20,6 +20,7 @@ Revision date:
   - 4/12/26: Phone-sized layout fixes and in-app delete prompts instead of system popups
   - 4/13/26: Web hover feedback on list rows, headers, add-task/section controls
   - 4/14/26: Collapsible room grouping, room CRUD, feature room assignment
+  - 4/15/26: Remove room_number and room_name parameters from the feature object
 Preconditions: Flask server reachable at EXPO_PUBLIC_API_URL with the household's data in the DB
 Postconditions: Renders an interactive task list that stays in sync with the database
 Errors: Shows error state with retry button if API is unreachable
@@ -1195,8 +1196,6 @@ function AuthenticatedListScreen() {
             f.z_pos,
             f.feature_id,
             f.icon || "home-outline",
-            0,
-            "default",
             f.room_id != null ? Number(f.room_id) : null
           );
           feat.tasks = (f.tasks || []).map((t: any) => {
@@ -1474,8 +1473,6 @@ function AuthenticatedListScreen() {
             0,
             feature_id,
             icon,
-            0,
-            "default",
             roomId
           );
           setFeatures((prev) => [...prev, newLoc]);

@@ -7,6 +7,7 @@ Revision date:
   - 3/8/26: Updated to match Feature table in DDL, reference Task instead of Task
   - 4/1/26: Add feature type enum and translation function
   - 4/13/26: Add room_id (FK to Room) for list grouping
+  - 4/15/26: Remove room_name, room_number from the feature object
 Preconditions: A client is running and has access to the Feature class.
 Postconditions: An instantiated feature class.
 Errors: None.
@@ -57,12 +58,10 @@ export default class Feature {
     z_pos: number;
     tasks: Task[];
     icon: string; // for compatibility
-    room_number: number; // store which room the feature is in (3D / legacy)
-    room_name: string; // store the name of the current room (3D / legacy)
-    /** Nullable FK to Room for list-view grouping */
+    /** Nullable FK to Room for view grouping */
     room_id: number | null;
 
-    constructor(feature_name: string, household_id: number, feature_type: FeatureType = FeatureType.UNDEFINED, x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline", room_number: number = 0, room_name: string = "default", room_id: number | null = null) {
+    constructor(feature_name: string, household_id: number, feature_type: FeatureType = FeatureType.UNDEFINED, x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline", room_id: number | null = null) {
         this.feature_name = feature_name;
         this.name = feature_name;
         this.household_id = household_id;
@@ -74,8 +73,6 @@ export default class Feature {
         this.id = feature_id;
         this.tasks = [];
         this.icon = icon;
-        this.room_number = room_number;
-        this.room_name = room_name;
         this.room_id = room_id;
     }
 
