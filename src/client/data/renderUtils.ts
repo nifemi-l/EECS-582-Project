@@ -5,6 +5,7 @@ Programmer: Jack Bauer
 Creation date: 3/29/26
 Revision date: 
   - 4/6/26: Convert to use FeatureType enum & support model loading
+  - 4/15/26: Add support for scaling, rotating, and moving features
 Preconditions: 
   - A proper draw / render loop is created outside of this file (Renderer does not contain its own loop, instead it has the pieces)
   - For the order of features in a renderable household's renderable features, the following are required:
@@ -59,6 +60,8 @@ export const FAR_CLIP = 100.0;
 // Define min and max world scaling
 const MIN_WORLD_SCALE = 0.1;
 const MAX_WORLD_SCALE = 6.0;
+const MIN_FEATURE_SCALE = 0.5;
+const MAX_FEATURE_SCALE = 2;
 
 // Radians FOV
 export const FOV_RADIANS = (45 * Math.PI / 180);
@@ -1063,7 +1066,7 @@ export class Renderer {
   }
 
   // See if a cell is within the bounds of the grid
-  checkValidMove(posX: number, posY: number, posZ: number, dir: MoveDirection) {
+  checkValidMove(posX: number, posY: number, posZ: number, translationAmt: number, dir: MoveDirection) {
     // Disallow invalid block positions. For a grid of size 10,10 we allow range [-5, 4] in the xz directions. We lock to the xz plane (y=0)
     const halfGridWidth = Math.floor(this.grid.width / 2);
     const halfGridHeight = Math.floor(this.grid.height / 2);
@@ -1072,25 +1075,25 @@ export class Renderer {
     switch (dir) {
         // For each of these, we check if the direction of movement brings us closer or further from the edge
         case MoveDirection.POS_X:
-          if (posX + 1 >= halfGridWidth) {
+          if (posX + translationAmt >= halfGridWidth) {
             // we know we're out of bounds
             return false;
           }
           break;
         case MoveDirection.NEG_X:
-          if (posX - 1 <= 0 - halfGridWidth) {
+          if (posX - translationAmt <= 0 - halfGridWidth) {
             // we know we're out of bounds
             return false;
           }
           break;
         case MoveDirection.POS_Z:
-          if (posZ + 1 >= halfGridHeight) {
+          if (posZ + translationAmt >= halfGridHeight) {
             // we know we're out of bounds
             return false;
           }
           break;
         case MoveDirection.NEG_Z:
-          if (posZ - 1 <= 0 - halfGridHeight) {
+          if (posZ - translationAmt <= 0 - halfGridHeight) {
             // we know we're out of bounds
             return false;
           }
@@ -1173,8 +1176,9 @@ export class RenderableFeature extends Feature {
    scaleFeature(scaleAmt: number) {
       // Figure out how much to scale the feature by
       let scaleBy = this.scale + scaleAmt; // we will scale from the identity to this value
+
       // Set scale to max or min depending on its sign (if we end to grow or shrink the feature) if it is out of bounds
-      scaleBy = scaleBy > 0 ? scaleBy > MAX_WORLD_SCALE ? MAX_WORLD_SCALE : scaleBy : scaleBy < MIN_WORLD_SCALE ? MIN_WORLD_SCALE : scaleBy
+      scaleBy = scaleAmt > 0 ? (scaleBy > MAX_FEATURE_SCALE ? MAX_FEATURE_SCALE : scaleBy) : (scaleBy < MIN_FEATURE_SCALE ? MIN_FEATURE_SCALE : scaleBy)
 
       // First, reset the scale to 0. We save rotation and position, then set to identity.
       // This helps us use a consistent scale factor and also helps avoid floating point error accumulation
@@ -1190,34 +1194,34 @@ export class RenderableFeature extends Feature {
 
       // Finally, update the current scale value
       this.scale = scaleBy;
-      console.log("Scaled to", scaleBy);
+      console.log("Scaled to", scaleBy, "from", scaleAmt);
    }
 
    rotateFeatureY(rotAmt: number) {
       GLM.mat4.rotateY(this.modelMatrix, this.modelMatrix, rotAmt);
    }
 
-   translateFeatureByOne(dir: MoveDirection) {
+   translateFeature(translationAmt: number, dir: MoveDirection) {
     // We want to translate the feature in terms of world space, not local space. So, we have to pre-multiply our matrix
     // instead of the typical GLM post multiply
     const translationMatrix = GLM.mat4.create();
     let translationVector = [0, 0, 0];
     switch (dir) {
       case MoveDirection.POS_X:
-        translationVector[0] = 1;
-        this.x_pos += 1;
+        translationVector[0] = translationAmt;
+        this.x_pos += translationAmt;
         break;
       case MoveDirection.NEG_X:
-        translationVector[0] = -1;
-        this.x_pos -= 1;
+        translationVector[0] = -translationAmt;
+        this.x_pos -= translationAmt;
         break;
       case MoveDirection.POS_Z:
-        translationVector[2] = 1;
-        this.z_pos += 1;
+        translationVector[2] = translationAmt;
+        this.z_pos += translationAmt;
         break;
       case MoveDirection.NEG_Z:
-        translationVector[2] = -1;
-        this.z_pos -= 1;
+        translationVector[2] = -translationAmt;
+        this.z_pos -= translationAmt;
         break;
     }
 
@@ -1277,7 +1281,7 @@ export class RenderableHousehold extends Household {
    }
    
    // Moves the selected edit feature one cell over based on the input direction
-   moveSelectedFeatureByOne(dir: MoveDirection) {
+   translateSelectedFeature(translationAmt: number, dir: MoveDirection) {
     // Ensure we have a feature selected
     if (!this.rdr.selectedEditFeature) {
       console.error("Attempting to move null feature.");
@@ -1287,23 +1291,23 @@ export class RenderableHousehold extends Household {
     // Apply movement. First, check if the proposed move would be within bounds. Then, apply updates to the model matrices and XYZ values.
     switch (dir) {
       case MoveDirection.POS_X:
-        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, MoveDirection.POS_X)) {
-          this.rdr.selectedEditFeature.translateFeatureByOne(MoveDirection.POS_X);
+        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, translationAmt, MoveDirection.POS_X)) {
+          this.rdr.selectedEditFeature.translateFeature(translationAmt, MoveDirection.POS_X);
         }
         break;
       case MoveDirection.NEG_X:
-        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, MoveDirection.NEG_X)) {
-          this.rdr.selectedEditFeature.translateFeatureByOne(MoveDirection.NEG_X);
+        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, translationAmt,  MoveDirection.NEG_X)) {
+          this.rdr.selectedEditFeature.translateFeature(translationAmt, MoveDirection.NEG_X);
         }
         break;
       case MoveDirection.POS_Z:
-        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, MoveDirection.POS_Z)) {
-          this.rdr.selectedEditFeature.translateFeatureByOne(MoveDirection.POS_Z);
+        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, translationAmt, MoveDirection.POS_Z)) {
+          this.rdr.selectedEditFeature.translateFeature(translationAmt, MoveDirection.POS_Z);
         }
         break;
       case MoveDirection.NEG_Z:
-        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, MoveDirection.NEG_Z)) {
-          this.rdr.selectedEditFeature.translateFeatureByOne(MoveDirection.NEG_Z);
+        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, translationAmt, MoveDirection.NEG_Z)) {
+          this.rdr.selectedEditFeature.translateFeature(translationAmt, MoveDirection.NEG_Z);
         }
         break;
       default:
