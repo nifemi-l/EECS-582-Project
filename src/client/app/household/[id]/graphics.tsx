@@ -17,6 +17,7 @@ Revision date:
   - 4/13/26: Add consolidation to current room selection UI for mobile devices
   - 4/13/26: Web hover on Edit button and room chevrons (chevron scale via transform)
   - 4/15/26: Add edit window buttons for feature rotation, scaling, and translation. Other tweaks. Also rooms
+    - 4/16/26: Add 3D scale, rotation database support
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -55,7 +56,7 @@ import {
 
 // Import renderer classes
 import {
-  RenderableFeature, Renderer, FOV_RADIANS, NEAR_CLIP, FAR_CLIP
+  RenderableFeature, Renderer, FOV_RADIANS, NEAR_CLIP, FAR_CLIP, INVALID_TASK_NAME
 } from "../../../data/renderUtils"
 
 // Import local api utilities
@@ -437,7 +438,11 @@ function EditWindow() {
             {/* Display chore cycle button if needed */}
             {selectedFeature.tasks.length > 1 ? (
               <Card.Actions style={{justifyContent:"center"}}>
-                <Button onPress={() => {setSelectedChore((selectedChore + 1) % selectedFeature.tasks.length)}}>Cycle chore: Selected {selectedChore}</Button>
+                <Button onPress={() => {setSelectedChore((selectedChore + 1) % selectedFeature.tasks.length)}}>Cycle chore: {
+                  selectedFeature.tasks[selectedChore].task_name === INVALID_TASK_NAME ? 
+                    "Unnamed " + selectedChore :
+                    selectedFeature.tasks[selectedChore].task_name
+                }</Button>
               </Card.Actions>
             ) : null}
             {/* Display chore related functionality if needed */}
@@ -449,12 +454,13 @@ function EditWindow() {
                     onDismiss={() => {setShowIntervalMenu(false); setNewFrequency("0")}}
                     anchor={<Button onPress={() => {setShowIntervalMenu(true)}}>Set interval</Button>}
                   >
-                    <TextInput label="The interval in days..." mode="outlined" value={newFrequency} keyboardType='numeric'
+                    <TextInput label="The interval in whole days..." mode="outlined" value={newFrequency} keyboardType='numeric'
                       onChangeText={(t) => {
                         // Convert our input to a number, check if it is not a number, then apply changes if we have valid input
+                        // They must be a number, an integer (we round), and >= 1
                         const fixed = Number(t);
-                        if (!Number.isNaN(fixed)) {
-                          selectedFeature.tasks[selectedChore].changeFrequency(fixed)}
+                        if (!Number.isNaN(fixed) && fixed >= 1) {
+                          selectedFeature.tasks[selectedChore].changeFrequency(Math.round(fixed))} // we round to the nearest integer
                           setNewFrequency(t);
                         }
                       }>
@@ -627,7 +633,9 @@ function AuthenticatedGraphicsScreen() {
                   f.x_pos, f.y_pos, f.z_pos,
                   f.feature_id,
                   f.icon || "home-outline",
-                  f.room_id != null ? Number(f.room_id) : null
+                  f.room_id != null ? Number(f.room_id) : null,
+                  f.scale,
+                  f.rotation_y
                 );
                 feat.tasks = (f.tasks || []).map((t: any) => {
                   const task = new Task(

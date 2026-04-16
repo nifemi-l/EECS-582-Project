@@ -8,6 +8,7 @@ Revision date:
   - 4/1/26: Add feature type enum and translation function
   - 4/13/26: Add room_id (FK to Room) for list grouping
   - 4/15/26: Remove room_name, room_number from the feature object
+  - 4/16/26: Add 3D scale, rotation support
 Preconditions: A client is running and has access to the Feature class.
 Postconditions: An instantiated feature class.
 Errors: None.
@@ -60,8 +61,10 @@ export default class Feature {
     icon: string; // for compatibility
     /** Nullable FK to Room for view grouping */
     room_id: number | null;
+    scale: number;
+    rotation_y: number;
 
-    constructor(feature_name: string, household_id: number, feature_type: FeatureType = FeatureType.UNDEFINED, x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline", room_id: number | null = null) {
+    constructor(feature_name: string, household_id: number, feature_type: FeatureType = FeatureType.UNDEFINED, x: number = 0, y: number = 0, z: number = 0, feature_id: number = 0, icon: string = "home-outline", room_id: number | null = null, scale: number = 1, rotation_y: number = 0) {
         this.feature_name = feature_name;
         this.name = feature_name;
         this.household_id = household_id;
@@ -74,6 +77,8 @@ export default class Feature {
         this.tasks = [];
         this.icon = icon;
         this.room_id = room_id;
+        this.scale = scale;
+        this.rotation_y = rotation_y;
     }
 
     addTask(task : Task) {

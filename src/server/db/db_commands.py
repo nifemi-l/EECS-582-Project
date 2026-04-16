@@ -7,6 +7,7 @@ Creation date: 2/22/26
 Revision date: 
     - 3/19/26: Added create_household, make_household_join_code, add_account_to_household, get_household_by_join_code, is_account_in_household, and get_households_for_account
     - 4/10/26: Added get_account_role_in_household, remove_account_from_household, get_members_for_household, and transfer_admin_in_household
+    - 4/16/26: Add 3D scale, rotation support
 Preconditions: Environment variables for database credentials are defined in .env; PostgreSQL database is running and accessible.
 Postconditions: A database connection is established and utility functions are available for performing CRUD operations on Household, Account, Feature, and Task relations.
 Errors: Database connection may fail due to invalid credentials, unreachable host, or server-side errors; SQL execution errors may occur if schema constraints are violated.
@@ -490,7 +491,7 @@ def get_features_with_tasks(household_id):
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT feature_id, household_id, feature_name, feature_type,
-                   x_pos, y_pos, z_pos, icon, room_id
+                   x_pos, y_pos, z_pos, icon, room_id, scale, rotation_y
             FROM Feature
             WHERE household_id = %s
             ORDER BY feature_id ASC
@@ -508,6 +509,8 @@ def get_features_with_tasks(household_id):
             "z_pos": f[6],
             "icon": f[7] or "home-outline",
             "room_id": f[8],
+            "scale": f[9],
+            "rotation_y": f[10],
             "tasks": [],
         }
         tasks = get_tasks_by_feature_id(f[0])
@@ -587,6 +590,8 @@ def update_feature(
     z_pos=None,
     icon=None,
     room_id=_FEATURE_ROOM_ID_UNSET,
+    scale=None,
+    rotation_y=None,
 ):
     # Build the SET clause dynamically based on which args were actually provided
     sets = []
@@ -612,6 +617,12 @@ def update_feature(
     if room_id is not _FEATURE_ROOM_ID_UNSET:
         sets.append("room_id = %s")
         params.append(room_id)
+    if scale is not None:
+        sets.append("scale = %s")
+        params.append(scale)
+    if rotation_y is not None:
+        sets.append("rotation_y = %s")
+        params.append(rotation_y)
     if not sets:
         return
     # feature_id goes at the end for the WHERE clause

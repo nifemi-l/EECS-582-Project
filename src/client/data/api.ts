@@ -9,6 +9,7 @@ Creation date: 3/29/26
 Revision date:
   - 3/29/26: Replace hardcoded localhost URL with EXPO_PUBLIC_API_URL env variable
   - 4/14/26: Room CRUD + feature room_id
+  - 4/16/26: Add 3D scale, rotation support
 Preconditions: Flask server must be reachable at EXPO_PUBLIC_API_URL; user must be logged in
 Postconditions: Returns parsed JSON from the server or throws on failure
 Errors: Throws an Error with the HTTP status if the response is not ok
@@ -131,6 +132,8 @@ export async function updateFeature(
     z_pos?: number;
     icon?: string;
     room_id?: number | null;
+    scale?: number,
+    rotation_y?: number,
   }
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/feature/${featureId}`, {
