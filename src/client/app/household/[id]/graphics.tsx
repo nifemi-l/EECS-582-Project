@@ -56,7 +56,7 @@ import {
 
 // Import renderer classes
 import {
-  RenderableFeature, Renderer, FOV_RADIANS, NEAR_CLIP, FAR_CLIP
+  RenderableFeature, Renderer, FOV_RADIANS, NEAR_CLIP, FAR_CLIP, INVALID_TASK_NAME
 } from "../../../data/renderUtils"
 
 // Import local api utilities
@@ -438,7 +438,11 @@ function EditWindow() {
             {/* Display chore cycle button if needed */}
             {selectedFeature.tasks.length > 1 ? (
               <Card.Actions style={{justifyContent:"center"}}>
-                <Button onPress={() => {setSelectedChore((selectedChore + 1) % selectedFeature.tasks.length)}}>Cycle chore: Selected {selectedChore}</Button>
+                <Button onPress={() => {setSelectedChore((selectedChore + 1) % selectedFeature.tasks.length)}}>Cycle chore: {
+                  selectedFeature.tasks[selectedChore].task_name === INVALID_TASK_NAME ? 
+                    "Unnamed " + selectedChore :
+                    selectedFeature.tasks[selectedChore].task_name
+                }</Button>
               </Card.Actions>
             ) : null}
             {/* Display chore related functionality if needed */}
@@ -450,12 +454,13 @@ function EditWindow() {
                     onDismiss={() => {setShowIntervalMenu(false); setNewFrequency("0")}}
                     anchor={<Button onPress={() => {setShowIntervalMenu(true)}}>Set interval</Button>}
                   >
-                    <TextInput label="The interval in days..." mode="outlined" value={newFrequency} keyboardType='numeric'
+                    <TextInput label="The interval in whole days..." mode="outlined" value={newFrequency} keyboardType='numeric'
                       onChangeText={(t) => {
                         // Convert our input to a number, check if it is not a number, then apply changes if we have valid input
+                        // They must be a number, an integer (we round), and >= 1
                         const fixed = Number(t);
-                        if (!Number.isNaN(fixed)) {
-                          selectedFeature.tasks[selectedChore].changeFrequency(fixed)}
+                        if (!Number.isNaN(fixed) && fixed >= 1) {
+                          selectedFeature.tasks[selectedChore].changeFrequency(Math.round(fixed))} // we round to the nearest integer
                           setNewFrequency(t);
                         }
                       }>

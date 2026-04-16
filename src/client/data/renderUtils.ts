@@ -80,6 +80,9 @@ const UNASSIGNED_ROOM_OBJ: HouseholdRoom = {
   accent_color: null
 };
 
+// An identifier for an invalid task name. If changing, note backwards compatability
+export const INVALID_TASK_NAME = "No name yet";
+
 // ***********************************************************
 //                       Renderer Class
 // ***********************************************************
@@ -992,7 +995,7 @@ export class Renderer {
         const now = new Date();
         apiCreateTask({
           feature_id: featureID.feature_id,
-          task_name: "No name yet",
+          task_name: INVALID_TASK_NAME,
           frequency_days: 1, // Default to daily task
           visibility: "household",
           last_completed: now.toISOString(), 
@@ -1289,6 +1292,10 @@ export class RenderableFeature extends Feature {
     // Set scale to max or min depending on its sign (if we end to grow or shrink the feature) if it is out of bounds
     scaleBy = scaleAmt > 0 ? (scaleBy > MAX_FEATURE_SCALE ? MAX_FEATURE_SCALE : scaleBy) : (scaleBy < MIN_FEATURE_SCALE ? MIN_FEATURE_SCALE : scaleBy)
 
+    // Before we begin, save a rollback matrix in case the DB fails
+    const rollbackMatrix = this.modelMatrix;
+    const rollbackScale = this.scale;
+
     // First, reset the scale to 0. We save rotation and position, then set to identity.
     // This helps us use a consistent scale factor and also helps avoid floating point error accumulation
     // We already know the scale factor since it is an integer
@@ -1304,11 +1311,20 @@ export class RenderableFeature extends Feature {
     // Update the current scale value
     this.scale = scaleBy;
 
-    // Now, update the DB
-    await apiUpdateFeature(this.id, {scale: this.scale});
+    // Now, update the DB - Rollback on failure
+    apiUpdateFeature(this.id, {scale: this.scale}).catch( (e) => {
+      this.modelMatrix = rollbackMatrix;
+      this.scale = rollbackScale;
+      console.error("Failed to scale feature on remote.", e);
+    });
    }
 
    async rotateFeatureY(rotAmt: number) {
+    // Before we begin, save a rollback matrix in case the DB fails
+    const rollbackMatrix = this.modelMatrix;
+    const rollbackRotation = this.rotation_y;
+
+    // Apply the rotation
     GLM.mat4.rotateY(this.modelMatrix, this.modelMatrix, rotAmt);
 
     // Save off our new rotation angle
@@ -1327,10 +1343,20 @@ export class RenderableFeature extends Feature {
     this.rotation_y = yRot * 180 / Math.PI; // convert to degrees
 
     // Now, update the DB
-    await apiUpdateFeature(this.id, {rotation_y: this.rotation_y});
+    apiUpdateFeature(this.id, {rotation_y: this.rotation_y}).catch( (e) => {
+      this.modelMatrix = rollbackMatrix;
+      this.rotation_y = rollbackRotation;
+      console.error("Failed to rotate feature on remote.", e);
+    });
    }
 
    async translateFeature(translationAmt: number, dir: MoveDirection) {
+    // Before we begin, save a rollback matrix in case the DB fails
+    const rollbackMatrix = this.modelMatrix;
+    const rollbackPositionX = this.x_pos;
+    const rollbackPositionY = this.y_pos;
+    const rollbackPositionZ = this.z_pos;
+
     // We want to translate the feature in terms of world space, not local space. So, we have to pre-multiply our matrix
     // instead of the typical GLM post multiply
     const translationMatrix = GLM.mat4.create();
@@ -1359,10 +1385,16 @@ export class RenderableFeature extends Feature {
     GLM.mat4.multiply(this.modelMatrix, translationMatrix, this.modelMatrix);
 
     // Now, update the DB
-    await apiUpdateFeature(this.id, {
+    apiUpdateFeature(this.id, {
       x_pos: this.x_pos,
       y_pos: this.y_pos,
       z_pos: this.z_pos
+    }).catch( (e) => {
+      this.modelMatrix = rollbackMatrix;
+      this.x_pos = rollbackPositionX;
+      this.y_pos = rollbackPositionY;
+      this.z_pos = rollbackPositionZ;
+      console.error("Failed to translate feature on remote.", e);
     });
    }
 }
