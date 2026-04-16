@@ -711,6 +711,7 @@ function AuthenticatedGraphicsScreen() {
             onPress={() => {
               rdrRef.current.currentViewingRoom -= 1;
               setCurrentViewingRoom(rdrRef.current.currentViewingRoom);
+              rdrRef.current.selectedEditFeature = null;
             }}
             // @ts-ignore web-only pointer hover
             onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowLeft(true)}
@@ -756,6 +757,7 @@ function AuthenticatedGraphicsScreen() {
             onPress={() => {
               rdrRef.current.currentViewingRoom += 1;
               setCurrentViewingRoom(rdrRef.current.currentViewingRoom);
+              rdrRef.current.selectedEditFeature = null;
             }}
             // @ts-ignore web-only pointer hover
             onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowRight(true)}
