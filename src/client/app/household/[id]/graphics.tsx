@@ -336,6 +336,12 @@ function EditWindow() {
     }
   }, [selectedChore])
 
+  // When selectedFeature changes, we want to update selectedChore as rdr.selectedEditTask may have changed
+  useEffect(() => {
+    // Just reset to a clean state
+    setSelectedChore(0);
+  }, [selectedFeature])
+
   return (
     <View 
       style={{
