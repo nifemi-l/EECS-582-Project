@@ -114,6 +114,9 @@ function setSelectedEditFeature(feature: RenderableFeature | null) {
   rdr.selectedEditFeature = feature;
   if (feature !== null && feature.tasks.length > 0) {
     rdr.selectedEditTask = feature.tasks[0];
+  } 
+  if (!feature) {
+    rdr.selectedEditTask = null;
   }
   reactListeners.forEach((cb) => cb(rdr.selectedEditFeature)); // call the callback set by each listener
 }
