@@ -822,6 +822,7 @@ export class Renderer {
           // Find the task with the worst decay
           for (let j = 0; j < this.house.renderableFeatures[i].tasks.length; j++) {
             const iterTask = this.house.renderableFeatures[i].tasks[j];
+            iterTask.getAndSetHealthPercent(); // ensure we have up-to-date info
 
             // If we haven't set a task yet, set it
             if (!worstDecayTask) {
