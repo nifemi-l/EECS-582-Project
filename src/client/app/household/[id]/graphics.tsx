@@ -466,7 +466,7 @@ function EditWindow() {
               </Button>
             </Card.Actions>
             {/* Display chore cycle button if needed */}
-            {selectedFeature.tasks.length > 1 ? (
+            {selectedFeature.tasks.length > 1 && selectedChore < selectedFeature.tasks.length ? (
               <Card.Actions style={{justifyContent:"center"}}>
                 <Button onPress={() => {
                   const taskIndex = (selectedChore + 1) % selectedFeature.tasks.length;
