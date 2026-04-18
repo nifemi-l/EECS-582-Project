@@ -5,6 +5,7 @@ Programmer: Jack Bauer
 Creation date: 3/29/26
 Revision date: 
   - 4/6/26: Support mesh loading
+  - 4/18/26: Highlight selected task and health bar
 Preconditions: Shader paths must also be added to app.json, VAOs must be bound properly outside drawMesh()
 Postconditions: None
 Errors: None
@@ -164,6 +165,10 @@ export interface ShaderBillboardUniformLocations {
     projection: WebGLUniformLocation | null,
     heightOffset: WebGLUniformLocation | null,
     healthPercent: WebGLUniformLocation | null,
+    fillColor: WebGLUniformLocation | null,
+    backgroundColor: WebGLUniformLocation | null,
+    highlightColor: WebGLUniformLocation | null,
+    selected: WebGLUniformLocation | null,
 }
 // Pick objects
 export interface ShaderPickLocations {

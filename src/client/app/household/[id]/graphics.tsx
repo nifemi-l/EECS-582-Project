@@ -17,7 +17,8 @@ Revision date:
   - 4/13/26: Add consolidation to current room selection UI for mobile devices
   - 4/13/26: Web hover on Edit button and room chevrons (chevron scale via transform)
   - 4/15/26: Add edit window buttons for feature rotation, scaling, and translation. Other tweaks. Also rooms
-    - 4/16/26: Add 3D scale, rotation database support
+  - 4/16/26: Add 3D scale, rotation database support
+  - 4/18/26: Highlight selected task and health bar
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -111,6 +112,9 @@ function subListener(cb: ((val: any) => void)) {
 // setter so that listeners are all notified on update
 function setSelectedEditFeature(feature: RenderableFeature | null) {
   rdr.selectedEditFeature = feature;
+  if (feature !== null && feature.tasks.length > 0) {
+    rdr.selectedEditTask = feature.tasks[0];
+  }
   reactListeners.forEach((cb) => cb(rdr.selectedEditFeature)); // call the callback set by each listener
 }
 
@@ -312,6 +316,23 @@ function EditWindow() {
   // The angle between the camera and the x axis
   const xAxisAngle = useSyncExternalStore(subListener, getXAxisAngle); // will be updated externally to react, triggers a re-render on change
 
+  // Ensure sync between the renderer's selected task and the UI's selected task
+  useEffect(() => {
+    if (selectedChore === 0) {
+      if (selectedFeature !== null && selectedFeature?.tasks.length > 0) {
+        rdr.selectedEditTask = selectedFeature.tasks[selectedChore];
+      } else {
+        rdr.selectedEditTask = null;
+      }
+    } else {
+      if (selectedFeature !== null) {
+        rdr.selectedEditTask = selectedFeature.tasks[selectedChore];
+      } else {
+        rdr.selectedEditTask = null;
+      }
+    }
+  }, [selectedChore])
+
   return (
     <View 
       style={{
@@ -438,7 +459,10 @@ function EditWindow() {
             {/* Display chore cycle button if needed */}
             {selectedFeature.tasks.length > 1 ? (
               <Card.Actions style={{justifyContent:"center"}}>
-                <Button onPress={() => {setSelectedChore((selectedChore + 1) % selectedFeature.tasks.length)}}>Cycle chore: {
+                <Button onPress={() => {
+                  const taskIndex = (selectedChore + 1) % selectedFeature.tasks.length;
+                  setSelectedChore(taskIndex);
+                }}>Cycle chore: {
                   selectedFeature.tasks[selectedChore].task_name === INVALID_TASK_NAME ? 
                     "Unnamed " + selectedChore :
                     selectedFeature.tasks[selectedChore].task_name
@@ -731,6 +755,7 @@ function AuthenticatedGraphicsScreen() {
             onPress={() => {
               setCurrentViewingRoom(rdrRef.current.goPrevRoom());
               rdrRef.current.selectedEditFeature = null;
+              rdrRef.current.selectedEditTask = null;
             }}
             // @ts-ignore web-only pointer hover
             onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowLeft(true)}
@@ -774,6 +799,7 @@ function AuthenticatedGraphicsScreen() {
             onPress={() => {
               setCurrentViewingRoom(rdrRef.current.goNextRoom());
               rdrRef.current.selectedEditFeature = null;
+              rdrRef.current.selectedEditTask = null;
             }}
             // @ts-ignore web-only pointer hover
             onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowRight(true)}

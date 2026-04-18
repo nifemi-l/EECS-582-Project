@@ -7,6 +7,7 @@ Revision date:
   - 4/6/26: Convert to use FeatureType enum & support model loading
   - 4/15/26: Add support for scaling, rotating, and moving features. Also rooms
   - 4/16/26: Connect edit menu to database
+  - 4/18/26: Highlight selected task and health bar
 Preconditions: 
   - A proper draw / render loop is created outside of this file (Renderer does not contain its own loop, instead it has the pieces)
   - For the order of features in a renderable household's renderable features, the following are required:
@@ -83,6 +84,11 @@ const UNASSIGNED_ROOM_OBJ: HouseholdRoom = {
 // An identifier for an invalid task name. If changing, note backwards compatability
 export const INVALID_TASK_NAME = "No name yet";
 
+// Colors for the healthbar - vec4 from 0 to 1 with RGBA
+const HEALTHBAR_FILL_COLOR: GLM.vec4 = GLM.vec4.fromValues(0.0, 1.0, 0.0, 1.0);
+const HEALTHBAR_BACKGROUND_COLOR: GLM.vec4 = GLM.vec4.fromValues(1.0, 0.0, 0.0, 1.0);
+const HEALTHBAR_HIGHLIGHT_COLOR: GLM.vec4 = GLM.vec4.fromValues(1.0, 215/255, 0.0, 1.0);
+
 // ***********************************************************
 //                       Renderer Class
 // ***********************************************************
@@ -129,6 +135,7 @@ export class Renderer {
   // Application data
   house: RenderableHousehold; // The displayed household 
   selectedEditFeature: RenderableFeature | null; // The current feature being edited in the edit window
+  selectedEditTask: Task | null; // the currently selected UI task
   grid: Grid; // Store a global grid object
   currentDrawingColor: Material; // the current color used for drawing our objects
   featuresDirty: boolean; // flag so we know if we need to apply feature updates or not
@@ -280,6 +287,10 @@ export class Renderer {
       projection: gl.getUniformLocation(this.bbShaderProgram, "uProjection"),
       heightOffset: gl.getUniformLocation(this.bbShaderProgram, "uHeightOffset"),
       healthPercent: gl.getUniformLocation(this.bbShaderProgram, "uHealthPercent"),
+      fillColor: gl.getUniformLocation(this.bbShaderProgram, "uFillColor"),
+      backgroundColor: gl.getUniformLocation(this.bbShaderProgram, "uBackgroundColor"),
+      highlightColor: gl.getUniformLocation(this.bbShaderProgram, "uHighlightColor"),
+      selected: gl.getUniformLocation(this.bbShaderProgram, "uSelected"),
     }
     this.pickLocs = {
       position: gl.getAttribLocation(this.pickProgram, "aPosition"),
@@ -426,6 +437,7 @@ export class Renderer {
     this.currentDrawPass = RenderPass.MAIN;
     this.currentViewingRoom = 0;
     this.roomList = [];
+    this.selectedEditTask = null;
 
     // These will be set as needed
     this.frameId = null;
@@ -764,10 +776,13 @@ export class Renderer {
       gl.disable(gl.DEPTH_TEST); // so the healthbars get drawn on top of everything else
       this.vaoManager.bindVAO(this.house.bbVao);
       // Set camera uniforms. We need the inverse view matrix to easily get camera vectors for the billboards. We can calculate this once per frame since it stays the same
-      // instead of calculating a ton of times in the vertex shader
+      // instead of calculating a ton of times in the vertex shader. Also set highlight uniforms since they apply to all health bars drawn
       gl.uniformMatrix4fv(this.bbLocs.projection, false, this.cam.projectionMatrix as Float32Array);
       gl.uniformMatrix4fv(this.bbLocs.view, false, this.cam.viewMatrix as Float32Array);
       gl.uniformMatrix4fv(this.bbLocs.inverseView, false, this.inverseView as Float32Array);
+      gl.uniform4fv(this.bbLocs.fillColor, HEALTHBAR_FILL_COLOR);
+      gl.uniform4fv(this.bbLocs.backgroundColor, HEALTHBAR_BACKGROUND_COLOR);
+      gl.uniform4fv(this.bbLocs.highlightColor, HEALTHBAR_HIGHLIGHT_COLOR);
       // Now iterate through
       for (let i = 0; i < this.house.renderableFeatures.length; i++) {
         // Skip if we're not displaying feature because it isn't in the current room
@@ -780,12 +795,52 @@ export class Renderer {
           }
         }
 
-        // Get the feature position
+        // See the model matrix of the feature that is the same for all tchores of that feature
         gl.uniformMatrix4fv(this.bbLocs.model, false, this.house.renderableFeatures[i].modelMatrix as Float32Array);
-        for (let j = 0; j < this.house.renderableFeatures[i].tasks.length; j++) {
-          gl.uniform1f(this.bbLocs.heightOffset, 0.8 + (j + 1) * 0.4); // Add an offset per chore bar
-          gl.uniform1f(this.bbLocs.healthPercent, this.house.renderableFeatures[i].tasks[j].getAndSetHealthPercent()); // Update the current decay value
-          gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
+
+        // If our feature is selected, we want to show all of the healthbars. If it isn't we only show the worst one. 
+        if (this.house.renderableFeatures[i] === this.selectedEditFeature) {
+          for (let j = 0; j < this.house.renderableFeatures[i].tasks.length; j++) {
+            // Set per health bar uniforms
+            gl.uniform1f(this.bbLocs.heightOffset, 0.8 + (j + 1) * 0.4); // Add an offset per chore bar
+            gl.uniform1f(this.bbLocs.healthPercent, this.house.renderableFeatures[i].tasks[j].getAndSetHealthPercent()); // Update the current decay value
+            
+            // If our task is selected, we want to highlight it by drawing a copy slightly larger behind it
+            if (this.selectedEditFeature !== null && this.house.renderableFeatures[i].tasks[j] === this.selectedEditTask) {
+              gl.uniform1f(this.bbLocs.selected, 1.0); // set selected to true
+              gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
+            }  else {
+              // Otherwise, just draw it without the highlight
+              gl.uniform1f(this.bbLocs.selected, 0.0); // set selected to false
+              gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
+            }
+          }
+        } else {
+          // Store the health bar to display if we can find one
+          let worstDecayTask: Task | null = null;
+
+          // Find the task with the worst decay
+          for (let j = 0; j < this.house.renderableFeatures[i].tasks.length; j++) {
+            const iterTask = this.house.renderableFeatures[i].tasks[j];
+
+            // If we haven't set a task yet, set it
+            if (!worstDecayTask) {
+              worstDecayTask = iterTask;
+            } else {
+              // Otherwise, see if this new task is worse. If so, select it.
+              if (worstDecayTask.healthPercent >= iterTask.healthPercent) {
+                worstDecayTask = iterTask;
+              }
+            }
+          }
+
+          // If we found a worst task, display it's healthbar. A feature might have no tasks
+          if (worstDecayTask !== null) {
+            gl.uniform1f(this.bbLocs.selected, 0.0);
+            gl.uniform1f(this.bbLocs.heightOffset, 0.8 + (0 + 1) * 0.4); // Add an offset per chore bar
+            gl.uniform1f(this.bbLocs.healthPercent, worstDecayTask.getAndSetHealthPercent()); // Update the current decay value
+            gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
+          }
         }
       }
       gl.enable(gl.DEPTH_TEST); // return to normal
