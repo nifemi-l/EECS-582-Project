@@ -24,6 +24,7 @@ import string
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
+import base64
 
 load_dotenv()
 
@@ -57,13 +58,16 @@ Functions for adding data to the database
 """
 
 def add_household(household_name):
+
+    household_name_bytes = base64.b64decode(household_name)
+
     # Ex: add_household("Johnson Family")
     with conn.cursor() as cursor:
         cursor.execute("""
-            INSERT INTO Household (household_name)
+            INSERT INTO Household_Encrypted (household_name)
             VALUES (%s)
             RETURNING household_id
-        """, (household_name,))
+        """, (household_name_bytes,))
         household_id = cursor.fetchone()[0]
 
     conn.commit()
@@ -84,12 +88,17 @@ def add_account(account_name: str, hashed_password: str, email: str):
     # Ex: add_feature(1, "Kitchen", "room", 0, 0, 0, "silverware-fork-knife")
     # icon param is optional, defaults to the generic home icon
 def add_feature(household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon='home-outline'):
+
+    feature_name_bytes = base64.b64decode(feature_name)
+    feature_type_bytes = base64.b64decode(feature_name)
+
     with conn.cursor() as cursor:
+
         cursor.execute("""
-            INSERT INTO Feature (household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon)
+            INSERT INTO Feature_Encrypted (household_id, feature_name_bytes, feature_type_bytes, x_pos, y_pos, z_pos, icon)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING feature_id
-        """, (household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon))
+        """, (household_id, feature_name_bytes, feature_type_bytes, x_pos, y_pos, z_pos, icon))
         feature_id = cursor.fetchone()[0]
     conn.commit()
     return feature_id
@@ -97,12 +106,15 @@ def add_feature(household_id, feature_name, feature_type, x_pos, y_pos, z_pos, i
 
 # icon param is optional, defaults to clipboard icon
 def add_task(feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id, icon='clipboard-text-outline'):
+
+    task_name_bytes = base64.b64decode(task_name)
+
     with conn.cursor() as cursor:
         cursor.execute("""
-            INSERT INTO Task (feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id, icon)
+            INSERT INTO Task_Encrypted (feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id, icon)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING task_id
-        """, (feature_id, task_name, frequency_days, last_completed, visibility, created_by_account_id, icon))
+        """, (feature_id, task_name_bytes, frequency_days, last_completed, visibility, created_by_account_id, icon))
         task_id = cursor.fetchone()[0]
     conn.commit()
     return task_id
@@ -127,6 +139,9 @@ def make_household_join_code(length=8):
 
 # Create a new household and store the join code, maker included
 def create_household(household_name, creator_account_id=None):
+
+    household_name_bytes = base64.b64decode(household_name)
+
     with conn.cursor() as cursor:
         while True:
             join_code = make_household_join_code(8)
@@ -135,7 +150,7 @@ def create_household(household_name, creator_account_id=None):
                     INSERT INTO Household (household_name, join_code, created_by_account_id)
                     VALUES (%s, %s, %s)
                     RETURNING household_id, household_name, join_code, created_by_account_id, created_at, updated_at
-                """, (household_name, join_code, creator_account_id))
+                """, (household_name_bytes, join_code, creator_account_id))
                 row = cursor.fetchone()
                 break
             except psycopg2.errors.UniqueViolation:
@@ -158,12 +173,15 @@ def add_account_to_household(account_id, household_id, role):
 
 # Retrieve a household row by its join code
 def get_household_by_join_code(join_code):
+
+    join_code_bytes = base64.b64decode(join_code)
+
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT household_id, household_name, join_code, created_by_account_id, created_at, updated_at
             FROM Household
             WHERE join_code = %s
-        """, (join_code,))
+        """, (join_code_bytes,))
         row = cursor.fetchone()
 
     if not row:
@@ -443,11 +461,13 @@ def update_feature(feature_id, feature_name=None, feature_type=None, x_pos=None,
     sets = []
     params = []
     if feature_name is not None:
+        feature_name_bytes = base64.b64decode(feature_name)
         sets.append("feature_name = %s")
-        params.append(feature_name)
+        params.append(feature_name_bytes)
     if feature_type is not None:
+        feature_type_bytes = base64.b64decode(feature_type)
         sets.append("feature_type = %s")
-        params.append(feature_type)
+        params.append(feature_type_bytes)
     if x_pos is not None:
         sets.append("x_pos = %s")
         params.append(x_pos)
@@ -501,29 +521,33 @@ Additional update functions
 """
 
 def update_household(household_id, household_name):
+    household_name_bytes = base64.b64decode(household_name)
+
     with conn.cursor() as cursor:
         cursor.execute("""
             UPDATE Household
             SET household_name = %s
             WHERE household_id = %s
-        """, (household_name, household_id,))
+        """, (household_name_bytes, household_id,))
     conn.commit()
 
 # Update task details (name, frequency, visibility, and icon are optional so we don't overwrite them if not provided)
 def update_task(task_id, task_name, frequency_days, visibility, icon=None):
+    task_name_bytes = base64.b64decode(task_name)
+
     with conn.cursor() as cursor:
         if icon is not None:
             cursor.execute("""
                 UPDATE Task
                 SET task_name = %s, frequency_days = %s, visibility = %s, icon = %s
                 WHERE task_id = %s
-            """, (task_name, frequency_days, visibility, icon, task_id))
+            """, (task_name_bytes, frequency_days, visibility, icon, task_id))
         else:
             cursor.execute("""
                 UPDATE Task
                 SET task_name = %s, frequency_days = %s, visibility = %s
                 WHERE task_id = %s
-            """, (task_name, frequency_days, visibility, task_id))
+            """, (task_name_bytes, frequency_days, visibility, task_id))
     conn.commit()
 
 def update_account(account_id, account_name, email):

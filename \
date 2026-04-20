@@ -4,7 +4,7 @@ Description: Encrypted wrappers for Feature and Task management.
              Handles client-side encryption before sending data to the Pi.
 */
 
-import { getToken } from "../utils/authStorage";
+import { getToken, getKey } from "../utils/authStorage";
 import { encryptData, decryptData } from "../utils/encryptionUtils";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -21,7 +21,6 @@ async function authHeaders(withBody = false): Promise<Record<string, string>> {
 // FETCH & DECRYPT
 export async function fetchHouseholdFeatures(
     householdId: number,
-    password: string,
 ) {
     const res = await fetch(`${API_BASE}/household/${householdId}/features`, {
         headers: await authHeaders(),
@@ -29,27 +28,25 @@ export async function fetchHouseholdFeatures(
     if (!res.ok) throw new Error(`Failed to fetch features: ${res.status}`);
 
     const features = await res.json();
-
     // Decrypt each feature and its nested tasks
-    return Promise.all(
+
+
         features.map(async (f: any) => {
             const decryptedFeatureName = await decryptData(f.feature_name);
 
             const decryptedTasks = await Promise.all(
                 (f.tasks || []).map(async (t: any) => ({
                     ...t,
-                    task_name: await decryptData(t.task_name),
+                    task_name: await decryptData(f.tasks.task_name),
                 })),
             );
 
             return {
                 ...f,
                 feature_name: decryptedFeatureName,
-                feature_type: await decryptData(f.feature_type),
                 tasks: decryptedTasks,
             };
         }),
-    );
 }
 
 export async function createHousehold(data: { household_name: string }) {

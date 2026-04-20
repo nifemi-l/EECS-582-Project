@@ -195,9 +195,9 @@ CREATE TABLE IF NOT EXISTS Household_Encrypted (
 
 /* Constraint on created_by_account_id to ensure it is an active account and is replaced by NULL if deleted */
 ALTER TABLE Household_Encrypted
-ADD CONSTRAINT fk_household_created_by
+ADD CONSTRAINT fk_household_created_by_encrypted
 FOREIGN KEY (created_by_account_id)
-REFERENCES Account_Encrypted(account_id)
+REFERENCES Account(account_id)
 ON DELETE SET NULL;
 
 /* Create a table for household membership / roles

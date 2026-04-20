@@ -48,13 +48,11 @@ export const encryptData = async (plainText: string) => {
 };
 
 export const decryptData = async (ciphertextB64: string) => {
-  const password = window.sessionStorage.getItem('vault_secret');
-  if (!password) throw new Error("Vault is locked");
 
   const ciphertext = Uint8Array.from(atob(ciphertextB64), c => c.charCodeAt(0));
   const iv = DEFAULT_SALT;
 
-  const key = await deriveKey(password);
+  const key = await getKey();
   const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv}, key, ciphertext);
   
   return new TextDecoder().decode(decrypted);
