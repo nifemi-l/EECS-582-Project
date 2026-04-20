@@ -29,13 +29,11 @@ export async function fetchHouseholdFeatures(
     if (!res.ok) throw new Error(`Failed to fetch features: ${res.status}`);
 
     const features = await res.json();
-    console.log(features)
 
     // Decrypt each feature and its nested tasks
     return Promise.all(
         features.map(async (f: any) => {
             const decryptedFeatureName = await decryptData(f.feature_name);
-            console.log(f.feature_name)
 
             const decryptedTasks = await Promise.all(
                 (f.tasks || []).map(async (t: any) => ({

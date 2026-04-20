@@ -50,10 +50,9 @@ export const encryptData = async (plainText: string) => {
 export const decryptData = async (ciphertextB64: string) => {
 
   const ciphertext = Uint8Array.from(atob(ciphertextB64), c => c.charCodeAt(0));
-  const iv = DEFAULT_IV;
+  const iv = DEFAULT_SALT;
 
   const key = await getKey();
-
   const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv}, key, ciphertext);
   
   return new TextDecoder().decode(decrypted);
