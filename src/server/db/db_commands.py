@@ -147,7 +147,7 @@ def create_household(household_name, creator_account_id=None):
             join_code = make_household_join_code(8)
             try:
                 cursor.execute("""
-                    INSERT INTO Household (household_name, join_code, created_by_account_id)
+                    INSERT INTO Household_Encrypted (household_name, join_code, created_by_account_id)
                     VALUES (%s, %s, %s)
                     RETURNING household_id, household_name, join_code, created_by_account_id, created_at, updated_at
                 """, (household_name_bytes, join_code, creator_account_id))
@@ -349,7 +349,7 @@ def get_account_roles_by_household_id(household_id):
 def get_household_features(household_id):
     with conn.cursor() as cursor:
         cursor.execute("""
-            SELECT * FROM Feature
+            SELECT * FROM Feature_Encrypted
             WHERE household_id = %s
         """, (household_id,))
         features = cursor.fetchall()
@@ -436,7 +436,7 @@ Functions for updating data
 def update_task_last_comp_time(task_id):
     with conn.cursor() as cursor:
         cursor.execute("""
-            UPDATE Task
+            UPDATE Task_Encrypted
             SET last_completed = %s
             WHERE task_id = %s
         """, (datetime.now(timezone.utc), task_id,))
@@ -525,7 +525,7 @@ def update_household(household_id, household_name):
 
     with conn.cursor() as cursor:
         cursor.execute("""
-            UPDATE Household
+            UPDATE Household_Encrypted
             SET household_name = %s
             WHERE household_id = %s
         """, (household_name_bytes, household_id,))
@@ -538,13 +538,13 @@ def update_task(task_id, task_name, frequency_days, visibility, icon=None):
     with conn.cursor() as cursor:
         if icon is not None:
             cursor.execute("""
-                UPDATE Task
+                UPDATE Task_Encrypted
                 SET task_name = %s, frequency_days = %s, visibility = %s, icon = %s
                 WHERE task_id = %s
             """, (task_name_bytes, frequency_days, visibility, icon, task_id))
         else:
             cursor.execute("""
-                UPDATE Task
+                UPDATE Task_Encrypted
                 SET task_name = %s, frequency_days = %s, visibility = %s
                 WHERE task_id = %s
             """, (task_name_bytes, frequency_days, visibility, task_id))
