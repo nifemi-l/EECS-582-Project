@@ -6,7 +6,7 @@ Creation date: 4/14/26
 Revision date:
 */
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import {
   Keyboard,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import tinycolor from "tinycolor2";
 import { navy, ROOM_BAND_SWATCHES } from "../theme/colors";
 import { normalizeHexColor, prefersLightForegroundOnBand } from "../utils/hexColor";
 
@@ -83,6 +84,11 @@ export function RoomContainer({
   const resolvedBg =
     previewAccent ?? (room.accentColor && normalizeHexColor(room.accentColor)) ?? navy;
   const useLightForeground = prefersLightForegroundOnBand(resolvedBg);
+
+  const bodyTint = useMemo(() => {
+    const tc = tinycolor(resolvedBg);
+    return tc.setAlpha(0.07).toRgbString();
+  }, [resolvedBg]);
 
   const titleColor = !useLightForeground
     ? isUnassigned
@@ -314,7 +320,7 @@ export function RoomContainer({
         />
       </Pressable>
 
-      {!collapsed && <View style={styles.body}>{children}</View>}
+      {!collapsed && <View style={[styles.body, { backgroundColor: bodyTint }]}>{children}</View>}
 
       <Modal visible={editOpen} transparent animationType="fade" onRequestClose={closePopover}>
         <Pressable style={styles.modalBackdrop} onPress={closePopover}>
