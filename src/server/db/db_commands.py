@@ -304,6 +304,7 @@ def get_feature_by_id(feature_id):
     return feature
 
 # Retrieve data for a task by its task id
+# TODO: get working with task_encrypted
 def get_task_by_id(task_id):
     with conn.cursor() as cursor:
         cursor.execute("""
@@ -314,6 +315,7 @@ def get_task_by_id(task_id):
     return task
 
 # Get all tasks associated with a specific feature by its id.
+# TODO: get working with task_encrypted
 def get_tasks_by_feature_id(feature_id):
     with conn.cursor() as cursor:
         cursor.execute("""
