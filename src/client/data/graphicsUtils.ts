@@ -124,6 +124,15 @@ export enum Tool {
   TOOL_EDIT_FEATURE
 }
 
+export interface InventoryProps {
+  tool: Tool,
+}
+
+export interface EditMenuProps {
+  tool: Tool,
+  updateToolCallback: (tool: Tool) => void
+}
+
 // Interfaces for WebGL shader locations
 // Attributes
 export interface ShaderAttributebLocations {

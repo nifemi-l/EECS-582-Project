@@ -36,7 +36,7 @@ Known faults: None
 import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
 
 // Import required components
-import React, { useEffect, useState, useSyncExternalStore, useRef } from 'react';
+import React, { useEffect, useState, useSyncExternalStore, useRef, Fragment } from 'react';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
 import { ActivityIndicator, LayoutChangeEvent, Platform, Pressable, View, useWindowDimensions } from "react-native";
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -52,12 +52,12 @@ import tinycolor from "tinycolor2";
 import {
   MoveDirection, Tool,
   RenderPass,getPixelFromRaw, getPickedObjectFromPointOnScreen,
-  setPixelFrustrum,
+  setPixelFrustrum, InventoryProps, EditMenuProps
 } from "../../../data/graphicsUtils"
 
 // Import renderer classes
 import {
-  RenderableFeature, Renderer, FOV_RADIANS, NEAR_CLIP, FAR_CLIP, INVALID_TASK_NAME
+  RenderableFeature, Renderer, FOV_RADIANS, NEAR_CLIP, FAR_CLIP, INVALID_TASK_NAME, UNASSIGNED_ROOM_ID
 } from "../../../data/renderUtils"
 
 // Import local api utilities
@@ -82,9 +82,6 @@ let viewWidth = 0;
 let viewHeight = 0;
 let windowHeight = 0;
 let windowWidth = 0;
-
-// Store the current editing tool
-let currentTool = Tool.TOOL_FEATURE;
 
 // The renderer
 let rdr = new Renderer();
@@ -185,11 +182,6 @@ function getViewAndWindowDims() {
   return [viewWidth, viewHeight, windowWidth, windowHeight];
 }
 
-// This needs to be a function so that we can dynamically change the tool in gestures
-function isUsingEditTool() {
-  return currentTool === Tool.TOOL_EDIT_FEATURE;
-}
-
 // ***********************************************************
 //     Non-stateful Gesture Handling (for state, see Index)
 // ***********************************************************
@@ -235,7 +227,7 @@ const handlePan = Gesture.Pan()
 // ***********************************************************
 
 // An inventory system for unplaced features that we can draw from to put on the screen
-function Inventory() {
+function Inventory(props: InventoryProps) {
   // Get a list of unplaced features
   const unplacedFeatureList: Feature[] = useSyncExternalStore(subListener, getUnplacedFeatures);
   // Selected feature that we are going to place on click. Null most of the time
@@ -247,38 +239,63 @@ function Inventory() {
     rdrRef.current = rdr;
   }, [rdr]);
 
+  // Find the number of unplaced features in the current room
+  // This works becaue it is re-rendered by its parent component on room change
+  const numUnplacedInRoom = unplacedFeatureList.filter((f) => {
+    return f.room_id === rdrRef.current.currentViewingRoom  || (f.room_id == null && rdrRef.current.currentViewingRoom === UNASSIGNED_ROOM_ID);
+  }).length;
+
   // Create a dynamic list of the features that we have created in the list view but do not yet have graphical positions
-  return (unplacedFeatureList.length > 0 ?
+  return (numUnplacedInRoom > 0 ? (
     <View
       style={{
-        flexDirection: "row",
+        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         position: "absolute",
         bottom: 40,
         zIndex: 10,
-        gap: 10,
+        gap: 5,
+        padding: 0,
+        margin: 0,
       }}
     >
-      {unplacedFeatureList.map((feature, index, featureArray) => {
-        return feature.room_id === rdrRef.current.currentViewingRoom ? (
-        <Pressable
-          onPress={() => {selectedPlaceFeature === feature ? clearSelectedPlaceFeature() : setSelectedPlaceFeature(feature)}}
-          hitSlop={8}
-          key={feature.id}
-        >
-          <MaterialCommunityIcons name={feature.icon as any} color={feature === selectedPlaceFeature ? tinycolor("gold").toHexString() : tinycolor("red").darken().toHexString()} size={20}/>
-        </Pressable>) : null;
-      })}
-    </View> 
+      {props.tool === Tool.TOOL_EDIT_FEATURE ? (
+        <Text style={{color: tinycolor("red").toHexString()}}>This room has unplaced features. Enter View mode to place them.</Text>
+      ) : (
+        <Fragment>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 10,
+              gap: 10,
+            }}
+          >
+            {unplacedFeatureList.map((feature, index, featureArray) => {
+              return (feature.room_id === rdrRef.current.currentViewingRoom) || (feature.room_id === null && rdrRef.current.currentViewingRoom === UNASSIGNED_ROOM_ID) ? (
+              <Pressable
+                onPress={() => {selectedPlaceFeature === feature ? clearSelectedPlaceFeature() : setSelectedPlaceFeature(feature)}}
+                hitSlop={8}
+                key={feature.id}
+              >
+                <MaterialCommunityIcons name={feature.icon as any} color={feature === selectedPlaceFeature ? tinycolor(listBrand).lighten(20).toHexString() : tinycolor(listBrand).darken(10).toHexString()} size={20}/>
+              </Pressable>) : null;
+            })}
+          </View> 
+          <Text style={{color: "#FFFFFF"}}>Select a feature icon and click to place</Text>
+        </Fragment>
+      )}
+    </View>)
     : null
   );
 }
 
 // A window that will appear to edit feature info
-function EditWindow() {
+function EditWindow(props: EditMenuProps) {
   // if in edit mode or not
-  const [isEditing, setIsEditing] = useState(false);
+  const isEditing = props.tool === Tool.TOOL_EDIT_FEATURE;
   const [hoverEditButton, setHoverEditButton] = useState(false);
   // get the currently selected edit feature
   const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
@@ -345,9 +362,8 @@ function EditWindow() {
             }}
             onPress={() => {
               // We cannot assume isEditing changes sequentially here
-              currentTool = isEditing ? Tool.TOOL_FEATURE : Tool.TOOL_EDIT_FEATURE;
+              props.updateToolCallback(isEditing ? Tool.TOOL_FEATURE : Tool.TOOL_EDIT_FEATURE);
               rdr.selectedEditFeature = null; // should handle updating selectedFeature through callbacks
-              setIsEditing(!isEditing);
               setSelectedChore(0);
             }}
             // @ts-ignore web-only pointer hover
@@ -510,6 +526,9 @@ function AuthenticatedGraphicsScreen() {
   const [hoverRoomArrowLeft, setHoverRoomArrowLeft] = useState(false);
   const [hoverRoomArrowRight, setHoverRoomArrowRight] = useState(false);
 
+  // The current graphical view mode
+  const [currentTool, setCurrentTool] = useState(Tool.TOOL_FEATURE);
+
   ///////////////////////////
   ///  Mouse Gestures     ///
   ///////////////////////////
@@ -546,7 +565,7 @@ function AuthenticatedGraphicsScreen() {
   .onFinalize((event, success) => { // When the tap event is done...
     if (success) { 
       const highlightedObjectID = rdrRef.current.highlightedFeatureID; // Get the highlighted feature ID
-      if (isUsingEditTool()) {
+      if (currentTool === Tool.TOOL_EDIT_FEATURE) {
         // Update axis angles for the edit window display
         setXAxisAngle();
 
@@ -805,8 +824,8 @@ function AuthenticatedGraphicsScreen() {
           </Pressable>
         </View>
 
-        <EditWindow />
-        <Inventory /> 
+        <EditWindow tool={currentTool} updateToolCallback={setCurrentTool}/>
+        <Inventory tool={currentTool}/> 
       </View>
     </PaperProvider>
     ) : (

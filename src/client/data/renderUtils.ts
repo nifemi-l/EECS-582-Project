@@ -72,7 +72,7 @@ const MAX_FEATURE_SCALE = 2;
 export const FOV_RADIANS = (45 * Math.PI / 180);
 
 // Define a magic invalid room ID. They should only be positive
-const UNASSIGNED_ROOM_ID = -1024;
+export const UNASSIGNED_ROOM_ID = -1024;
 
 // An identifier to store a room id for the unassigned tasks.
 // This primarily helps us maintain array logic
