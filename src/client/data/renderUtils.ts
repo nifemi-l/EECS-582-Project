@@ -1056,7 +1056,7 @@ export class Renderer {
     // Ensure we have selected a place feature
     const f = this.selectedPlaceFeature;
     if (!f) {
-      console.error("Attempting to place feature with none selected.");
+      // Note: this is not an error, we don't want to do anything here
       return;
     }
 
