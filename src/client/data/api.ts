@@ -4,12 +4,13 @@ Description: Helper functions for making API calls to the Flask backend.
              Each function wraps a single REST endpoint and handles the fetch + error checking.
              Used by list.tsx to talk to the database instead of using local AsyncStorage.
              All requests attach a JWT Bearer token from authStorage for authentication.
-Programmer: Nifemi Lawal
+Programmer: Nifemi Lawal, some by Jack Bauer
 Creation date: 3/29/26
 Revision date:
   - 3/29/26: Replace hardcoded localhost URL with EXPO_PUBLIC_API_URL env variable
   - 4/14/26: Room CRUD + feature room_id
   - 4/16/26: Add 3D scale, rotation support
+  - 4/20/26: Add call to clear feature position data
 Preconditions: Flask server must be reachable at EXPO_PUBLIC_API_URL; user must be logged in
 Postconditions: Returns parsed JSON from the server or throws on failure
 Errors: Throws an Error with the HTTP status if the response is not ok
@@ -142,6 +143,15 @@ export async function updateFeature(
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error(`Failed to update feature: ${res.status}`);
+}
+
+// Clear a feature's position data
+export async function clearFeaturePosition(featureId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/feature/position/${featureId}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to clear feature position data: ${res.status}`);
 }
 
 // Delete a feature and all its tasks (cascade delete happens in the DB)

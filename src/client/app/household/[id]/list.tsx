@@ -21,6 +21,7 @@ Revision date:
   - 4/13/26: Web hover feedback on list rows, headers, add-task/section controls
   - 4/14/26: Collapsible room grouping, room CRUD, feature room assignment
   - 4/15/26: Remove room_number and room_name parameters from the feature object
+  - 4/20/26: Set XYZ positions on feature creation to undefined so they become NULL in the DB
 Preconditions: Flask server reachable at EXPO_PUBLIC_API_URL with the household's data in the DB
 Postconditions: Renders an interactive task list that stays in sync with the database
 Errors: Shows error state with retry button if API is unreachable
@@ -1482,9 +1483,9 @@ function AuthenticatedListScreen() {
             name,
             householdId,
             FeatureType.UNDEFINED,
-            0,
-            0,
-            0,
+            undefined,
+            undefined,
+            undefined,
             feature_id,
             icon,
             roomId

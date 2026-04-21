@@ -19,6 +19,7 @@ Revision date:
   - 4/15/26: Add edit window buttons for feature rotation, scaling, and translation. Other tweaks. Also rooms
   - 4/16/26: Add 3D scale, rotation database support
   - 4/18/26: Highlight selected task and health bar
+  - 4/20/26: Add inventory bar to manage adding features to the graphical view
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -35,7 +36,7 @@ Known faults: None
 import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
 
 // Import required components
-import React, { useEffect, useState, useSyncExternalStore, useRef } from 'react';
+import React, { useEffect, useState, useSyncExternalStore, useRef, Fragment } from 'react';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
 import { ActivityIndicator, LayoutChangeEvent, Platform, Pressable, View, useWindowDimensions } from "react-native";
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -50,14 +51,13 @@ import tinycolor from "tinycolor2";
 // Import graphics utilities
 import {
   MoveDirection, Tool,
-  FEATURE_ORANGE, FEATURE_BLUE, FEATURE_GREEN, FEATURE_RED,
   RenderPass,getPixelFromRaw, getPickedObjectFromPointOnScreen,
-  setPixelFrustrum,
+  setPixelFrustrum, InventoryProps, EditMenuProps
 } from "../../../data/graphicsUtils"
 
 // Import renderer classes
 import {
-  RenderableFeature, Renderer, FOV_RADIANS, NEAR_CLIP, FAR_CLIP, INVALID_TASK_NAME
+  RenderableFeature, Renderer, FOV_RADIANS, NEAR_CLIP, FAR_CLIP, INVALID_TASK_NAME, UNASSIGNED_ROOM_ID
 } from "../../../data/renderUtils"
 
 // Import local api utilities
@@ -82,9 +82,6 @@ let viewWidth = 0;
 let viewHeight = 0;
 let windowHeight = 0;
 let windowWidth = 0;
-
-// Store the current editing tool
-let currentTool = Tool.TOOL_FEATURE;
 
 // The renderer
 let rdr = new Renderer();
@@ -137,6 +134,33 @@ function getXAxisAngle() {
   return xAxisAngle;
 }
 
+// setter for the unplaced feature list
+function setUnplacedFeatures(features: Feature[]) {
+  rdr.unplacedFeatures = features;
+  reactListeners.forEach((cb) => cb(rdr.unplacedFeatures));
+}
+
+// getter for the unplaced feature list
+function getUnplacedFeatures() {
+  return rdr.unplacedFeatures;
+}
+
+// setter for the feature we're waiting to place
+function setSelectedPlaceFeature(feature: Feature | null) {
+    rdr.selectedPlaceFeature = feature;
+    reactListeners.forEach((cb) => cb(rdr.selectedPlaceFeature));
+}
+
+// getter for the feature we're waiting to place
+function getSelectedPlaceFeature() {
+  return rdr.selectedPlaceFeature;
+}
+
+// clear out selected place feature
+function clearSelectedPlaceFeature() {
+  setSelectedPlaceFeature(null);
+}
+
 // ***********************************************************
 //                  UI / Interface Utilities
 // ***********************************************************
@@ -156,11 +180,6 @@ function handleLayout(event: LayoutChangeEvent) {
 // Helper to get dimensions
 function getViewAndWindowDims() {
   return [viewWidth, viewHeight, windowWidth, windowHeight];
-}
-
-// This needs to be a function so that we can dynamically change the tool in gestures
-function isUsingEditTool() {
-  return currentTool === Tool.TOOL_EDIT_FEATURE;
 }
 
 // ***********************************************************
@@ -207,18 +226,31 @@ const handlePan = Gesture.Pan()
 //                      JSX And UI
 // ***********************************************************
 
-// The color selection buttons at the bottom of the screen
-function ColorButtons() {
-  // Store the current color so we can show it in the UI
-  const [drawingColor, setDrawingColor] = useState(FEATURE_ORANGE);
+// An inventory system for unplaced features that we can draw from to put on the screen
+function Inventory(props: InventoryProps) {
+  // Get a list of unplaced features
+  const unplacedFeatureList: Feature[] = useSyncExternalStore(subListener, getUnplacedFeatures);
+  // Selected feature that we are going to place on click. Null most of the time
+  const selectedPlaceFeature = useSyncExternalStore(subListener, getSelectedPlaceFeature);
 
-  // Ensure sync between gl and react
-  if (drawingColor !== rdr.currentDrawingColor) {
-    setDrawingColor(rdr.currentDrawingColor);
-  }
+  // Renderer ref
+  const rdrRef = useRef(rdr);
+  useEffect(() => {
+    rdrRef.current = rdr;
+  }, [rdr]);
 
-  /* Buttons for selecting type */
-  return (
+  // Find the number of unplaced features in the current room
+  // This works becaue it is re-rendered by its parent component on room change
+  const numUnplacedInRoom = unplacedFeatureList.filter((f) => {
+    return f.room_id === rdrRef.current.currentViewingRoom  || (f.room_id == null && rdrRef.current.currentViewingRoom === UNASSIGNED_ROOM_ID);
+  }).length;
+
+  const numPlacedInRoom = rdrRef.current.features.filter((pf) => {
+    return (pf.room_id === rdrRef.current.currentViewingRoom) || (pf.room_id === null && rdrRef.current.currentViewingRoom === UNASSIGNED_ROOM_ID)
+  }).length
+
+  // Create a dynamic list of the features that we have created in the list view but do not yet have graphical positions
+  return (numUnplacedInRoom > 0 ? (
     <View
       style={{
         flexDirection: "column",
@@ -227,86 +259,63 @@ function ColorButtons() {
         position: "absolute",
         bottom: 40,
         zIndex: 10,
-        gap: 10,
+        gap: 5,
+        padding: 0,
+        margin: 0,
       }}
     >
-      <View 
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 10,
-          gap: 10,
-        }}
-      >
-        {/* Red Button */}
-        <Pressable
-          onPress={() => {rdr.currentDrawingColor = FEATURE_RED; setDrawingColor(FEATURE_RED)}}
-          hitSlop={8}
+      {props.tool === Tool.TOOL_EDIT_FEATURE ? (
+        <Text style={{color: tinycolor("red").toHexString()}}>This room has unplaced features. Enter View mode to place them</Text>
+      ) : (
+        <Fragment>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 10,
+              gap: 10,
+            }}
+          >
+            {unplacedFeatureList.map((feature, index, featureArray) => {
+              return (feature.room_id === rdrRef.current.currentViewingRoom) || (feature.room_id === null && rdrRef.current.currentViewingRoom === UNASSIGNED_ROOM_ID) ? (
+              <Pressable
+                onPress={() => {selectedPlaceFeature === feature ? clearSelectedPlaceFeature() : setSelectedPlaceFeature(feature)}}
+                hitSlop={8}
+                key={feature.id}
+              >
+                <MaterialCommunityIcons name={feature.icon as any} color={feature === selectedPlaceFeature ? tinycolor(listBrand).lighten(20).toHexString() : tinycolor(listBrand).darken(10).toHexString()} size={20}/>
+              </Pressable>) : null;
+            })}
+          </View> 
+          <Text style={{color: "#FFFFFF"}}>{selectedPlaceFeature === null ? "Select an unplaced feature's icon and click on the grid to place it" : "Selected: " + selectedPlaceFeature.feature_name}</Text>
+        </Fragment>
+      )}
+    </View>)
+    : numPlacedInRoom <= 0 ? (
+        <View
+          style={{
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "absolute",
+            bottom: 40,
+            zIndex: 10,
+            gap: 5,
+            padding: 0,
+            margin: 0,
+          }}
         >
-          <MaterialCommunityIcons name={drawingColor !== FEATURE_RED ? 'circle-outline' : 'circle'} size={20} color="#de3737" />
-        </Pressable>
-        {/* Green Button */}
-        <Pressable
-          onPress={() => {rdr.currentDrawingColor = FEATURE_GREEN; setDrawingColor(FEATURE_GREEN)}}
-          hitSlop={8}
-        >
-          <MaterialCommunityIcons name={drawingColor !== FEATURE_GREEN ? 'circle-outline' : 'circle'} size={20} color="#53de37" />
-        </Pressable>
-        {/* Blue Button */}
-        <Pressable
-          onPress={() => {rdr.currentDrawingColor = FEATURE_BLUE; setDrawingColor(FEATURE_BLUE)}}
-          hitSlop={8}
-        >
-          <MaterialCommunityIcons name={drawingColor !== FEATURE_BLUE ? 'circle-outline' : 'circle'} size={20} color="#3764de" />
-        </Pressable>
-        {/* Orange Button */}
-        <Pressable
-          onPress={() => {rdr.currentDrawingColor = FEATURE_ORANGE; setDrawingColor(FEATURE_ORANGE)}}
-          hitSlop={8}
-        >
-          <MaterialCommunityIcons name={drawingColor !== FEATURE_ORANGE ? 'circle-outline' : 'circle'} size={20} color="#de8537" />
-        </Pressable>
-      </View>
-
-      <View 
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 10,
-          gap: 10,
-        }}
-      >
-        {/* Edit grid size buttons - DISABLED for now */}
-        {/* <Pressable
-          onPress={() => {rdr.grid.resize(rdr.grid.width + 2, rdr.grid.height); rdr.house.resizeFloorFeature()}}>
-          <MaterialCommunityIcons name='arrow-right' color="#abcd" />
-        </Pressable>
-
-        <Pressable
-          onPress={() => {rdr.grid.resize(rdr.grid.width, rdr.grid.height + 2); rdr.house.resizeFloorFeature()}}>
-          <MaterialCommunityIcons name='arrow-up' color="#abcd" />
-        </Pressable>
-
-        <Pressable
-          onPress={() => {rdr.grid.resize(rdr.grid.width - 2, rdr.grid.height); rdr.house.resizeFloorFeature()}}>
-          <MaterialCommunityIcons name='arrow-left' color="#abcd" />
-        </Pressable>
-
-        <Pressable
-          onPress={() => {rdr.grid.resize(rdr.grid.width, rdr.grid.height - 2); rdr.house.resizeFloorFeature()}}>
-          <MaterialCommunityIcons name='arrow-down' color="#abcd" />
-        </Pressable> */}
-      </View>
-    </View>
-  );
+          {/* Display a message if we have no unplaced features AND no placed features (thus none at all) */}
+          <Text style={{color: "#FFFFFF"}}>This room has no features. Add or delete them in the List view</Text>
+        </View>
+      ) : null);
 }
 
 // A window that will appear to edit feature info
-function EditWindow() {
+function EditWindow(props: EditMenuProps) {
   // if in edit mode or not
-  const [isEditing, setIsEditing] = useState(false);
+  const isEditing = props.tool === Tool.TOOL_EDIT_FEATURE;
   const [hoverEditButton, setHoverEditButton] = useState(false);
   // get the currently selected edit feature
   const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
@@ -373,9 +382,8 @@ function EditWindow() {
             }}
             onPress={() => {
               // We cannot assume isEditing changes sequentially here
-              currentTool = isEditing ? Tool.TOOL_FEATURE : Tool.TOOL_EDIT_FEATURE;
+              props.updateToolCallback(isEditing ? Tool.TOOL_FEATURE : Tool.TOOL_EDIT_FEATURE);
               rdr.selectedEditFeature = null; // should handle updating selectedFeature through callbacks
-              setIsEditing(!isEditing);
               setSelectedChore(0);
             }}
             // @ts-ignore web-only pointer hover
@@ -538,6 +546,9 @@ function AuthenticatedGraphicsScreen() {
   const [hoverRoomArrowLeft, setHoverRoomArrowLeft] = useState(false);
   const [hoverRoomArrowRight, setHoverRoomArrowRight] = useState(false);
 
+  // The current graphical view mode
+  const [currentTool, setCurrentTool] = useState(Tool.TOOL_FEATURE);
+
   ///////////////////////////
   ///  Mouse Gestures     ///
   ///////////////////////////
@@ -574,7 +585,7 @@ function AuthenticatedGraphicsScreen() {
   .onFinalize((event, success) => { // When the tap event is done...
     if (success) { 
       const highlightedObjectID = rdrRef.current.highlightedFeatureID; // Get the highlighted feature ID
-      if (isUsingEditTool()) {
+      if (currentTool === Tool.TOOL_EDIT_FEATURE) {
         // Update axis angles for the edit window display
         setXAxisAngle();
 
@@ -615,11 +626,11 @@ function AuthenticatedGraphicsScreen() {
             return; // do nothing if we have not found a valid point
           } else {
             // If we did find a valid point, add the feature. 
-            rdrRef.current.placeFeature(point[0], point[1], point[2]);
+            rdrRef.current.placeSelectedFeature(point[0], point[1], point[2]);
           }
         } else {
           // 1: We are highlighting a feature, so we just delete it.
-          rdrRef.current.deleteFeature(highlightedObjectID);
+          rdrRef.current.removeFeature(highlightedObjectID);
           rdrRef.current.setHighlightedFeature(-1); // -1 effectively sets to null
         }
       }
@@ -637,6 +648,7 @@ function AuthenticatedGraphicsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>(); // get parameter from route
   const householdId = Number(id) || 1;
   const [featureFetchSuccess, setFeatureFetchSuccess] = useState(false);
+  const [emptyFeatures, setEmptyFeatures] = useState(true);
 
   // Reload the features of our housewhenever the household ID changes.
   // Also mostly from list.tsx (thanks again Nifemi)
@@ -688,6 +700,11 @@ function AuthenticatedGraphicsScreen() {
               });
               rdrRef.current.setFeatures(householdId, mapped);
               setFeatureFetchSuccess(true);
+
+              // Determine if our features list is empty
+              if (mapped.length > 0) {
+                setEmptyFeatures(false);
+              }
             })
       .catch((e) => {
         console.error("Failed to fetch features for household", householdId, e);
@@ -720,125 +737,139 @@ function AuthenticatedGraphicsScreen() {
   const ROOM_CHEVRON_COLOR_HOVER = !ROOM_ACCENT_COLOR ? "#5EFF9A" : tinycolor(ROOM_ACCENT_COLOR).brighten(10).toHexString();
 
   return (
-    featureFetchSuccess ? (
-      <PaperProvider theme={appPaperLightTheme}>
-      <View
-        onLayout={handleLayout}
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <GestureDetector gesture={composedGesture}>
-          <GLView style={{
-            width: "100%",
-            height: "100%"
-          }} 
-          onContextCreate={onContextCreate}
-          />
-        </GestureDetector>
-
-        {/* Room change buttons —> inset from left so narrow screens never overlap Edit; scaled type/icons */}
+    featureFetchSuccess && !emptyFeatures ? (
+      <Fragment>
+        <PaperProvider theme={appPaperLightTheme}>
         <View
+          onLayout={handleLayout}
           style={{
-            position: "absolute",
-            left: roomBarLeftInset,
-            right: 12,
-            top: 8,
-            paddingVertical: 6,
-            paddingHorizontal: 4,
-            zIndex: 9,
-            flexDirection: "row",
+            flex: 1,
+            justifyContent: "center",
             alignItems: "center",
-            justifyContent: "flex-end",
-            gap: 2,
-            minWidth: 0,
           }}
         >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Previous room"
-            hitSlop={8}
-            style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
-            onPress={() => {
-              setCurrentViewingRoom(rdrRef.current.goPrevRoom());
-              rdrRef.current.selectedEditFeature = null;
-              rdrRef.current.selectedEditTask = null;
-            }}
-            // @ts-ignore web-only pointer hover
-            onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowLeft(true)}
-            // @ts-ignore web-only pointer hover
-            onMouseLeave={() => Platform.OS === "web" && setHoverRoomArrowLeft(false)}
-          >
-            <View
-              style={{
-                justifyContent: "center",
-                alignItems: "center",
-                transform: [{ scale: Platform.OS === "web" && hoverRoomArrowLeft ? 1.14 : 1 }],
-              }}
-            >
-              <MaterialCommunityIcons
-                name="chevron-left"
-                size={roomChevronSize}
-                color={Platform.OS === "web" && hoverRoomArrowLeft ? ROOM_CHEVRON_COLOR_HOVER : ROOM_CHEVRON_COLOR}
-              />
-            </View>
-          </Pressable>
-          <Text
-            numberOfLines={1}
-            ellipsizeMode="tail"
-            style={{
-              color: "white",
-              fontSize: roomLabelFontSize,
-              fontWeight: "600",
-              flexShrink: 1,
-              textAlign: "right",
-              minWidth: 0,
-              paddingHorizontal: 4,
-            }}
-          >
-            {rdrRef.current.getRoomNameFromId(currentViewingRoom)}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Next room"
-            hitSlop={8}
-            style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
-            onPress={() => {
-              setCurrentViewingRoom(rdrRef.current.goNextRoom());
-              rdrRef.current.selectedEditFeature = null;
-              rdrRef.current.selectedEditTask = null;
-            }}
-            // @ts-ignore web-only pointer hover
-            onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowRight(true)}
-            // @ts-ignore web-only pointer hover
-            onMouseLeave={() => Platform.OS === "web" && setHoverRoomArrowRight(false)}
-          >
-            <View
-              style={{
-                justifyContent: "center",
-                alignItems: "center",
-                transform: [{ scale: Platform.OS === "web" && hoverRoomArrowRight ? 1.14 : 1 }],
-              }}
-            >
-              <MaterialCommunityIcons
-                name="chevron-right"
-                size={roomChevronSize}
-                color={Platform.OS === "web" && hoverRoomArrowRight ? ROOM_CHEVRON_COLOR_HOVER : ROOM_CHEVRON_COLOR}
-              />
-            </View>
-          </Pressable>
-        </View>
+          <GestureDetector gesture={composedGesture}>
+            <GLView style={{
+              width: "100%",
+              height: "100%"
+            }} 
+            onContextCreate={onContextCreate}
+            />
+          </GestureDetector>
 
-        <EditWindow />
-        <ColorButtons />
+          {/* Room change buttons —> inset from left so narrow screens never overlap Edit; scaled type/icons */}
+          <View
+            style={{
+              position: "absolute",
+              left: roomBarLeftInset,
+              right: 12,
+              top: 8,
+              paddingVertical: 6,
+              paddingHorizontal: 4,
+              zIndex: 9,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: 2,
+              minWidth: 0,
+            }}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Previous room"
+              hitSlop={8}
+              style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
+              onPress={() => {
+                setCurrentViewingRoom(rdrRef.current.goPrevRoom());
+                rdrRef.current.selectedEditFeature = null;
+                rdrRef.current.selectedEditTask = null;
+                clearSelectedPlaceFeature();
+              }}
+              // @ts-ignore web-only pointer hover
+              onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowLeft(true)}
+              // @ts-ignore web-only pointer hover
+              onMouseLeave={() => Platform.OS === "web" && setHoverRoomArrowLeft(false)}
+            >
+              <View
+                style={{
+                  justifyContent: "center",
+                  alignItems: "center",
+                  transform: [{ scale: Platform.OS === "web" && hoverRoomArrowLeft ? 1.14 : 1 }],
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="chevron-left"
+                  size={roomChevronSize}
+                  color={Platform.OS === "web" && hoverRoomArrowLeft ? ROOM_CHEVRON_COLOR_HOVER : ROOM_CHEVRON_COLOR}
+                />
+              </View>
+            </Pressable>
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={{
+                color: "white",
+                fontSize: roomLabelFontSize,
+                fontWeight: "600",
+                flexShrink: 1,
+                textAlign: "right",
+                minWidth: 0,
+                paddingHorizontal: 4,
+              }}
+            >
+              {rdrRef.current.getRoomNameFromId(currentViewingRoom)}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Next room"
+              hitSlop={8}
+              style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
+              onPress={() => {
+                setCurrentViewingRoom(rdrRef.current.goNextRoom());
+                rdrRef.current.selectedEditFeature = null;
+                rdrRef.current.selectedEditTask = null;
+                clearSelectedPlaceFeature();
+              }}
+              // @ts-ignore web-only pointer hover
+              onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowRight(true)}
+              // @ts-ignore web-only pointer hover
+              onMouseLeave={() => Platform.OS === "web" && setHoverRoomArrowRight(false)}
+            >
+              <View
+                style={{
+                  justifyContent: "center",
+                  alignItems: "center",
+                  transform: [{ scale: Platform.OS === "web" && hoverRoomArrowRight ? 1.14 : 1 }],
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={roomChevronSize}
+                  color={Platform.OS === "web" && hoverRoomArrowRight ? ROOM_CHEVRON_COLOR_HOVER : ROOM_CHEVRON_COLOR}
+                />
+              </View>
+            </Pressable>
+          </View>
+
+          <EditWindow tool={currentTool} updateToolCallback={setCurrentTool}/>
+          <Inventory tool={currentTool}/> 
+        </View>
+      </PaperProvider>
+    </Fragment>
+    ) : featureFetchSuccess && emptyFeatures ? (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        {/* Display a notification to add features if we don't have any */}
+        <Text style={{fontSize: 16, color: "#5B6B7F", fontWeight: "600"}}>
+          No data yet. Add and delete household features and chores in the List view.
+        </Text>
       </View>
-    </PaperProvider>
     ) : (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         {/* Display a loading bar while we wait to fetch features */}
         <ActivityIndicator size="large" />
+        <Text style={{fontSize: 16, color: "#5B6B7F", fontWeight: "600"}}>
+          Fetching household data...
+        </Text>
       </View>
     )
   );
@@ -851,7 +882,12 @@ function AuthenticatedGraphicsScreen() {
 // This is the function called to create the WebGL context, setup extensions if needed, read and compile shaders, and do all
 // other prep work which is neccessary to initialize our renderer. 
 async function onContextCreate(gl: ExpoWebGLRenderingContext) {
+  // Initialize the renderer and WebGL context
   await rdr.init(gl);
+
+  // Setup callback functions so that we can update the UI from the renderer later
+  rdr.setUnplacedFeatureCallback(setUnplacedFeatures);
+  rdr.setClearSelectedPlaceFeatureCallback(clearSelectedPlaceFeature);
 
   // Start drawing frames. This is a recursive animation function
   drawFrame(rdr.lastFrameTime);

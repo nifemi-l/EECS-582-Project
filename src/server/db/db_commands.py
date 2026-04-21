@@ -2,12 +2,13 @@
 PROLOGUE
 File name: db_commands.py
 Description: Handles database connectivity and defines functions for inserting, updating, and retrieving data from the PostgreSQL database.
-Programmers: Blake Carlson, Logan Smith
+Programmers: Blake Carlson, Logan Smith, some by Jack Bauer
 Creation date: 2/22/26
 Revision date: 
     - 3/19/26: Added create_household, make_household_join_code, add_account_to_household, get_household_by_join_code, is_account_in_household, and get_households_for_account
     - 4/10/26: Added get_account_role_in_household, remove_account_from_household, get_members_for_household, and transfer_admin_in_household
     - 4/16/26: Add 3D scale, rotation support
+    - 4/20/26: Add method to clear feature position data
 Preconditions: Environment variables for database credentials are defined in .env; PostgreSQL database is running and accessible.
 Postconditions: A database connection is established and utility functions are available for performing CRUD operations on Household, Account, Feature, and Task relations.
 Errors: Database connection may fail due to invalid credentials, unreachable host, or server-side errors; SQL execution errors may occur if schema constraints are violated.
@@ -634,6 +635,15 @@ def update_feature(
         )
     conn.commit()
 
+# Set feature position data to NULL
+def set_null_feature_position(feature_id):
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            UPDATE Feature
+            SET x_pos = %s, y_pos = %s, z_pos = %s
+            WHERE feature_id = %s
+        """, (None, None, None, feature_id))
+    conn.commit()
 
 """
 Functions for deleting data

@@ -8,6 +8,7 @@ Revision date:
   - 4/15/26: Add support for scaling, rotating, and moving features. Also rooms
   - 4/16/26: Connect edit menu to database
   - 4/18/26: Highlight selected task and health bar
+  - 4/20/26: Add inventory bar to manage adding features to the graphical view and related integration
 Preconditions: 
   - A proper draw / render loop is created outside of this file (Renderer does not contain its own loop, instead it has the pieces)
   - For the order of features in a renderable household's renderable features, the following are required:
@@ -49,6 +50,7 @@ import {
 import { 
   createFeature as apiCreateFeature, deleteFeature as apiDeleteFeature,
   createTask as apiCreateTask, updateFeature as apiUpdateFeature,
+  clearFeaturePosition as apiClearFeaturePosition,
 } from "./api";
 import { HouseholdRoom } from './room';
 
@@ -70,7 +72,7 @@ const MAX_FEATURE_SCALE = 2;
 export const FOV_RADIANS = (45 * Math.PI / 180);
 
 // Define a magic invalid room ID. They should only be positive
-const UNASSIGNED_ROOM_ID = -1024;
+export const UNASSIGNED_ROOM_ID = -1024;
 
 // An identifier to store a room id for the unassigned tasks.
 // This primarily helps us maintain array logic
@@ -134,15 +136,23 @@ export class Renderer {
 
   // Application data
   house: RenderableHousehold; // The displayed household 
-  selectedEditFeature: RenderableFeature | null; // The current feature being edited in the edit window
-  selectedEditTask: Task | null; // the currently selected UI task
   grid: Grid; // Store a global grid object
   currentDrawingColor: Material; // the current color used for drawing our objects
   featuresDirty: boolean; // flag so we know if we need to apply feature updates or not
   features: Feature[]; // store the fetched feature list for our household
+  unplacedFeatures: Feature[]; // store an array of features that do not yet have coordinate values
   highlightedFeatureID: number | null; // which feature the user's mouse is hovering over
   currentViewingRoom: number; // which room of the household we're currently viewing
   roomList: HouseholdRoom[]; // the list of current rooms for the household
+
+  // UI managed state variables
+  selectedEditFeature: RenderableFeature | null; // The current feature being edited in the edit window
+  selectedEditTask: Task | null; // the currently selected UI task
+  selectedPlaceFeature: Feature | null; // The current feature waiting to be placed 
+
+  // Callback functions
+  syncUnplacedFeatures: (unplacedFeatureList: Feature[]) => void;
+  clearSelectedPlaceFeature: () => void;
 
   // Model data
   meshManager: MeshManager | null;
@@ -156,23 +166,46 @@ export class Renderer {
   ///  Init Routines  ///
   ///////////////////////
 
+  // Setup the callback link from renderer to graphics. This must be called before we can actually sync updtates to graphics
+  setUnplacedFeatureCallback(callback: (unplacedFeatueList: Feature[]) => void) {
+    this.syncUnplacedFeatures = callback;
+  }
+
+  // Setup the callback to clear the selectedPlace feature in graphics
+  setClearSelectedPlaceFeatureCallback(callback: () => void) {
+    this.clearSelectedPlaceFeature = callback;
+  }
+
   // Called to load the needed features from an external database. Once they've been fetched, we call this method to 
   // apply the updated list. 
   setFeatures(householdID: number, features: Feature[], ) {
     // Prepare features
     this.featuresDirty = true; // mark the feature list as dirty so we know to update before drawing next
     this.features = []; // empty the features array
+    this.unplacedFeatures = []; // empty the unplaced features array
     let unassignedRoomEnabled = false; // flag if we've had to do this or not yet
     features.forEach((f) => {
+      // figure out if we need to enable the unassigned room
       if (!unassignedRoomEnabled && f.room_id === null) {
         console.warn("Unassigned feature(s) found.");
         this.enableUnassignedRoom(); // if we find any features with null room ids, we need to allow the use of the unassigned room
         unassignedRoomEnabled = true;
       }
-      this.features.push(f)
+
+      // Figure out if the feature has not been placed yet
+      if ((f.x_pos === null) || (f.y_pos === null) || (f.z_pos === null)) {
+        console.warn("Unplaced feature.");
+        this.unplacedFeatures.push(f); // if not, add it to the appropriate list
+      } else {
+        // Otherwise, add it to our features list
+        this.features.push(f)
+      }
     }); // manually copy the features over
     this.house.household_id = householdID; // Set household ID
     this.house.id = householdID; // for compatability
+
+    // Finally, sync the unplaced feature list
+    this.syncUnplacedFeatures(this.unplacedFeatures);
   }
 
   setRooms(rooms: HouseholdRoom[]) {
@@ -225,7 +258,6 @@ export class Renderer {
     gl.clearColor(0.0, 0.0, 0.0, 1); // The background color 
     gl.enable(gl.DEPTH_TEST); // Allow objects with further depth to be obscured by other objects
     gl.depthFunc(gl.LEQUAL); // Specify which method to use to compare depth (less than or equal)
-
 
     // Read the text of the shader files. We later pass shader data as a string, so we need the actual shader files in a 
     // string representation for later use. We still split them into their own files though because it's easier to manage.
@@ -433,11 +465,17 @@ export class Renderer {
     this.currentDrawingColor = FEATURE_ORANGE;
     this.initialized = false;
     this.features = [];
+    this.unplacedFeatures = [];
     this.featuresDirty = false;
     this.currentDrawPass = RenderPass.MAIN;
     this.currentViewingRoom = 0;
     this.roomList = [];
     this.selectedEditTask = null;
+    this.selectedPlaceFeature = null;
+
+    // Set callbacks
+    this.syncUnplacedFeatures = () => {};
+    this.clearSelectedPlaceFeature = () => {};
 
     // These will be set as needed
     this.frameId = null;
@@ -471,7 +509,7 @@ export class Renderer {
       let mat = FEATURE_ORANGE;
 
       // Create the feature for rendering
-      const rf = new RenderableFeature(f.name, f.household_id, f.id, transform, mat, f.x_pos, f.y_pos, f.z_pos, f.tasks, f.feature_type, f.icon, f.room_id);
+      const rf = new RenderableFeature(f.name, f.household_id, f.id, transform, mat, f.x_pos, f.y_pos, f.z_pos, f.tasks, f.feature_type, f.icon, f.room_id, f.scale, f.rotation_y);
       this.house.renderableFeatures.push(rf); // add to RenderableFeatures
     });
 
@@ -991,30 +1029,51 @@ export class Renderer {
     }
   }
 
-  async deleteFeature(featureID: number) {
-    try {
-      await apiDeleteFeature(featureID); // Delete on the server
+  // Remove a placed feature and put it in the inventory
+  removeFeature(featureID: number) {
+    // Find our feature
+    const feature = this.features.find((f) => {return f.id === featureID});
+    if (!feature) {
+      console.error("Unable to find feature for removal.");
+      return;
+    }
+
+    // Remove it's position data on the server
+    apiClearFeaturePosition(featureID)
+    .then(() => {
+      // On success, apply the results in graphics. Otherwise, do nothing
       this.house.renderableFeatures = this.house.renderableFeatures.filter((f) => {return f.id !== featureID}); // remove the deleted feature
-    } catch (e) {
-      // Note, if we fail we don't need to copy the feature over because we're not updating the feature array anyway
-      console.error(`Failed to delete feature. Canceling deletion for feature ${featureID} in household ${this.house.household_id}.`, e);
-      console.log("Corresponding feature:", featureID);
-    } 
+      this.features = this.features.filter((f) => {return f.id !== featureID}); // remove the deleted feature here too
+      this.unplacedFeatures = [...this.unplacedFeatures, feature];
+      this.syncUnplacedFeatures(this.unplacedFeatures); // trigger a sync in the React UI
+    }).catch((e) => {
+      console.error(`Failed to remove feature. Canceling removal for feature ${featureID} in household ${this.house.household_id}.`, e);
+    });
   }
 
-  async placeFeature(worldX: number, worldY: number, worldZ: number) {
+  // Place the selected feature
+  placeSelectedFeature(worldX: number, worldY: number, worldZ: number) {
+    // Ensure we have selected a place feature
+    const f = this.selectedPlaceFeature;
+    if (!f) {
+      // Note: this is not an error, we don't want to do anything here
+      return;
+    }
+
     // We already know our feature is within bounds by the time this method is called since when we convert screenToWorld coords, we 
     // return a null position on out-of-bounds and thus don't call this method. 
-    // We also ignore collisions for the moment. 
+    // We also ignore collisions. 
 
     // First, round inputs to 2 decimal places
     const x = Number(worldX.toFixed(2));
     const y = Number(worldY.toFixed(2));
     const z = Number(worldZ.toFixed(2));
 
-    // Create the transform
-    const newModelMatrix = GLM.mat4.create(); // create a new transform 
-    GLM.mat4.translate(newModelMatrix, newModelMatrix, [x, y, z]);
+    // Prepare the appropriate model matrix
+    const transform = GLM.mat4.create();
+    const yRot = GLM.quat.create();
+    GLM.quat.fromEuler(yRot, 0, f.rotation_y, 0);
+    GLM.mat4.fromRotationTranslationScale(transform, yRot, [x, y, z], [f.scale, f.scale, f.scale]);
 
     // Create the material / type
     const newMaterial: Material = this.currentDrawingColor;
@@ -1024,50 +1083,23 @@ export class Renderer {
     const featureType = featureOptions[Math.floor(Math.random() * featureOptions.length)];
 
     // Create the feature object
-    const newFeature = new RenderableFeature("f:" + x + y + z, this.house.household_id, 0, newModelMatrix, newMaterial, x, y, z, undefined, featureType); // this is the new feature object we're adding
-    // randomly add a second chore for demo purposes
-    if (Math.round(Math.random()) == 0) {
-      newFeature.addTask(new Task("Test Task", newFeature.id, 1));
-    } else {
-      newFeature.addTask(new Task("Test Task", newFeature.id, 1));
-      newFeature.addTask(new Task("Test Task", newFeature.id, 2));
-    }
+    const newFeature = new RenderableFeature(f.name, f.household_id, f.id, transform, newMaterial, x, y, z, f.tasks, featureType, f.icon, f.room_id, f.scale, f.rotation_y); // this is the new feature object we're adding
 
-    // Update the remote server
-    try {
-      // Create the feature on the server
-      const featureID = await apiCreateFeature({
-        household_id: this.house.household_id,
-        feature_name: "f:" + x + y + z,
-        x_pos: x,
-        y_pos: y,
-        z_pos: z,
-        feature_type: getFeatureTypeToString(featureType)
-      });
-      newFeature.setID(featureID.feature_id); // retroactively set the appropriate ID
-
-      // Now create the tasks on the server
-      newFeature.tasks.forEach((t) => {
-        const now = new Date();
-        apiCreateTask({
-          feature_id: featureID.feature_id,
-          task_name: INVALID_TASK_NAME,
-          frequency_days: 1, // Default to daily task
-          visibility: "household",
-          last_completed: now.toISOString(), 
-        }).then((id) => {
-          // Update task ids
-          t.id = id.task_id;
-          t.last_completed = now;
-        }).catch((e) => {
-          console.error("Unable to add task.", e);
-        })});
-
-      // If the remote server was successful, add the feature for drawing
+    // Update the feature's XYZ positions
+    apiUpdateFeature(f.id, {
+      x_pos: x,
+      y_pos: y,
+      z_pos: z,
+    }).then(() => {
+      // Apply updates in graphics upon success
       this.house.renderableFeatures.push(newFeature); // add the feature to the house
-    } catch (e) {
+      this.features.push(f); // add the super feature to our features array
+      this.unplacedFeatures = this.unplacedFeatures.filter((fv) => {return fv.id !== f.id}); // remove from the unplaced feature
+      this.syncUnplacedFeatures(this.unplacedFeatures); // trigger a sync in the UI
+      this.clearSelectedPlaceFeature(); // deselect the current edit feature
+    }).catch((e) => {
       console.error(`Unable to create feature for household ${this.house.household_id}.`, e);
-    }
+    });
   }
 
   // A function to convert screen clicks / taps from screen coordinates to world coordinates in the renderer

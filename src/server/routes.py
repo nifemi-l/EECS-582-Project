@@ -2,11 +2,12 @@
 PROLOGUE
 File name: routes.py
 Description: Flask blueprint for task, household, and account CRUD operations.
-Programmers: Delroy Wright, some code from Nifemi Lawal
+Programmers: Delroy Wright, some code from Nifemi Lawal, some from Jack Bauer
 Creation date: 3/11/26
 Revision date: 3/29/26
     - Added error handling and validation for all routes.
     - 4/16/26: Add 3D scale, rotation support
+    - 4/20/26: Add route to clear feature position data
 Preconditions: db_commands.py contains necessary CRUD functions.
 Postconditions: Flask routes are available for managing tasks, households, and users.
 """
@@ -20,6 +21,7 @@ from db.db_commands import (
     get_features_with_tasks, update_task_last_comp_time,
     is_account_in_household, get_household_id_for_task,
     add_room, get_rooms_for_household, get_room_by_id, update_room, delete_room,
+    set_null_feature_position,
 )
 from db.auth.auth_utils import get_current_account_id
 
@@ -46,9 +48,9 @@ def create_feature():
             household_id,
             data["feature_name"],
             data.get("feature_type", ""),
-            data.get("x_pos", 0),
-            data.get("y_pos", 0),
-            data.get("z_pos", 0),
+            data.get("x_pos", None),
+            data.get("y_pos", None),
+            data.get("z_pos", None),
             data.get("icon", "home-outline"),
             room_id,
         )
@@ -87,6 +89,21 @@ def edit_feature(feature_id):
             uf_kwargs["room_id"] = rid
         update_feature(feature_id, **uf_kwargs)
         return jsonify({"message": "Feature updated successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+# Clear a feature's position data so that is becomes NULL in the database
+@routes_bp.route("/feature/position/<int:feature_id>", methods=["DELETE"])
+def clear_feature_position(feature_id):
+    account_id, error = get_current_account_id()
+    if error:
+        return error
+    feature = get_feature_by_id(feature_id)
+    if not feature or not is_account_in_household(account_id, feature[1]):
+        return jsonify({"error": "Access denied"}), 403
+    try:
+        set_null_feature_position(feature_id)
+        return jsonify({"message": "Feature position data cleared successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
