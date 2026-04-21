@@ -263,7 +263,7 @@ function Inventory() {
       {unplacedFeatureList.map((feature, index, featureArray) => {
         return feature.room_id === rdrRef.current.currentViewingRoom ? (
         <Pressable
-          onPress={() => {setSelectedPlaceFeature(feature)}}
+          onPress={() => {selectedPlaceFeature === feature ? clearSelectedPlaceFeature() : setSelectedPlaceFeature(feature)}}
           hitSlop={8}
           key={feature.id}
         >
