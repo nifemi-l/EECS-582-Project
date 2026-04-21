@@ -261,7 +261,7 @@ function Inventory(props: InventoryProps) {
       }}
     >
       {props.tool === Tool.TOOL_EDIT_FEATURE ? (
-        <Text style={{color: tinycolor("red").toHexString()}}>This room has unplaced features. Enter View mode to place them.</Text>
+        <Text style={{color: tinycolor("red").toHexString()}}>This room has unplaced features. Enter View mode to place them</Text>
       ) : (
         <Fragment>
           <View
@@ -284,7 +284,7 @@ function Inventory(props: InventoryProps) {
               </Pressable>) : null;
             })}
           </View> 
-          <Text style={{color: "#FFFFFF"}}>Select a feature icon and click to place</Text>
+          <Text style={{color: "#FFFFFF"}}>Select an unplaced feature's icon and click on the grid to place it</Text>
         </Fragment>
       )}
     </View>)
@@ -628,6 +628,7 @@ function AuthenticatedGraphicsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>(); // get parameter from route
   const householdId = Number(id) || 1;
   const [featureFetchSuccess, setFeatureFetchSuccess] = useState(false);
+  const [emptyFeatures, setEmptyFeatures] = useState(true);
 
   // Reload the features of our housewhenever the household ID changes.
   // Also mostly from list.tsx (thanks again Nifemi)
@@ -679,6 +680,11 @@ function AuthenticatedGraphicsScreen() {
               });
               rdrRef.current.setFeatures(householdId, mapped);
               setFeatureFetchSuccess(true);
+
+              // Determine if our features list is empty
+              if (mapped.length > 0) {
+                setEmptyFeatures(false);
+              }
             })
       .catch((e) => {
         console.error("Failed to fetch features for household", householdId, e);
@@ -711,127 +717,139 @@ function AuthenticatedGraphicsScreen() {
   const ROOM_CHEVRON_COLOR_HOVER = !ROOM_ACCENT_COLOR ? "#5EFF9A" : tinycolor(ROOM_ACCENT_COLOR).brighten(10).toHexString();
 
   return (
-    featureFetchSuccess ? (
-      <PaperProvider theme={appPaperLightTheme}>
-      <View
-        onLayout={handleLayout}
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <GestureDetector gesture={composedGesture}>
-          <GLView style={{
-            width: "100%",
-            height: "100%"
-          }} 
-          onContextCreate={onContextCreate}
-          />
-        </GestureDetector>
-
-        {/* Room change buttons —> inset from left so narrow screens never overlap Edit; scaled type/icons */}
+    featureFetchSuccess && !emptyFeatures ? (
+      <Fragment>
+        <PaperProvider theme={appPaperLightTheme}>
         <View
+          onLayout={handleLayout}
           style={{
-            position: "absolute",
-            left: roomBarLeftInset,
-            right: 12,
-            top: 8,
-            paddingVertical: 6,
-            paddingHorizontal: 4,
-            zIndex: 9,
-            flexDirection: "row",
+            flex: 1,
+            justifyContent: "center",
             alignItems: "center",
-            justifyContent: "flex-end",
-            gap: 2,
-            minWidth: 0,
           }}
         >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Previous room"
-            hitSlop={8}
-            style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
-            onPress={() => {
-              setCurrentViewingRoom(rdrRef.current.goPrevRoom());
-              rdrRef.current.selectedEditFeature = null;
-              rdrRef.current.selectedEditTask = null;
-              clearSelectedPlaceFeature();
-            }}
-            // @ts-ignore web-only pointer hover
-            onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowLeft(true)}
-            // @ts-ignore web-only pointer hover
-            onMouseLeave={() => Platform.OS === "web" && setHoverRoomArrowLeft(false)}
-          >
-            <View
-              style={{
-                justifyContent: "center",
-                alignItems: "center",
-                transform: [{ scale: Platform.OS === "web" && hoverRoomArrowLeft ? 1.14 : 1 }],
-              }}
-            >
-              <MaterialCommunityIcons
-                name="chevron-left"
-                size={roomChevronSize}
-                color={Platform.OS === "web" && hoverRoomArrowLeft ? ROOM_CHEVRON_COLOR_HOVER : ROOM_CHEVRON_COLOR}
-              />
-            </View>
-          </Pressable>
-          <Text
-            numberOfLines={1}
-            ellipsizeMode="tail"
-            style={{
-              color: "white",
-              fontSize: roomLabelFontSize,
-              fontWeight: "600",
-              flexShrink: 1,
-              textAlign: "right",
-              minWidth: 0,
-              paddingHorizontal: 4,
-            }}
-          >
-            {rdrRef.current.getRoomNameFromId(currentViewingRoom)}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Next room"
-            hitSlop={8}
-            style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
-            onPress={() => {
-              setCurrentViewingRoom(rdrRef.current.goNextRoom());
-              rdrRef.current.selectedEditFeature = null;
-              rdrRef.current.selectedEditTask = null;
-              clearSelectedPlaceFeature();
-            }}
-            // @ts-ignore web-only pointer hover
-            onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowRight(true)}
-            // @ts-ignore web-only pointer hover
-            onMouseLeave={() => Platform.OS === "web" && setHoverRoomArrowRight(false)}
-          >
-            <View
-              style={{
-                justifyContent: "center",
-                alignItems: "center",
-                transform: [{ scale: Platform.OS === "web" && hoverRoomArrowRight ? 1.14 : 1 }],
-              }}
-            >
-              <MaterialCommunityIcons
-                name="chevron-right"
-                size={roomChevronSize}
-                color={Platform.OS === "web" && hoverRoomArrowRight ? ROOM_CHEVRON_COLOR_HOVER : ROOM_CHEVRON_COLOR}
-              />
-            </View>
-          </Pressable>
-        </View>
+          <GestureDetector gesture={composedGesture}>
+            <GLView style={{
+              width: "100%",
+              height: "100%"
+            }} 
+            onContextCreate={onContextCreate}
+            />
+          </GestureDetector>
 
-        <EditWindow tool={currentTool} updateToolCallback={setCurrentTool}/>
-        <Inventory tool={currentTool}/> 
+          {/* Room change buttons —> inset from left so narrow screens never overlap Edit; scaled type/icons */}
+          <View
+            style={{
+              position: "absolute",
+              left: roomBarLeftInset,
+              right: 12,
+              top: 8,
+              paddingVertical: 6,
+              paddingHorizontal: 4,
+              zIndex: 9,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: 2,
+              minWidth: 0,
+            }}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Previous room"
+              hitSlop={8}
+              style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
+              onPress={() => {
+                setCurrentViewingRoom(rdrRef.current.goPrevRoom());
+                rdrRef.current.selectedEditFeature = null;
+                rdrRef.current.selectedEditTask = null;
+                clearSelectedPlaceFeature();
+              }}
+              // @ts-ignore web-only pointer hover
+              onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowLeft(true)}
+              // @ts-ignore web-only pointer hover
+              onMouseLeave={() => Platform.OS === "web" && setHoverRoomArrowLeft(false)}
+            >
+              <View
+                style={{
+                  justifyContent: "center",
+                  alignItems: "center",
+                  transform: [{ scale: Platform.OS === "web" && hoverRoomArrowLeft ? 1.14 : 1 }],
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="chevron-left"
+                  size={roomChevronSize}
+                  color={Platform.OS === "web" && hoverRoomArrowLeft ? ROOM_CHEVRON_COLOR_HOVER : ROOM_CHEVRON_COLOR}
+                />
+              </View>
+            </Pressable>
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={{
+                color: "white",
+                fontSize: roomLabelFontSize,
+                fontWeight: "600",
+                flexShrink: 1,
+                textAlign: "right",
+                minWidth: 0,
+                paddingHorizontal: 4,
+              }}
+            >
+              {rdrRef.current.getRoomNameFromId(currentViewingRoom)}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Next room"
+              hitSlop={8}
+              style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
+              onPress={() => {
+                setCurrentViewingRoom(rdrRef.current.goNextRoom());
+                rdrRef.current.selectedEditFeature = null;
+                rdrRef.current.selectedEditTask = null;
+                clearSelectedPlaceFeature();
+              }}
+              // @ts-ignore web-only pointer hover
+              onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowRight(true)}
+              // @ts-ignore web-only pointer hover
+              onMouseLeave={() => Platform.OS === "web" && setHoverRoomArrowRight(false)}
+            >
+              <View
+                style={{
+                  justifyContent: "center",
+                  alignItems: "center",
+                  transform: [{ scale: Platform.OS === "web" && hoverRoomArrowRight ? 1.14 : 1 }],
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={roomChevronSize}
+                  color={Platform.OS === "web" && hoverRoomArrowRight ? ROOM_CHEVRON_COLOR_HOVER : ROOM_CHEVRON_COLOR}
+                />
+              </View>
+            </Pressable>
+          </View>
+
+          <EditWindow tool={currentTool} updateToolCallback={setCurrentTool}/>
+          <Inventory tool={currentTool}/> 
+        </View>
+      </PaperProvider>
+    </Fragment>
+    ) : featureFetchSuccess && emptyFeatures ? (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        {/* Display a notification to add features if we don't have any */}
+        <Text style={{fontSize: 16, color: "#5B6B7F", fontWeight: "600"}}>
+          No data yet. Add and delete household features and chores in the List view.
+        </Text>
       </View>
-    </PaperProvider>
     ) : (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         {/* Display a loading bar while we wait to fetch features */}
         <ActivityIndicator size="large" />
+        <Text style={{fontSize: 16, color: "#5B6B7F", fontWeight: "600"}}>
+          Fetching household data...
+        </Text>
       </View>
     )
   );

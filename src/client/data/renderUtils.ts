@@ -474,8 +474,8 @@ export class Renderer {
     this.selectedPlaceFeature = null;
 
     // Set callbacks
-    this.syncUnplacedFeatures = () => console.log("Renderer cannot yet provide feature data to React.");
-    this.clearSelectedPlaceFeature = () => console.log("Cannot clear selected place feature in React.");
+    this.syncUnplacedFeatures = () => {};
+    this.clearSelectedPlaceFeature = () => {};
 
     // These will be set as needed
     this.frameId = null;
