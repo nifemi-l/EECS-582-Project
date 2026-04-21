@@ -25,7 +25,8 @@ import { ExpoWebGLRenderingContext } from 'expo-gl';
 import { Platform } from 'react-native';
 import * as OBJ from 'webgl-obj-loader';
 import * as GLM from 'gl-matrix';
-
+import { FeatureType } from './feature';
+import { LOCATION_ICONS } from './householdUtils';
 
 // ***********************************************************
 //                    Misc useful functions
@@ -56,6 +57,8 @@ export const MESH_PATH_MAP: MeshPathMap = {
   "flower_pot": require("../assets/models/flower_pot.obj"),
   "couch": require("../assets/models/couch.obj"),
   "fridge": require("../assets/models/Fridge.obj"),
+  "car": require("../assets/models/car.obj"),
+  "washing_machine": require("../assets/models/washing_machine.obj"),
 };
 
 // ***********************************************************
@@ -653,6 +656,50 @@ async function sourceAllModels(): Promise<OBJ.MeshMap> {
   // Return the result
   console.log("Models loaded.");
   return meshMap;
+}
+
+// Get a feature type from its icon
+export function getFeatureTypeFromIcon(icon: string): FeatureType {
+    // Ensure that our icon is a valid icon for a feature
+    const index = LOCATION_ICONS.find((i) => {return i === icon});
+    if (!index) {
+        // we know that our icon is not a valid icon
+        console.error("Unable to convert icon type to feature type.");
+        return FeatureType.UNDEFINED;
+    }
+
+    // Otherwise, convert to a FeatureType
+    switch (icon) {
+        case "home-outline":
+            return FeatureType.UNDEFINED;
+        case "silverware-fork-knife":
+            return FeatureType.UNDEFINED;
+        case "shower":
+            return FeatureType.UNDEFINED;
+        case "bed":
+            return FeatureType.BED;
+        case "sofa":
+            return FeatureType.COUCH;
+        case "desk":
+            return FeatureType.UNDEFINED;
+        case "garage":
+            return FeatureType.UNDEFINED;
+        case "tree":
+            return FeatureType.UNDEFINED;
+        case "car-outline":
+            return FeatureType.CAR;
+        case "stairs":
+            return FeatureType.UNDEFINED;
+        case "washing-machine":
+            return FeatureType.WASHING_MACHINE;
+        case "door":
+            return FeatureType.UNDEFINED;  
+        case "":
+        default:
+            // Note: I think this should never be reached since "" is not in LOCATION_ICONS
+            // However, we'll leave it in for future proofing
+            return FeatureType.UNDEFINED;
+    }
 }
 
 // ***********************************************************

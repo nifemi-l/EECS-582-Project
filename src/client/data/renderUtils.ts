@@ -41,7 +41,7 @@ import {
   FEATURE_ORANGE, FEATURE_GREY,
   ShaderLightUniformLocations, ShaderBillboardUniformLocations,
   ShaderAttributebLocations, ShaderMatrixUniformLocations,
-  MeshManager, VAO, VAOManager,
+  MeshManager, VAO, VAOManager, getFeatureTypeFromIcon,
   ShaderProgramManager, SHADER_REGULAR_PATHS, SHADER_BILLBOARD_PATHS,
   SHADER_PICK_PATHS, ShaderPickLocations, RenderPass, resizeFramebufferAttachments,
 } from "./graphicsUtils";
@@ -1078,9 +1078,8 @@ export class Renderer {
     // Create the material / type
     const newMaterial: Material = this.currentDrawingColor;
 
-    // Get the correct type
-    const featureOptions = Object.values(FeatureType) as FeatureType[];
-    const featureType = featureOptions[Math.floor(Math.random() * featureOptions.length)];
+    // Set the correct type. We derive type from the icon set by the list view. Type is assigned here.
+    const featureType = getFeatureTypeFromIcon(f.icon);
 
     // Create the feature object
     const newFeature = new RenderableFeature(f.name, f.household_id, f.id, transform, newMaterial, x, y, z, f.tasks, featureType, f.icon, f.room_id, f.scale, f.rotation_y); // this is the new feature object we're adding
@@ -1090,6 +1089,7 @@ export class Renderer {
       x_pos: x,
       y_pos: y,
       z_pos: z,
+      feature_type: getFeatureTypeToString(featureType),
     }).then(() => {
       // Apply updates in graphics upon success
       this.house.renderableFeatures.push(newFeature); // add the feature to the house
