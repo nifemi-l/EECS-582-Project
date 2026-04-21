@@ -288,7 +288,7 @@ function Inventory(props: InventoryProps) {
               </Pressable>) : null;
             })}
           </View> 
-          <Text style={{color: "#FFFFFF"}}>Select an unplaced feature's icon and click on the grid to place it</Text>
+          <Text style={{color: "#FFFFFF"}}>{selectedPlaceFeature === null ? "Select an unplaced feature's icon and click on the grid to place it" : "Selected: " + selectedPlaceFeature.name}</Text>
         </Fragment>
       )}
     </View>)
