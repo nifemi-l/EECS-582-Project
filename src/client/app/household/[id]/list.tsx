@@ -679,9 +679,11 @@ function FeatureGroup({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(feature.name);
-  const [collapsed, setCollapsed] = useState(false);
+  const taskCount = Array.from(feature.tasks).length;
+  const [collapsed, setCollapsed] = useState(taskCount === 0);
   const [roomPickerOpen, setRoomPickerOpen] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const previousTaskCountRef = useRef(taskCount);
 
   const hasSelection = Array.from(feature.tasks).some((t) => selectedIds.has(t.id));
   const selectedCount = Array.from(feature.tasks).filter((t) => selectedIds.has(t.id)).length;
@@ -720,6 +722,18 @@ function FeatureGroup({
   const confirmDeleteFeature = () => {
     onRequestDeleteSection(feature.id, feature.name);
   };
+
+  useEffect(() => {
+    const previousTaskCount = previousTaskCountRef.current;
+
+    if (taskCount === 0 && previousTaskCount > 0) {
+      setCollapsed(true);
+    } else if (taskCount > 0 && previousTaskCount === 0) {
+      setCollapsed(false);
+    }
+
+    previousTaskCountRef.current = taskCount;
+  }, [taskCount]);
 
   return (
     <View style={styles.featureGroup}>
@@ -766,7 +780,7 @@ function FeatureGroup({
           </View>
         )}
 
-        <Text style={styles.taskCount}>{Array.from(feature.tasks).length}</Text>
+        <Text style={styles.taskCount}>{taskCount}</Text>
 
         {hasSelection && (
           <Pressable
@@ -941,7 +955,7 @@ function FeatureGroup({
 
       {!collapsed && (
         <>
-          {Array.from(feature.tasks).length === 0 ? (
+          {taskCount === 0 ? (
             <View style={styles.emptyState}>
               <MaterialCommunityIcons name="playlist-remove" size={32} color="#ddd" />
               <Text style={styles.emptyStateText}>No tasks yet</Text>
