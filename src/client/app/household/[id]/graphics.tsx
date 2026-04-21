@@ -1,7 +1,7 @@
 /* PROLOGUE
 File name: graphics.tsx
 Description: Provide a home page with a WebGL context for graphical rendering
-Programmer: Jack Bauer
+Programmer: Jack Bauer, Logan Smith
 Creation date: 2/15/26
 Revision date: 
   - 2/15/26: Move graphical context and related code from index.tsx to here. Add comments. 
@@ -12,6 +12,14 @@ Revision date:
   - 3/28/26: Add remove feature, walls with visibility changes, edit mode and edit menu, floor resize, zoom
   - 3/29/26: Major refactor (split to graphicsUtils and renderUtils)
   - 4/6/26: Convert to use FeatureType enum & support model loading
+  - 4/9/26: Add AuthGuard to protect the screen and redirect unauthenticated users to login
+  - 4/13/26: Add room selection UI & rotate position widget in edit menu to match rotation angle
+  - 4/13/26: Add consolidation to current room selection UI for mobile devices
+  - 4/13/26: Web hover on Edit button and room chevrons (chevron scale via transform)
+  - 4/15/26: Add edit window buttons for feature rotation, scaling, and translation. Other tweaks. Also rooms
+  - 4/16/26: Add 3D scale, rotation database support
+  - 4/18/26: Highlight selected task and health bar
+  - 4/20/26: Add inventory bar to manage adding features to the graphical view
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -24,33 +32,37 @@ Known faults: None
 //                      Needed Imports
 // ***********************************************************
 
+// Prevents URL changing to bypass login.
+import { AuthLoadingScreen, useAuthGuard } from "../../../utils/useAuthGuard";
+
 // Import required components
-import React, { useEffect, useState, useSyncExternalStore, useRef } from 'react';
+import React, { useEffect, useState, useSyncExternalStore, useRef, Fragment } from 'react';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
-import * as GLM from 'gl-matrix';
-import { LayoutChangeEvent, Pressable, View, useWindowDimensions, ActivityIndicator } from "react-native";
+import { ActivityIndicator, LayoutChangeEvent, Platform, Pressable, View, useWindowDimensions } from "react-native";
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@react-navigation/elements';
 import { Button, PaperProvider, Card, Menu, TextInput } from 'react-native-paper';
 import { useLocalSearchParams } from "expo-router";
+import { appPaperLightTheme } from "../../../theme/paperTheme";
+import { listBrand } from "../../../theme/colors";
+import tinycolor from "tinycolor2";
 
 // Import graphics utilities
 import {
   MoveDirection, Tool,
-  FEATURE_ORANGE, FEATURE_BLUE, FEATURE_GREEN, FEATURE_RED,
-  cellFromCoords, RenderPass,
-  getPixelFromRaw, getPickedObjectFromPointOnScreen,
-  setPixelFrustrum
+  RenderPass,getPixelFromRaw, getPickedObjectFromPointOnScreen,
+  setPixelFrustrum, InventoryProps, EditMenuProps
 } from "../../../data/graphicsUtils"
 
 // Import renderer classes
 import {
-  RenderableFeature, Renderer, FOV_RADIANS, NEAR_CLIP, FAR_CLIP
+  RenderableFeature, Renderer, FOV_RADIANS, NEAR_CLIP, FAR_CLIP, INVALID_TASK_NAME, UNASSIGNED_ROOM_ID
 } from "../../../data/renderUtils"
 
 // Import local api utilities
 import { fetchHouseholdFeatures } from "../../../data/encryptedApi";
+import { fetchHouseholdRooms } from "../../../data/api";
 import Feature, { getFeatureTypeFromString } from "../../../data/feature";
 import Task from "../../../data/task";
 
@@ -72,11 +84,11 @@ let viewHeight = 0;
 let windowHeight = 0;
 let windowWidth = 0;
 
-// Store the current editing tool
-let currentTool = Tool.TOOL_FEATURE;
-
 // The renderer
 let rdr = new Renderer();
+
+// Axis-aligned screen angles from the camera right vector in world space
+let xAxisAngle = 0;
 
 // ***********************************************************
 //                      React UI PubSub System
@@ -98,12 +110,56 @@ function subListener(cb: ((val: any) => void)) {
 // setter so that listeners are all notified on update
 function setSelectedEditFeature(feature: RenderableFeature | null) {
   rdr.selectedEditFeature = feature;
+  if (feature !== null && feature.tasks.length > 0) {
+    rdr.selectedEditTask = feature.tasks[0];
+  } 
+  if (!feature) {
+    rdr.selectedEditTask = null;
+  }
   reactListeners.forEach((cb) => cb(rdr.selectedEditFeature)); // call the callback set by each listener
 }
 
 // getter for listeners
 function getSelectedEditFeature() {
   return rdr.selectedEditFeature;
+}
+
+// setter(s) for x axis aligned angles
+function setXAxisAngle() {
+  xAxisAngle = rdr.getAngleFromCameraRight(MoveDirection.POS_X);
+  reactListeners.forEach((cb) => cb(xAxisAngle));
+}
+
+// getter(s) for axis aligned angles
+function getXAxisAngle() {
+  return xAxisAngle;
+}
+
+// setter for the unplaced feature list
+function setUnplacedFeatures(features: Feature[]) {
+  rdr.unplacedFeatures = features;
+  reactListeners.forEach((cb) => cb(rdr.unplacedFeatures));
+}
+
+// getter for the unplaced feature list
+function getUnplacedFeatures() {
+  return rdr.unplacedFeatures;
+}
+
+// setter for the feature we're waiting to place
+function setSelectedPlaceFeature(feature: Feature | null) {
+    rdr.selectedPlaceFeature = feature;
+    reactListeners.forEach((cb) => cb(rdr.selectedPlaceFeature));
+}
+
+// getter for the feature we're waiting to place
+function getSelectedPlaceFeature() {
+  return rdr.selectedPlaceFeature;
+}
+
+// clear out selected place feature
+function clearSelectedPlaceFeature() {
+  setSelectedPlaceFeature(null);
 }
 
 // ***********************************************************
@@ -127,11 +183,6 @@ function getViewAndWindowDims() {
   return [viewWidth, viewHeight, windowWidth, windowHeight];
 }
 
-// This needs to be a function so that we can dynamically change the tool in gestures
-function isUsingEditTool() {
-  return currentTool === Tool.TOOL_EDIT_FEATURE;
-}
-
 // ***********************************************************
 //     Non-stateful Gesture Handling (for state, see Index)
 // ***********************************************************
@@ -148,6 +199,7 @@ const handlePan = Gesture.Pan()
     panLastX = 0;
     panLastY = 0;
     panYDir = 0;
+    setXAxisAngle();
   })
 
   // Handle gesture updates and calculate the difference between frames, then update the velocity
@@ -162,6 +214,7 @@ const handlePan = Gesture.Pan()
     panYDir = deltaY > 0 ? 1 : -1;
 
     updateVelocityPan(deltaX, deltaY);
+    setXAxisAngle();
   })
 
   // When we let go of the drag, we no longer want to rotate so we set the rotation value to 0
@@ -174,87 +227,97 @@ const handlePan = Gesture.Pan()
 //                      JSX And UI
 // ***********************************************************
 
-// The color selection buttons at the bottom of the screen
-function ColorButtons() {
-  // Store the current color so we can show it in the UI
-  const [drawingColor, setDrawingColor] = useState(FEATURE_ORANGE);
+// An inventory system for unplaced features that we can draw from to put on the screen
+function Inventory(props: InventoryProps) {
+  // Get a list of unplaced features
+  const unplacedFeatureList: Feature[] = useSyncExternalStore(subListener, getUnplacedFeatures);
+  // Selected feature that we are going to place on click. Null most of the time
+  const selectedPlaceFeature = useSyncExternalStore(subListener, getSelectedPlaceFeature);
 
-  // Ensure sync between gl and react
-  if (drawingColor !== rdr.currentDrawingColor) {
-    setDrawingColor(rdr.currentDrawingColor);
-  }
+  // Renderer ref
+  const rdrRef = useRef(rdr);
+  useEffect(() => {
+    rdrRef.current = rdr;
+  }, [rdr]);
 
-  /* Buttons for selecting type */
-  return (
-    <View 
+  // Find the number of unplaced features in the current room
+  // This works becaue it is re-rendered by its parent component on room change
+  const numUnplacedInRoom = unplacedFeatureList.filter((f) => {
+    return f.room_id === rdrRef.current.currentViewingRoom  || (f.room_id == null && rdrRef.current.currentViewingRoom === UNASSIGNED_ROOM_ID);
+  }).length;
+
+  const numPlacedInRoom = rdrRef.current.features.filter((pf) => {
+    return (pf.room_id === rdrRef.current.currentViewingRoom) || (pf.room_id === null && rdrRef.current.currentViewingRoom === UNASSIGNED_ROOM_ID)
+  }).length
+
+  // Create a dynamic list of the features that we have created in the list view but do not yet have graphical positions
+  return (numUnplacedInRoom > 0 ? (
+    <View
       style={{
-        flexDirection: "row",
+        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         position: "absolute",
         bottom: 40,
-        padding: 10,
         zIndex: 10,
-        gap: 10,
+        gap: 5,
+        padding: 0,
+        margin: 0,
       }}
     >
-      {/* Red Button */}
-      <Pressable
-        onPress={() => {rdr.currentDrawingColor = FEATURE_RED; setDrawingColor(FEATURE_RED)}}
-        hitSlop={8}
-      >
-        <MaterialCommunityIcons name={drawingColor !== FEATURE_RED ? 'circle-outline' : 'circle'} size={20} color="#de3737" />
-      </Pressable>
-      {/* Green Button */}
-      <Pressable
-        onPress={() => {rdr.currentDrawingColor = FEATURE_GREEN; setDrawingColor(FEATURE_GREEN)}}
-        hitSlop={8}
-      >
-        <MaterialCommunityIcons name={drawingColor !== FEATURE_GREEN ? 'circle-outline' : 'circle'} size={20} color="#53de37" />
-      </Pressable>
-      {/* Blue Button */}
-      <Pressable
-        onPress={() => {rdr.currentDrawingColor = FEATURE_BLUE; setDrawingColor(FEATURE_BLUE)}}
-        hitSlop={8}
-      >
-        <MaterialCommunityIcons name={drawingColor !== FEATURE_BLUE ? 'circle-outline' : 'circle'} size={20} color="#3764de" />
-      </Pressable>
-      {/* Orange Button */}
-      <Pressable
-        onPress={() => {rdr.currentDrawingColor = FEATURE_ORANGE; setDrawingColor(FEATURE_ORANGE)}}
-        hitSlop={8}
-      >
-        <MaterialCommunityIcons name={drawingColor !== FEATURE_ORANGE ? 'circle-outline' : 'circle'} size={20} color="#de8537" />
-      </Pressable>
-
-      {/* Edit grid size buttons */}
-      <Pressable
-        onPress={() => {rdr.grid.resize(rdr.grid.width + 2, rdr.grid.height); rdr.house.resizeFloorFeature()}}>
-        <MaterialCommunityIcons name='arrow-right' color="#abcd" />
-      </Pressable>
-
-      <Pressable
-        onPress={() => {rdr.grid.resize(rdr.grid.width, rdr.grid.height + 2); rdr.house.resizeFloorFeature()}}>
-        <MaterialCommunityIcons name='arrow-up' color="#abcd" />
-      </Pressable>
-
-      <Pressable
-        onPress={() => {rdr.grid.resize(rdr.grid.width - 2, rdr.grid.height); rdr.house.resizeFloorFeature()}}>
-        <MaterialCommunityIcons name='arrow-left' color="#abcd" />
-      </Pressable>
-
-      <Pressable
-        onPress={() => {rdr.grid.resize(rdr.grid.width, rdr.grid.height - 2); rdr.house.resizeFloorFeature()}}>
-        <MaterialCommunityIcons name='arrow-down' color="#abcd" />
-      </Pressable>
-    </View>
-  );
+      {props.tool === Tool.TOOL_EDIT_FEATURE ? (
+        <Text style={{color: tinycolor("red").toHexString()}}>This room has unplaced features. Enter View mode to place them</Text>
+      ) : (
+        <Fragment>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 10,
+              gap: 10,
+            }}
+          >
+            {unplacedFeatureList.map((feature, index, featureArray) => {
+              return (feature.room_id === rdrRef.current.currentViewingRoom) || (feature.room_id === null && rdrRef.current.currentViewingRoom === UNASSIGNED_ROOM_ID) ? (
+              <Pressable
+                onPress={() => {selectedPlaceFeature === feature ? clearSelectedPlaceFeature() : setSelectedPlaceFeature(feature)}}
+                hitSlop={8}
+                key={feature.id}
+              >
+                <MaterialCommunityIcons name={feature.icon as any} color={feature === selectedPlaceFeature ? tinycolor(listBrand).lighten(20).toHexString() : tinycolor(listBrand).darken(10).toHexString()} size={20}/>
+              </Pressable>) : null;
+            })}
+          </View> 
+          <Text style={{color: "#FFFFFF"}}>{selectedPlaceFeature === null ? "Select an unplaced feature's icon and click on the grid to place it" : "Selected: " + selectedPlaceFeature.feature_name}</Text>
+        </Fragment>
+      )}
+    </View>)
+    : numPlacedInRoom <= 0 ? (
+        <View
+          style={{
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "absolute",
+            bottom: 40,
+            zIndex: 10,
+            gap: 5,
+            padding: 0,
+            margin: 0,
+          }}
+        >
+          {/* Display a message if we have no unplaced features AND no placed features (thus none at all) */}
+          <Text style={{color: "#FFFFFF"}}>This room has no features. Add or delete them in the List view</Text>
+        </View>
+      ) : null);
 }
 
 // A window that will appear to edit feature info
-function EditWindow() {
+function EditWindow(props: EditMenuProps) {
   // if in edit mode or not
-  const [isEditing, setIsEditing] = useState(false);
+  const isEditing = props.tool === Tool.TOOL_EDIT_FEATURE;
+  const [hoverEditButton, setHoverEditButton] = useState(false);
   // get the currently selected edit feature
   const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
   // Set the chore selected for our feature
@@ -263,11 +326,31 @@ function EditWindow() {
   const [showIntervalMenu, setShowIntervalMenu] = useState(false);
   // The frequency update value we want to store for updates
   const [newFrequency, setNewFrequency] = useState("");
+  // The angle between the camera and the x axis
+  const xAxisAngle = useSyncExternalStore(subListener, getXAxisAngle); // will be updated externally to react, triggers a re-render on change
 
-  // Reset selectedChore index if needed
-  if ((selectedFeature !== null && selectedChore >= selectedFeature.tasks.length)) {
+  // Ensure sync between the renderer's selected task and the UI's selected task
+  useEffect(() => {
+    if (selectedChore === 0) {
+      if (selectedFeature !== null && selectedFeature?.tasks.length > 0) {
+        rdr.selectedEditTask = selectedFeature.tasks[selectedChore];
+      } else {
+        rdr.selectedEditTask = null;
+      }
+    } else {
+      if (selectedFeature !== null) {
+        rdr.selectedEditTask = selectedFeature.tasks[selectedChore];
+      } else {
+        rdr.selectedEditTask = null;
+      }
+    }
+  }, [selectedChore])
+
+  // When selectedFeature changes, we want to update selectedChore as rdr.selectedEditTask may have changed
+  useEffect(() => {
+    // Just reset to a clean state
     setSelectedChore(0);
-  }
+  }, [selectedFeature])
 
   return (
     <View 
@@ -279,24 +362,64 @@ function EditWindow() {
           top: 10,
           left: 20,
           padding: 10,
-          zIndex: 10,
+          zIndex: 11,
           gap: 10,
         }}
       >
-        {/* Edit button */}
-        <Button 
-          mode="contained" 
-          style={{backgroundColor: "white"}}
-          onPress={() => {
-            // We cannot assume isEditing changes sequentially here
-            currentTool = isEditing ? Tool.TOOL_FEATURE : Tool.TOOL_EDIT_FEATURE;
-            rdr.selectedEditFeature = null; // should handle updating selectedFeature through callbacks
-            setIsEditing(!isEditing); 
-            setSelectedChore(0);
-          }}>
-          <MaterialCommunityIcons name='wrench' color={isEditing ? "rgb(255, 0, 0)": "rgb(47, 47, 255)"}/>
-          <Text>  {isEditing ? "View" : "Edit" }</Text>
-        </Button>
+        {/* Edit button — web: slight scale on hover (transform only, no layout shift) */}
+        <View
+          style={{
+            alignSelf: "flex-start",
+            transform: [{ scale: Platform.OS === "web" && hoverEditButton ? 1.025 : 1 }],
+          }}
+        >
+          <Button
+            mode="contained"
+            style={{
+              backgroundColor:
+                Platform.OS === "web" && hoverEditButton
+                  ? (isEditing ? "#FFE4E4" : "#E8EEF6")
+                  : "#FFFFFF",
+            }}
+            onPress={() => {
+              // We cannot assume isEditing changes sequentially here
+              props.updateToolCallback(isEditing ? Tool.TOOL_FEATURE : Tool.TOOL_EDIT_FEATURE);
+              rdr.selectedEditFeature = null; // should handle updating selectedFeature through callbacks
+              setSelectedChore(0);
+            }}
+            // @ts-ignore web-only pointer hover
+            onMouseEnter={() => Platform.OS === "web" && setHoverEditButton(true)}
+            // @ts-ignore web-only pointer hover
+            onMouseLeave={() => Platform.OS === "web" && setHoverEditButton(false)}
+          >
+            <MaterialCommunityIcons
+              name="wrench"
+              color={
+                isEditing
+                  ? Platform.OS === "web" && hoverEditButton
+                    ? "#FF4444"
+                    : "rgb(255, 0, 0)"
+                  : Platform.OS === "web" && hoverEditButton
+                    ? "#2A6BC8"
+                    : listBrand
+              }
+            />
+            <Text
+              style={{
+                color: isEditing
+                  ? Platform.OS === "web" && hoverEditButton
+                    ? "#CC0000"
+                    : "#B50505"
+                  : Platform.OS === "web" && hoverEditButton
+                    ? "#2A6BC8"
+                    : listBrand,
+              }}
+            >
+              {"  "}
+              {isEditing ? "View" : "Edit"}
+            </Text>
+          </Button>
+        </View>
 
         {/* Context Edit Window 
               In the menu we display:
@@ -314,39 +437,80 @@ function EditWindow() {
           <Card
             mode='contained'
           >
-            <Card.Title title={selectedFeature.feature_name + "[" + selectedFeature.id + "]"}/>
+            <Card.Title title={selectedFeature.feature_name}/>
             <Card.Actions>
-              <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_X)}}><MaterialCommunityIcons name='arrow-left'/></Button>
-              <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_X)}}><MaterialCommunityIcons name='arrow-right'/></Button>
-              <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.POS_Z)}}><MaterialCommunityIcons name='arrow-up'/></Button>
-              <Button onPress={() => {rdr.house.moveSelectedFeatureByOne(MoveDirection.NEG_Z)}}><MaterialCommunityIcons name='arrow-down'/></Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.POS_X)}}>
+                <View style={{transform: [{rotate: `${xAxisAngle}rad`}]}}>
+                  <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
+                </View>
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.NEG_X)}}>
+                <View style={{transform: [{rotate: `${xAxisAngle + Math.PI}rad`}]}}>
+                  <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
+                </View>
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.POS_Z)}}>
+                <View style={{transform: [{rotate: `${xAxisAngle + Math.PI / 2}rad`}]}}>
+                  <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
+                </View>
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.NEG_Z)}}>
+                <View style={{transform: [{rotate: `${xAxisAngle + 3 * Math.PI / 2}rad`}]}}>
+                  <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
+                </View>
+              </Button>
+            </Card.Actions>
+            <Card.Actions>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.rotateSelectedFeatureY(25)}}>
+                <MaterialCommunityIcons name="axis-z-rotate-clockwise" size={18} color="#FFFFFF"/>
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.rotateSelectedFeatureY(-25)}}>
+                <MaterialCommunityIcons name="axis-z-rotate-counterclockwise" size={18} color="#FFFFFF"/>
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.scaleSelectedFeature(0.25)}}>
+                <MaterialCommunityIcons name="plus" size={18} color="#FFFFFF"/>
+              </Button>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.scaleSelectedFeature(-0.25)}}>
+                <MaterialCommunityIcons name="minus" size={18} color="#FFFFFF"/>
+              </Button>
             </Card.Actions>
             {/* Display chore cycle button if needed */}
-            {selectedFeature.tasks.length > 1 ? (
+            {selectedFeature.tasks.length > 1 && selectedChore < selectedFeature.tasks.length ? (
               <Card.Actions style={{justifyContent:"center"}}>
-                <Button onPress={() => {setSelectedChore((selectedChore + 1) % selectedFeature.tasks.length)}}>Cycle chore: Selected {selectedChore}</Button>
+                <Button onPress={() => {
+                  const taskIndex = (selectedChore + 1) % selectedFeature.tasks.length;
+                  setSelectedChore(taskIndex);
+                }}>Cycle chore: {
+                  selectedFeature.tasks[selectedChore].task_name === INVALID_TASK_NAME ? 
+                    "Unnamed " + selectedChore :
+                    selectedFeature.tasks[selectedChore].task_name
+                }</Button>
               </Card.Actions>
             ) : null}
+            {/* Display chore related functionality if needed */}
+            {selectedFeature.tasks.length > 0 ? (
               <Card.Actions>
-                {/* The menu for updating intervals */}
-                <Menu
-                  visible={isEditing && selectedFeature !== null && showIntervalMenu}
-                  onDismiss={() => {setShowIntervalMenu(false); setNewFrequency("0")}}
-                  anchor={<Button onPress={() => {setShowIntervalMenu(true)}}>Set interval</Button>}
-                >
-                  <TextInput label="The interval in days..." mode="outlined" value={newFrequency} keyboardType='numeric'
-                    onChangeText={(t) => {
-                      // Convert our input to a number, check if it is not a number, then apply changes if we have valid input
-                      const fixed = Number(t);
-                      if (!Number.isNaN(fixed)) {
-                        selectedFeature.tasks[selectedChore].changeFrequency(fixed)}
-                        setNewFrequency(t);
-                      }
-                    }>
-                  </TextInput>
-                </Menu>
-                <Button onPress={() => {selectedFeature.tasks[selectedChore].finishTask();}}>Mark complete!</Button>
-              </Card.Actions>
+                  {/* The menu for updating intervals */}
+                  <Menu
+                    visible={isEditing && selectedFeature !== null && showIntervalMenu}
+                    onDismiss={() => {setShowIntervalMenu(false); setNewFrequency("0")}}
+                    anchor={<Button onPress={() => {setShowIntervalMenu(true)}}>Set interval</Button>}
+                  >
+                    <TextInput label="The interval in whole days..." mode="outlined" value={newFrequency} keyboardType='numeric'
+                      onChangeText={(t) => {
+                        // Convert our input to a number, check if it is not a number, then apply changes if we have valid input
+                        // They must be a number, an integer (we round), and >= 1
+                        const fixed = Number(t);
+                        if (!Number.isNaN(fixed) && fixed >= 1) {
+                          selectedFeature.tasks[selectedChore].changeFrequency(Math.round(fixed))} // we round to the nearest integer
+                          setNewFrequency(t);
+                        }
+                      }>
+                    </TextInput>
+                  </Menu>
+                  <Button onPress={() => {selectedFeature.tasks[selectedChore].finishTask();}}>Mark complete!</Button>
+                </Card.Actions>
+            ) : null}
           </Card>
         ) : isEditing && !selectedFeature ? (
           <Text style={{color: "red"}}>Select a feature to edit</Text>
@@ -359,11 +523,36 @@ function EditWindow() {
 // will allow a switch between the 3D rendered graphical view and the list view of the house model, and the View structures 
 // the page. Also uses a container to grab user gestures (e.g. rotating on the screen or panning or screen taps (clicks))
 export default function Index() {
+  const { isCheckingAuth, isAuthenticated } = useAuthGuard();
+
+  if (isCheckingAuth || !isAuthenticated) {
+    return <AuthLoadingScreen />;
+  }
+
+  return <AuthenticatedGraphicsScreen />;
+}
+
+function AuthenticatedGraphicsScreen() {
+  ///////////////////////////
+  ///  Renderer State.    ///
+  ///////////////////////////
   const selectedFeature = useSyncExternalStore(subListener, getSelectedEditFeature); // will be updated by GL, triggers a re-render on change
   const rdrRef = useRef(rdr);
   useEffect(() => {
     rdrRef.current = rdr;
   }, [rdr]);
+
+  // Track which household room we're viewing
+  const [currentViewingRoom, setCurrentViewingRoom] = useState(rdrRef.current.currentViewingRoom);
+  const [hoverRoomArrowLeft, setHoverRoomArrowLeft] = useState(false);
+  const [hoverRoomArrowRight, setHoverRoomArrowRight] = useState(false);
+
+  // The current graphical view mode
+  const [currentTool, setCurrentTool] = useState(Tool.TOOL_FEATURE);
+
+  ///////////////////////////
+  ///  Mouse Gestures     ///
+  ///////////////////////////
 
   // capture mouse moves
   useEffect(() => {
@@ -397,7 +586,10 @@ export default function Index() {
   .onFinalize((event, success) => { // When the tap event is done...
     if (success) { 
       const highlightedObjectID = rdrRef.current.highlightedFeatureID; // Get the highlighted feature ID
-      if (isUsingEditTool()) {
+      if (currentTool === Tool.TOOL_EDIT_FEATURE) {
+        // Update axis angles for the edit window display
+        setXAxisAngle();
+
         // If we're editing, 
         //    1. Check if we're highlighting a feature. If we're not, do nothing
         //    1A. If it's selected, deselect it. (Done)
@@ -435,11 +627,11 @@ export default function Index() {
             return; // do nothing if we have not found a valid point
           } else {
             // If we did find a valid point, add the feature. 
-            rdrRef.current.placeFeature(point[0], point[1], point[2]);
+            rdrRef.current.placeSelectedFeature(point[0], point[1], point[2]);
           }
         } else {
           // 1: We are highlighting a feature, so we just delete it.
-          rdrRef.current.deleteFeature(highlightedObjectID);
+          rdrRef.current.removeFeature(highlightedObjectID);
           rdrRef.current.setHighlightedFeature(-1); // -1 effectively sets to null
         }
       }
@@ -457,10 +649,24 @@ export default function Index() {
   const { id } = useLocalSearchParams<{ id: string }>(); // get parameter from route
   const householdId = Number(id) || 1;
   const [featureFetchSuccess, setFeatureFetchSuccess] = useState(false);
+  const [emptyFeatures, setEmptyFeatures] = useState(true);
 
   // Reload the features of our housewhenever the household ID changes.
   // Also mostly from list.tsx (thanks again Nifemi)
   useEffect(() => {
+    // Get household room data
+    fetchHouseholdRooms(householdId)
+      .then((roomsData) => {
+        // From our room data, get the list of room data objects
+        const rooms = Array.isArray(roomsData) ? roomsData : [];
+        rdrRef.current.setRooms(rooms);
+        setCurrentViewingRoom(rdrRef.current.setValidRoom());
+      }) 
+      .catch((e) => {
+        console.error("Failed to fetch rooms for household", householdId, e);
+      });
+
+    // Get household feature data
     fetchHouseholdFeatures(householdId)
       .then((data: any[]) => {
               // Convert the raw JSON objects into Feature/Task class instances
@@ -472,7 +678,10 @@ export default function Index() {
                   getFeatureTypeFromString(f.feature_type),
                   f.x_pos, f.y_pos, f.z_pos,
                   f.feature_id,
-                  f.icon || "home-outline"
+                  f.icon || "home-outline",
+                  f.room_id != null ? Number(f.room_id) : null,
+                  f.scale,
+                  f.rotation_y
                 );
                 feat.tasks = (f.tasks || []).map((t: any) => {
                   const task = new Task(
@@ -492,6 +701,11 @@ export default function Index() {
               });
               rdrRef.current.setFeatures(householdId, mapped);
               setFeatureFetchSuccess(true);
+
+              // Determine if our features list is empty
+              if (mapped.length > 0) {
+                setEmptyFeatures(false);
+              }
             })
       .catch((e) => {
         console.error("Failed to fetch features for household", householdId, e);
@@ -508,37 +722,155 @@ export default function Index() {
     }
   }, []);
 
-  // Get dims of entire screen
-  windowWidth = useWindowDimensions().width; 
-  windowHeight = useWindowDimensions().height;
-  return (
-    featureFetchSuccess ? (
-      <PaperProvider>
-      <View
-        onLayout={handleLayout}
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <GestureDetector gesture={composedGesture}>
-          <GLView style={{
-            width: "100%",
-            height: "100%"
-          }} 
-          onContextCreate={onContextCreate}
-          />
-        </GestureDetector>
+  // Get dims of entire screen (also used to keep room controls from overlapping the Edit column)
+  const { width: layoutWidth, height: layoutHeight } = useWindowDimensions();
+  windowWidth = layoutWidth;
+  windowHeight = layoutHeight;
 
-        <EditWindow />
-        <ColorButtons />
+  // Reserve left band for Edit pill + padding; room row is confined to [inset, right] so chevrons do not encroach on Edit
+  const roomBarLeftInset = Math.min(Math.max(Math.round(layoutWidth * 0.34), 116), 210);
+  const roomChevronSize = layoutWidth < 360 ? 28 : layoutWidth < 480 ? 32 : 36;
+  const roomLabelFontSize = layoutWidth < 360 ? 11 : layoutWidth < 480 ? 12 : 14;
+
+  /** Room nav chevron default / web-hover (brighter green on hover) */
+  const ROOM_ACCENT_COLOR = rdrRef.current.getRoomAccentColorFromId(currentViewingRoom);
+  const ROOM_CHEVRON_COLOR = !ROOM_ACCENT_COLOR ? "#29ff46" : ROOM_ACCENT_COLOR;
+  const ROOM_CHEVRON_COLOR_HOVER = !ROOM_ACCENT_COLOR ? "#5EFF9A" : tinycolor(ROOM_ACCENT_COLOR).brighten(10).toHexString();
+
+  return (
+    featureFetchSuccess && !emptyFeatures ? (
+      <Fragment>
+        <PaperProvider theme={appPaperLightTheme}>
+        <View
+          onLayout={handleLayout}
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <GestureDetector gesture={composedGesture}>
+            <GLView style={{
+              width: "100%",
+              height: "100%"
+            }} 
+            onContextCreate={onContextCreate}
+            />
+          </GestureDetector>
+
+          {/* Room change buttons —> inset from left so narrow screens never overlap Edit; scaled type/icons */}
+          <View
+            style={{
+              position: "absolute",
+              left: roomBarLeftInset,
+              right: 12,
+              top: 8,
+              paddingVertical: 6,
+              paddingHorizontal: 4,
+              zIndex: 9,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: 2,
+              minWidth: 0,
+            }}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Previous room"
+              hitSlop={8}
+              style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
+              onPress={() => {
+                setCurrentViewingRoom(rdrRef.current.goPrevRoom());
+                rdrRef.current.selectedEditFeature = null;
+                rdrRef.current.selectedEditTask = null;
+                clearSelectedPlaceFeature();
+              }}
+              // @ts-ignore web-only pointer hover
+              onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowLeft(true)}
+              // @ts-ignore web-only pointer hover
+              onMouseLeave={() => Platform.OS === "web" && setHoverRoomArrowLeft(false)}
+            >
+              <View
+                style={{
+                  justifyContent: "center",
+                  alignItems: "center",
+                  transform: [{ scale: Platform.OS === "web" && hoverRoomArrowLeft ? 1.14 : 1 }],
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="chevron-left"
+                  size={roomChevronSize}
+                  color={Platform.OS === "web" && hoverRoomArrowLeft ? ROOM_CHEVRON_COLOR_HOVER : ROOM_CHEVRON_COLOR}
+                />
+              </View>
+            </Pressable>
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={{
+                color: "white",
+                fontSize: roomLabelFontSize,
+                fontWeight: "600",
+                flexShrink: 1,
+                textAlign: "right",
+                minWidth: 0,
+                paddingHorizontal: 4,
+              }}
+            >
+              {rdrRef.current.getRoomNameFromId(currentViewingRoom)}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Next room"
+              hitSlop={8}
+              style={{ padding: 4, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}
+              onPress={() => {
+                setCurrentViewingRoom(rdrRef.current.goNextRoom());
+                rdrRef.current.selectedEditFeature = null;
+                rdrRef.current.selectedEditTask = null;
+                clearSelectedPlaceFeature();
+              }}
+              // @ts-ignore web-only pointer hover
+              onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowRight(true)}
+              // @ts-ignore web-only pointer hover
+              onMouseLeave={() => Platform.OS === "web" && setHoverRoomArrowRight(false)}
+            >
+              <View
+                style={{
+                  justifyContent: "center",
+                  alignItems: "center",
+                  transform: [{ scale: Platform.OS === "web" && hoverRoomArrowRight ? 1.14 : 1 }],
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={roomChevronSize}
+                  color={Platform.OS === "web" && hoverRoomArrowRight ? ROOM_CHEVRON_COLOR_HOVER : ROOM_CHEVRON_COLOR}
+                />
+              </View>
+            </Pressable>
+          </View>
+
+          <EditWindow tool={currentTool} updateToolCallback={setCurrentTool}/>
+          <Inventory tool={currentTool}/> 
+        </View>
+      </PaperProvider>
+    </Fragment>
+    ) : featureFetchSuccess && emptyFeatures ? (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        {/* Display a notification to add features if we don't have any */}
+        <Text style={{fontSize: 16, color: "#5B6B7F", fontWeight: "600"}}>
+          No data yet. Add and delete household features and chores in the List view.
+        </Text>
       </View>
-    </PaperProvider>
     ) : (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         {/* Display a loading bar while we wait to fetch features */}
         <ActivityIndicator size="large" />
+        <Text style={{fontSize: 16, color: "#5B6B7F", fontWeight: "600"}}>
+          Fetching household data...
+        </Text>
       </View>
     )
   );
@@ -551,7 +883,12 @@ export default function Index() {
 // This is the function called to create the WebGL context, setup extensions if needed, read and compile shaders, and do all
 // other prep work which is neccessary to initialize our renderer. 
 async function onContextCreate(gl: ExpoWebGLRenderingContext) {
+  // Initialize the renderer and WebGL context
   await rdr.init(gl);
+
+  // Setup callback functions so that we can update the UI from the renderer later
+  rdr.setUnplacedFeatureCallback(setUnplacedFeatures);
+  rdr.setClearSelectedPlaceFeatureCallback(clearSelectedPlaceFeature);
 
   // Start drawing frames. This is a recursive animation function
   drawFrame(rdr.lastFrameTime);

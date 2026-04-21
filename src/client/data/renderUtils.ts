@@ -5,6 +5,10 @@ Programmer: Jack Bauer
 Creation date: 3/29/26
 Revision date: 
   - 4/6/26: Convert to use FeatureType enum & support model loading
+  - 4/15/26: Add support for scaling, rotating, and moving features. Also rooms
+  - 4/16/26: Connect edit menu to database
+  - 4/18/26: Highlight selected task and health bar
+  - 4/20/26: Add inventory bar to manage adding features to the graphical view and related integration
 Preconditions: 
   - A proper draw / render loop is created outside of this file (Renderer does not contain its own loop, instead it has the pieces)
   - For the order of features in a renderable household's renderable features, the following are required:
@@ -37,7 +41,7 @@ import {
   FEATURE_ORANGE, FEATURE_GREY,
   ShaderLightUniformLocations, ShaderBillboardUniformLocations,
   ShaderAttributebLocations, ShaderMatrixUniformLocations,
-  MeshManager, VAO, getMeshFromType, VAOManager,
+  MeshManager, VAO, VAOManager,
   ShaderProgramManager, SHADER_REGULAR_PATHS, SHADER_BILLBOARD_PATHS,
   SHADER_PICK_PATHS, ShaderPickLocations, RenderPass, resizeFramebufferAttachments,
 } from "./graphicsUtils";
@@ -45,7 +49,11 @@ import {
 // Import API utilities
 import { 
   deleteFeature as apiDeleteFeature,
+ deleteFeature as apiDeleteFeature,
+  updateFeature as apiUpdateFeature,
+  clearFeaturePosition as apiClearFeaturePosition,
 } from "./api";
+import { HouseholdRoom } from './room';
 
 import {
 createFeature as apiCreateFeature,
@@ -63,12 +71,31 @@ export const FAR_CLIP = 100.0;
 // Define min and max world scaling
 const MIN_WORLD_SCALE = 0.1;
 const MAX_WORLD_SCALE = 6.0;
-
-// Define the maximum number of attempts before we give up on placing a feature with a bad XYZ position
-const MAX_PLACE_ATTEMPTS = 10;
+const MIN_FEATURE_SCALE = 0.5;
+const MAX_FEATURE_SCALE = 2;
 
 // Radians FOV
 export const FOV_RADIANS = (45 * Math.PI / 180);
+
+// Define a magic invalid room ID. They should only be positive
+export const UNASSIGNED_ROOM_ID = -1024;
+
+// An identifier to store a room id for the unassigned tasks.
+// This primarily helps us maintain array logic
+const UNASSIGNED_ROOM_OBJ: HouseholdRoom = {
+  room_id: UNASSIGNED_ROOM_ID,
+  household_id: -1,
+  room_name: "Unassigned",
+  accent_color: null
+};
+
+// An identifier for an invalid task name. If changing, note backwards compatability
+export const INVALID_TASK_NAME = "No name yet";
+
+// Colors for the healthbar - vec4 from 0 to 1 with RGBA
+const HEALTHBAR_FILL_COLOR: GLM.vec4 = GLM.vec4.fromValues(0.0, 1.0, 0.0, 1.0);
+const HEALTHBAR_BACKGROUND_COLOR: GLM.vec4 = GLM.vec4.fromValues(1.0, 0.0, 0.0, 1.0);
+const HEALTHBAR_HIGHLIGHT_COLOR: GLM.vec4 = GLM.vec4.fromValues(1.0, 215/255, 0.0, 1.0);
 
 // ***********************************************************
 //                       Renderer Class
@@ -115,12 +142,23 @@ export class Renderer {
 
   // Application data
   house: RenderableHousehold; // The displayed household 
-  selectedEditFeature: RenderableFeature | null; // The current feature being edited in the edit window
   grid: Grid; // Store a global grid object
   currentDrawingColor: Material; // the current color used for drawing our objects
   featuresDirty: boolean; // flag so we know if we need to apply feature updates or not
   features: Feature[]; // store the fetched feature list for our household
-  highlightedFeatureID: number | null;
+  unplacedFeatures: Feature[]; // store an array of features that do not yet have coordinate values
+  highlightedFeatureID: number | null; // which feature the user's mouse is hovering over
+  currentViewingRoom: number; // which room of the household we're currently viewing
+  roomList: HouseholdRoom[]; // the list of current rooms for the household
+
+  // UI managed state variables
+  selectedEditFeature: RenderableFeature | null; // The current feature being edited in the edit window
+  selectedEditTask: Task | null; // the currently selected UI task
+  selectedPlaceFeature: Feature | null; // The current feature waiting to be placed 
+
+  // Callback functions
+  syncUnplacedFeatures: (unplacedFeatureList: Feature[]) => void;
+  clearSelectedPlaceFeature: () => void;
 
   // Model data
   meshManager: MeshManager | null;
@@ -134,16 +172,55 @@ export class Renderer {
   ///  Init Routines  ///
   ///////////////////////
 
-  // Called to load the needed features from an external database. Once they've been fetched, we call this method to 
-  // apply the updated list. 
-  setFeatures(householdID: number, features: Feature[]) {
-    this.featuresDirty = true; // mark the feature list as dirty so we know to update before drawing next
-    this.features = []; // empty the features array
-    features.forEach((f) => {this.features.push(f)}) // manually copy the features over
-    this.house.household_id = householdID; // NOTE: at some point we need to get all the household details
-    this.house.id = householdID; // for compatability
+  // Setup the callback link from renderer to graphics. This must be called before we can actually sync updtates to graphics
+  setUnplacedFeatureCallback(callback: (unplacedFeatueList: Feature[]) => void) {
+    this.syncUnplacedFeatures = callback;
   }
 
+  // Setup the callback to clear the selectedPlace feature in graphics
+  setClearSelectedPlaceFeatureCallback(callback: () => void) {
+    this.clearSelectedPlaceFeature = callback;
+  }
+
+  // Called to load the needed features from an external database. Once they've been fetched, we call this method to 
+  // apply the updated list. 
+  setFeatures(householdID: number, features: Feature[], ) {
+    // Prepare features
+    this.featuresDirty = true; // mark the feature list as dirty so we know to update before drawing next
+    this.features = []; // empty the features array
+    this.unplacedFeatures = []; // empty the unplaced features array
+    let unassignedRoomEnabled = false; // flag if we've had to do this or not yet
+    features.forEach((f) => {
+      // figure out if we need to enable the unassigned room
+      if (!unassignedRoomEnabled && f.room_id === null) {
+        console.warn("Unassigned feature(s) found.");
+        this.enableUnassignedRoom(); // if we find any features with null room ids, we need to allow the use of the unassigned room
+        unassignedRoomEnabled = true;
+      }
+
+      // Figure out if the feature has not been placed yet
+      if ((f.x_pos === null) || (f.y_pos === null) || (f.z_pos === null)) {
+        console.warn("Unplaced feature.");
+        this.unplacedFeatures.push(f); // if not, add it to the appropriate list
+      } else {
+        // Otherwise, add it to our features list
+        this.features.push(f)
+      }
+    }); // manually copy the features over
+    this.house.household_id = householdID; // Set household ID
+    this.house.id = householdID; // for compatability
+
+    // Finally, sync the unplaced feature list
+    this.syncUnplacedFeatures(this.unplacedFeatures);
+  }
+
+  setRooms(rooms: HouseholdRoom[]) {
+    // Now prepare rooms
+    this.roomList = [];
+    rooms.forEach((r) => {this.roomList.push(r)});
+  }
+
+  // Set which feature the mouse is currently hovering over
   setHighlightedFeature(id: number) {
     // Don't include the walls
     if (id >= 0) {
@@ -187,7 +264,6 @@ export class Renderer {
     gl.clearColor(0.0, 0.0, 0.0, 1); // The background color 
     gl.enable(gl.DEPTH_TEST); // Allow objects with further depth to be obscured by other objects
     gl.depthFunc(gl.LEQUAL); // Specify which method to use to compare depth (less than or equal)
-
 
     // Read the text of the shader files. We later pass shader data as a string, so we need the actual shader files in a 
     // string representation for later use. We still split them into their own files though because it's easier to manage.
@@ -249,6 +325,10 @@ export class Renderer {
       projection: gl.getUniformLocation(this.bbShaderProgram, "uProjection"),
       heightOffset: gl.getUniformLocation(this.bbShaderProgram, "uHeightOffset"),
       healthPercent: gl.getUniformLocation(this.bbShaderProgram, "uHealthPercent"),
+      fillColor: gl.getUniformLocation(this.bbShaderProgram, "uFillColor"),
+      backgroundColor: gl.getUniformLocation(this.bbShaderProgram, "uBackgroundColor"),
+      highlightColor: gl.getUniformLocation(this.bbShaderProgram, "uHighlightColor"),
+      selected: gl.getUniformLocation(this.bbShaderProgram, "uSelected"),
     }
     this.pickLocs = {
       position: gl.getAttribLocation(this.pickProgram, "aPosition"),
@@ -391,8 +471,17 @@ export class Renderer {
     this.currentDrawingColor = FEATURE_ORANGE;
     this.initialized = false;
     this.features = [];
+    this.unplacedFeatures = [];
     this.featuresDirty = false;
     this.currentDrawPass = RenderPass.MAIN;
+    this.currentViewingRoom = 0;
+    this.roomList = [];
+    this.selectedEditTask = null;
+    this.selectedPlaceFeature = null;
+
+    // Set callbacks
+    this.syncUnplacedFeatures = () => {};
+    this.clearSelectedPlaceFeature = () => {};
 
     // These will be set as needed
     this.frameId = null;
@@ -418,13 +507,15 @@ export class Renderer {
     this.features.forEach((f) => {
       // Prepare the appropriate model matrix
       const transform = GLM.mat4.create();
-      GLM.mat4.translate(transform, transform, [f.x_pos, f.y_pos, f.z_pos]); // The 0.5s account for the difference between the cell center and edges
+      const yRot = GLM.quat.create();
+      GLM.quat.fromEuler(yRot, 0, f.rotation_y, 0);
+      GLM.mat4.fromRotationTranslationScale(transform, yRot, [f.x_pos, f.y_pos, f.z_pos], [f.scale, f.scale, f.scale]);
 
       // Select the correct material
       let mat = FEATURE_ORANGE;
 
       // Create the feature for rendering
-      const rf = new RenderableFeature(f.name, f.household_id, f.id, transform, mat, f.x_pos, f.y_pos, f.z_pos, f.tasks, f.feature_type, f.icon);
+      const rf = new RenderableFeature(f.name, f.household_id, f.id, transform, mat, f.x_pos, f.y_pos, f.z_pos, f.tasks, f.feature_type, f.icon, f.room_id, f.scale, f.rotation_y);
       this.house.renderableFeatures.push(rf); // add to RenderableFeatures
     });
 
@@ -608,10 +699,22 @@ export class Renderer {
       const f = this.house.renderableFeatures[i];
       const fVao = !f.mesh ? this.house.vao : this.meshManager.getVaoForMesh(f.mesh); 
 
-      if (!f.visible) {
-        // Skip invisible features
-        continue;
+      if (!f.visible) {continue;} // Skip invisible features always
+
+      if (f.room_id !== this.currentViewingRoom) {
+        if (i < 5) {
+          // The first four features are always the walls and floor, we render them
+        } else if (f.room_id === null && this.currentViewingRoom === UNASSIGNED_ROOM_ID) {
+          // If the room id is unassigned, and we're in the unassigned room, then render
+        } else {
+          // Otherwise, we do not render
+          continue;
+        }
       }
+      // At this point, the feature must satisfy the following conditions to be rendered:
+      // - be visible AND (
+      // - have a room id matching the current room
+      // - OR (be a wall/floor element OR (be unassigned AND the current room is unassigned)))
 
       this.vaoManager.bindVAO(fVao); // bind the appropriate VAO
 
@@ -717,18 +820,72 @@ export class Renderer {
       gl.disable(gl.DEPTH_TEST); // so the healthbars get drawn on top of everything else
       this.vaoManager.bindVAO(this.house.bbVao);
       // Set camera uniforms. We need the inverse view matrix to easily get camera vectors for the billboards. We can calculate this once per frame since it stays the same
-      // instead of calculating a ton of times in the vertex shader
+      // instead of calculating a ton of times in the vertex shader. Also set highlight uniforms since they apply to all health bars drawn
       gl.uniformMatrix4fv(this.bbLocs.projection, false, this.cam.projectionMatrix as Float32Array);
       gl.uniformMatrix4fv(this.bbLocs.view, false, this.cam.viewMatrix as Float32Array);
       gl.uniformMatrix4fv(this.bbLocs.inverseView, false, this.inverseView as Float32Array);
+      gl.uniform4fv(this.bbLocs.fillColor, HEALTHBAR_FILL_COLOR);
+      gl.uniform4fv(this.bbLocs.backgroundColor, HEALTHBAR_BACKGROUND_COLOR);
+      gl.uniform4fv(this.bbLocs.highlightColor, HEALTHBAR_HIGHLIGHT_COLOR);
       // Now iterate through
       for (let i = 0; i < this.house.renderableFeatures.length; i++) {
-        // Get the feature position
+        // Skip if we're not displaying feature because it isn't in the current room
+        if ((this.house.renderableFeatures[i].room_id !== this.currentViewingRoom)) {
+          if (this.house.renderableFeatures[i].room_id === null && this.currentViewingRoom === UNASSIGNED_ROOM_ID) {
+            // Allow drawing health bars for features when the id is null and the room is UNASSIGNED
+          } else {
+            // Otherwise skip
+            continue;
+          }
+        }
+
+        // See the model matrix of the feature that is the same for all tchores of that feature
         gl.uniformMatrix4fv(this.bbLocs.model, false, this.house.renderableFeatures[i].modelMatrix as Float32Array);
-        for (let j = 0; j < this.house.renderableFeatures[i].tasks.length; j++) {
-          gl.uniform1f(this.bbLocs.heightOffset, 0.8 + (j + 1) * 0.4); // Add an offset per chore bar
-          gl.uniform1f(this.bbLocs.healthPercent, this.house.renderableFeatures[i].tasks[j].getAndSetHealthPercent()); // Update the current decay value
-          gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
+
+        // If our feature is selected, we want to show all of the healthbars. If it isn't we only show the worst one. 
+        if (this.house.renderableFeatures[i] === this.selectedEditFeature) {
+          for (let j = 0; j < this.house.renderableFeatures[i].tasks.length; j++) {
+            // Set per health bar uniforms
+            gl.uniform1f(this.bbLocs.heightOffset, 0.8 + (j + 1) * 0.4); // Add an offset per chore bar
+            gl.uniform1f(this.bbLocs.healthPercent, this.house.renderableFeatures[i].tasks[j].getAndSetHealthPercent()); // Update the current decay value
+            
+            // If our task is selected, we want to highlight it by drawing a copy slightly larger behind it
+            if (this.selectedEditFeature !== null && this.house.renderableFeatures[i].tasks[j] === this.selectedEditTask) {
+              gl.uniform1f(this.bbLocs.selected, 1.0); // set selected to true
+              gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
+            }  else {
+              // Otherwise, just draw it without the highlight
+              gl.uniform1f(this.bbLocs.selected, 0.0); // set selected to false
+              gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
+            }
+          }
+        } else {
+          // Store the health bar to display if we can find one
+          let worstDecayTask: Task | null = null;
+
+          // Find the task with the worst decay
+          for (let j = 0; j < this.house.renderableFeatures[i].tasks.length; j++) {
+            const iterTask = this.house.renderableFeatures[i].tasks[j];
+            iterTask.getAndSetHealthPercent(); // ensure we have up-to-date info
+
+            // If we haven't set a task yet, set it
+            if (!worstDecayTask) {
+              worstDecayTask = iterTask;
+            } else {
+              // Otherwise, see if this new task is worse. If so, select it.
+              if (worstDecayTask.healthPercent >= iterTask.healthPercent) {
+                worstDecayTask = iterTask;
+              }
+            }
+          }
+
+          // If we found a worst task, display it's healthbar. A feature might have no tasks
+          if (worstDecayTask !== null) {
+            gl.uniform1f(this.bbLocs.selected, 0.0);
+            gl.uniform1f(this.bbLocs.heightOffset, 0.8 + (0 + 1) * 0.4); // Add an offset per chore bar
+            gl.uniform1f(this.bbLocs.healthPercent, worstDecayTask.getAndSetHealthPercent()); // Update the current decay value
+            gl.drawArrays(gl.TRIANGLES, 0, 6); // draw 6 vertices = 2 triangles = 1 quad
+          }
         }
       }
       gl.enable(gl.DEPTH_TEST); // return to normal
@@ -738,6 +895,114 @@ export class Renderer {
   ///////////////////
   ///  Utilities  ///
   ///////////////////
+
+  // Just make sure we're using a valid room, set to the 1st in the room list index
+  setValidRoom(): number {
+    this.currentViewingRoom = this.roomList[0].room_id;
+    console.log("Rooms updated.");
+    return this.currentViewingRoom;
+  }
+
+  // Switch to the next room
+  // In the draw loop, we check if the room id of the feature matches the room id of the current room. 
+  // So, currentViewingRoom must be in the set of possible room ids for this household
+  goNextRoom(): number {
+    // We have our list of rooms. We need to move to the next room
+    const currentIndex = this.roomList.findIndex((r) => {
+      return r.room_id === this.currentViewingRoom
+    }); // current index on success, -1 on failure
+
+    // If we did NOT find out current room in the list of rooms, we just go to the first room
+    if (currentIndex < 0) {
+      this.currentViewingRoom = this.roomList[0].room_id;
+    } else {
+      const accessIndex = (currentIndex + 1 + this.roomList.length) % this.roomList.length;
+      this.currentViewingRoom = this.roomList[accessIndex].room_id; // otherwise just get the next element 
+    }
+
+    return this.currentViewingRoom;
+  }
+
+  // Switch the to previous room
+  // Similar to goNextRoom() just in reverse
+  goPrevRoom(): number {
+    // We have our list of rooms. We need to move to the next room
+    // See if our current room is within the list of rooms
+    const currentIndex = this.roomList.findIndex((r) => {
+      return r.room_id === this.currentViewingRoom
+    }); // current index on success, -1 on failure
+
+    // If we did NOT find out current room in the list of rooms, we just go to the first room
+    if (currentIndex < 0) {
+      this.currentViewingRoom = this.roomList[0].room_id;
+    } else {
+      const accessIndex = (currentIndex - 1 + this.roomList.length) % this.roomList.length;
+      this.currentViewingRoom = this.roomList[accessIndex].room_id; // otherwise just get the prev element
+    }
+
+    return this.currentViewingRoom;
+  }
+
+  getRoomNameFromId(roomId: number) {
+    return this.roomList.find((r) => (r.room_id === roomId))?.room_name || "Unknown";
+  }
+
+  getRoomAccentColorFromId(roomId: number) {
+    return this.roomList.find((r) => (r.room_id === roomId))?.accent_color;
+  }
+
+  // Adds the unassigned room to the array if it isn't already present
+  enableUnassignedRoom() {
+    // Check if the unassigned room is already being used
+    const unassignedRoom = this.roomList.find((r) => {return r.room_id === UNASSIGNED_ROOM_ID});
+    if (!unassignedRoom) {
+      // If we didn't find it, add it
+      this.roomList.push(UNASSIGNED_ROOM_OBJ);
+    }
+  }
+
+  // Return the angle difference between the local direction vector (e.g. straight right on the +x axis)
+  // and the camera forward vector
+  getAngleFromCameraRight(localDirVec: MoveDirection): number {
+    // Get our normal direction vector in world space
+    let sideVec = GLM.vec3.create();
+    switch(localDirVec) {
+      case MoveDirection.POS_X:
+        sideVec = GLM.vec3.fromValues(1, 0, 0); 
+        break;
+      case MoveDirection.NEG_X:
+        sideVec = GLM.vec3.fromValues(-1, 0, 0);
+        break;
+      case MoveDirection.POS_Z:
+        sideVec = GLM.vec3.fromValues(0, 0, 1);
+        break;
+      case MoveDirection.NEG_Z:
+        sideVec = GLM.vec3.fromValues(0, 0, -1);
+        break;
+    }
+
+    // Since we invert the view matrix every frame, we should have an inverse view matrix ready. 
+    // If not, we will have draw failures and bigger issues.
+    // Now, get the camera forward angle in world space from the inverse view matrix
+    const camFwdVec = GLM.vec3.fromValues(
+      this.inverseView[2], this.inverseView[6], this.inverseView[10]
+    );
+    GLM.vec3.normalize(camFwdVec, camFwdVec);
+
+    // Get the angle between the camera right in world space and the normal
+    const angle = GLM.vec3.angle(sideVec, camFwdVec);
+
+    // Now, check if we are rotated counter clockwise or clockwise around the Y axis (up) by calculating the 
+    // cross product to determine the sign
+    const cross = GLM.vec3.create();
+    GLM.vec3.cross(cross, GLM.vec3.fromValues(0, 1, 0), camFwdVec);
+
+    // Check the sign and return the angle according to sign (we check against the correct normal)
+    if (GLM.vec3.dot(sideVec, cross) < 0) {
+      return angle * -1;
+    }
+    return angle
+  }
 
   // Switch which pass we're rendering
   switchRenderpass(pass: RenderPass) {
@@ -770,82 +1035,77 @@ export class Renderer {
     }
   }
 
-  async deleteFeature(featureID: number) {
-    try {
-      await apiDeleteFeature(featureID); // Delete on the server
+  // Remove a placed feature and put it in the inventory
+  removeFeature(featureID: number) {
+    // Find our feature
+    const feature = this.features.find((f) => {return f.id === featureID});
+    if (!feature) {
+      console.error("Unable to find feature for removal.");
+      return;
+    }
+
+    // Remove it's position data on the server
+    apiClearFeaturePosition(featureID)
+    .then(() => {
+      // On success, apply the results in graphics. Otherwise, do nothing
       this.house.renderableFeatures = this.house.renderableFeatures.filter((f) => {return f.id !== featureID}); // remove the deleted feature
-    } catch (e) {
-      // Note, if we fail we don't need to copy the feature over because we're not updating the feature array anyway
-      console.error(`Failed to delete feature. Canceling deletion for feature ${featureID} in household ${this.house.household_id}.`, e);
-      console.log("Corresponding feature:", featureID);
-    } 
+      this.features = this.features.filter((f) => {return f.id !== featureID}); // remove the deleted feature here too
+      this.unplacedFeatures = [...this.unplacedFeatures, feature];
+      this.syncUnplacedFeatures(this.unplacedFeatures); // trigger a sync in the React UI
+    }).catch((e) => {
+      console.error(`Failed to remove feature. Canceling removal for feature ${featureID} in household ${this.house.household_id}.`, e);
+    });
   }
 
-  async placeFeature(worldX: number, worldY: number, worldZ: number) {
+  // Place the selected feature
+  placeSelectedFeature(worldX: number, worldY: number, worldZ: number) {
+    // Ensure we have selected a place feature
+    const f = this.selectedPlaceFeature;
+    if (!f) {
+      // Note: this is not an error, we don't want to do anything here
+      return;
+    }
+
     // We already know our feature is within bounds by the time this method is called since when we convert screenToWorld coords, we 
     // return a null position on out-of-bounds and thus don't call this method. 
-    // We also ignore collisions for the moment. 
+    // We also ignore collisions. 
 
     // First, round inputs to 2 decimal places
     const x = Number(worldX.toFixed(2));
     const y = Number(worldY.toFixed(2));
     const z = Number(worldZ.toFixed(2));
 
-    // Create the transform
-    const newModelMatrix = GLM.mat4.create(); // create a new transform 
-    GLM.mat4.translate(newModelMatrix, newModelMatrix, [x, y, z]);
+    // Prepare the appropriate model matrix
+    const transform = GLM.mat4.create();
+    const yRot = GLM.quat.create();
+    GLM.quat.fromEuler(yRot, 0, f.rotation_y, 0);
+    GLM.mat4.fromRotationTranslationScale(transform, yRot, [x, y, z], [f.scale, f.scale, f.scale]);
 
     // Create the material / type
     const newMaterial: Material = this.currentDrawingColor;
 
     // Get the correct type
-    const featureIndex = Math.max(Math.abs(Math.round(((Math.random() * 10) % (Object.keys(FeatureType).length / 2) - 1))), 1); // count the number possible enum values (will not include undefined)
+    const featureOptions = Object.values(FeatureType) as FeatureType[];
+    const featureType = featureOptions[Math.floor(Math.random() * featureOptions.length)];
 
     // Create the feature object
-    const newFeature = new RenderableFeature("f:" + x + y + z, this.house.household_id, 0, newModelMatrix, newMaterial, x, y, z, undefined, featureIndex); // this is the new feature object we're adding
-    // randomly add a second chore for demo purposes
-    if (Math.round(Math.random()) == 0) {
-      newFeature.addTask(new Task("Test Task", newFeature.id, 1));
-    } else {
-      newFeature.addTask(new Task("Test Task", newFeature.id, 1));
-      newFeature.addTask(new Task("Test Task", newFeature.id, 2));
-    }
+    const newFeature = new RenderableFeature(f.name, f.household_id, f.id, transform, newMaterial, x, y, z, f.tasks, featureType, f.icon, f.room_id, f.scale, f.rotation_y); // this is the new feature object we're adding
 
-    // Update the remote server
-    try {
-      // Create the feature on the server
-      const featureID = await apiCreateFeature({
-        household_id: this.house.household_id,
-        feature_name: "f:" + x + y + z,
-        x_pos: x,
-        y_pos: y,
-        z_pos: z,
-        feature_type: getFeatureTypeToString(featureIndex)
-      });
-      newFeature.setID(featureID.feature_id); // retroactively set the appropriate ID
-
-      // Now create the tasks on the server
-      newFeature.tasks.forEach((t) => {
-        const now = new Date();
-        apiCreateTask({
-          feature_id: featureID.feature_id,
-          task_name: "No name yet",
-          frequency_days: 1, // Default to daily task
-          visibility: "household",
-          last_completed: now.toISOString(), 
-        }).then((id) => {
-          // Update task ids
-          t.id = id.task_id;
-          t.last_completed = now;
-        }).catch((e) => {
-          console.error("Unable to add task.", e);
-        })});
-
-      // If the remote server was successful, add the feature for drawing
+    // Update the feature's XYZ positions
+    apiUpdateFeature(f.id, {
+      x_pos: x,
+      y_pos: y,
+      z_pos: z,
+    }).then(() => {
+      // Apply updates in graphics upon success
       this.house.renderableFeatures.push(newFeature); // add the feature to the house
-    } catch (e) {
+      this.features.push(f); // add the super feature to our features array
+      this.unplacedFeatures = this.unplacedFeatures.filter((fv) => {return fv.id !== f.id}); // remove from the unplaced feature
+      this.syncUnplacedFeatures(this.unplacedFeatures); // trigger a sync in the UI
+      this.clearSelectedPlaceFeature(); // deselect the current edit feature
+    }).catch((e) => {
       console.error(`Unable to create feature for household ${this.house.household_id}.`, e);
-    }
+    });
   }
 
   // A function to convert screen clicks / taps from screen coordinates to world coordinates in the renderer
@@ -915,7 +1175,9 @@ export class Renderer {
     // Now, we need to check if the ray intersects any of the floor or wall features. Since these are known rectangles, this shouldn't be too bad.
     // We know that the floor and walls will be the first 4 features of the RenderableFeatures array.
     // We know that the ray will only ever intersect one of these features (we can't ever look at it from the back)
-    for (let i = 0; i < 5; i++) {
+    // NOTE: We actually disable this so we can only place on the floor. HOWEVER we leave the functionality here for later use. Set to 5 to allow wall placement.
+    const FEATURE_BOUND = 1; 
+    for (let i = 0; i < FEATURE_BOUND; i++) {
       const f = this.house.renderableFeatures[i];
       if (!f.visible) {
         continue; // skip hidden features (e.g. walls)
@@ -1015,31 +1277,43 @@ export class Renderer {
     return null;
   }
 
-  // Check if a block already exists in a cell without removing
-  checkCellFree(cellX: number, cellY: number, cellZ: number) {
-    // Iterate over the features and see if something is in the provided cell. If so, we know it is not free
-    for (let i = 0; i < this.house.renderableFeatures.length; i++) {
-      if (this.house.renderableFeatures[i].x_pos == cellX && this.house.renderableFeatures[i].y_pos == cellY && this.house.renderableFeatures[i].z_pos == cellZ) {
-        return false;
-      } 
-    }
-    return true;
-  }
-
   // See if a cell is within the bounds of the grid
-  checkCellInBounds(cellX: number, cellY: number, cellZ: number) {
+  checkValidMove(posX: number, posY: number, posZ: number, translationAmt: number, dir: MoveDirection) {
     // Disallow invalid block positions. For a grid of size 10,10 we allow range [-5, 4] in the xz directions. We lock to the xz plane (y=0)
     const halfGridWidth = Math.floor(this.grid.width / 2);
     const halfGridHeight = Math.floor(this.grid.height / 2);
-    if ((cellX < 0 - halfGridWidth || cellX >= halfGridWidth) || Math.abs(cellY) > 0 || (cellZ < 0 - halfGridHeight || cellZ >= halfGridHeight)) {
-      return false;
-    }
-    return true;
-  }
 
-  // A wrapper function to check if a cell is both free and within the grid
-  checkValidCell(cellX: number, cellY: number, cellZ: number) {
-    return this.checkCellInBounds(cellX, cellY, cellZ) && this.checkCellFree(cellX, cellY, cellZ);
+    // We want to allow movement if the direction of travel is in-bounds, otherwise we disallow it
+    switch (dir) {
+        // For each of these, we check if the direction of movement brings us closer or further from the edge
+        case MoveDirection.POS_X:
+          if (posX + translationAmt >= halfGridWidth) {
+            // we know we're out of bounds
+            return false;
+          }
+          break;
+        case MoveDirection.NEG_X:
+          if (posX - translationAmt <= 0 - halfGridWidth) {
+            // we know we're out of bounds
+            return false;
+          }
+          break;
+        case MoveDirection.POS_Z:
+          if (posZ + translationAmt >= halfGridHeight) {
+            // we know we're out of bounds
+            return false;
+          }
+          break;
+        case MoveDirection.NEG_Z:
+          if (posZ - translationAmt <= 0 - halfGridHeight) {
+            // we know we're out of bounds
+            return false;
+          }
+          break;
+      }
+    
+    // Otherwsie, we return true since movement is allowed
+    return true;
   }
 }
 
@@ -1077,11 +1351,11 @@ export class RenderableFeature extends Feature {
    visible: boolean;
    mesh: string | undefined; // if null, draw a cube
 
-   constructor(name: string, household_id: number, feature_id: number, mm?: GLM.mat4, mat?: Material, x?: number, y?: number, z?: number, tasks?: Task[], type?: FeatureType, icon?: string, ) {
-    super(name, household_id, type, x, y, z, feature_id, icon);
+   constructor(name: string, household_id: number, feature_id: number, mm?: GLM.mat4, mat?: Material, x?: number, y?: number, z?: number, tasks?: Task[], type?: FeatureType, icon?: string, room_id?: number | null, scale?: number, rotation_y?: number) {
+    super(name, household_id, type, x, y, z, feature_id, icon, room_id, scale, rotation_y);
 
     // Set up mesh if a type is provided
-    this.mesh = !type ? undefined : getMeshFromType(type);
+    this.mesh = !type ? undefined : getFeatureTypeToString(type);
 
     // Assign model matrix to either a provided value or a default
     this.modelMatrix = mm || GLM.mat4.create();
@@ -1104,6 +1378,119 @@ export class RenderableFeature extends Feature {
    setID(id: number) {
     this.id = id;
    }
+
+   async scaleFeature(scaleAmt: number) {
+    // Figure out how much to scale the feature by
+    let scaleBy = this.scale + scaleAmt; // we will scale from the identity to this value
+
+    // Set scale to max or min depending on its sign (if we end to grow or shrink the feature) if it is out of bounds
+    scaleBy = scaleAmt > 0 ? (scaleBy > MAX_FEATURE_SCALE ? MAX_FEATURE_SCALE : scaleBy) : (scaleBy < MIN_FEATURE_SCALE ? MIN_FEATURE_SCALE : scaleBy)
+
+    // Before we begin, save a rollback matrix in case the DB fails
+    const rollbackMatrix = this.modelMatrix;
+    const rollbackScale = this.scale;
+
+    // First, reset the scale to 0. We save rotation and position, then set to identity.
+    // This helps us use a consistent scale factor and also helps avoid floating point error accumulation
+    // We already know the scale factor since it is an integer
+    const rot = GLM.quat.create(); // rotation as a quaternion
+    GLM.mat4.getRotation(rot, this.modelMatrix);
+    const pos = GLM.vec3.create();
+    GLM.mat4.getTranslation(pos, this.modelMatrix);
+    GLM.mat4.identity(this.modelMatrix); // reset to identity
+    
+    // Now, reapply the position and rotation values
+    GLM.mat4.fromRotationTranslationScale(this.modelMatrix, rot, pos, [scaleBy, scaleBy, scaleBy]);
+
+    // Update the current scale value
+    this.scale = scaleBy;
+
+    // Now, update the DB - Rollback on failure
+    apiUpdateFeature(this.id, {scale: this.scale}).catch( (e) => {
+      this.modelMatrix = rollbackMatrix;
+      this.scale = rollbackScale;
+      console.error("Failed to scale feature on remote.", e);
+    });
+   }
+
+   async rotateFeatureY(rotAmt: number) {
+    // Before we begin, save a rollback matrix in case the DB fails
+    const rollbackMatrix = this.modelMatrix;
+    const rollbackRotation = this.rotation_y;
+
+    // Apply the rotation
+    GLM.mat4.rotateY(this.modelMatrix, this.modelMatrix, rotAmt);
+
+    // Save off our new rotation angle
+    const rotQuat = GLM.quat.create();
+    GLM.mat4.getRotation(rotQuat, this.modelMatrix);
+
+    // Convert the rotation value to a quaternion 
+    // See the following stack overflow atricle for how to get the current rotation angle
+    // https://stackoverflow.com/questions/15955358/javascript-gl-matrix-lib-how-to-get-euler-angles-from-quat-and-quat-from-angles
+    // First, get wxyz components. We use a quaternion specifically because it avoids gimbal lock and is typical for 3D rotation engines
+    const w = rotQuat[0];
+    const x = rotQuat[1];
+    const y = rotQuat[2];
+    const z = rotQuat[3];
+    const yRot = Math.asin(2 * (x * z + w * y));
+    this.rotation_y = yRot * 180 / Math.PI; // convert to degrees
+
+    // Now, update the DB
+    apiUpdateFeature(this.id, {rotation_y: this.rotation_y}).catch( (e) => {
+      this.modelMatrix = rollbackMatrix;
+      this.rotation_y = rollbackRotation;
+      console.error("Failed to rotate feature on remote.", e);
+    });
+   }
+
+   async translateFeature(translationAmt: number, dir: MoveDirection) {
+    // Before we begin, save a rollback matrix in case the DB fails
+    const rollbackMatrix = this.modelMatrix;
+    const rollbackPositionX = this.x_pos;
+    const rollbackPositionY = this.y_pos;
+    const rollbackPositionZ = this.z_pos;
+
+    // We want to translate the feature in terms of world space, not local space. So, we have to pre-multiply our matrix
+    // instead of the typical GLM post multiply
+    const translationMatrix = GLM.mat4.create();
+    let translationVector = [0, 0, 0];
+    switch (dir) {
+      case MoveDirection.POS_X:
+        translationVector[0] = translationAmt;
+        this.x_pos += translationAmt;
+        break;
+      case MoveDirection.NEG_X:
+        translationVector[0] = -translationAmt;
+        this.x_pos -= translationAmt;
+        break;
+      case MoveDirection.POS_Z:
+        translationVector[2] = translationAmt;
+        this.z_pos += translationAmt;
+        break;
+      case MoveDirection.NEG_Z:
+        translationVector[2] = -translationAmt;
+        this.z_pos -= translationAmt;
+        break;
+    }
+
+    // Now, actually apply the translation in world space
+    GLM.mat4.fromTranslation(translationMatrix, translationVector);
+    GLM.mat4.multiply(this.modelMatrix, translationMatrix, this.modelMatrix);
+
+    // Now, update the DB
+    apiUpdateFeature(this.id, {
+      x_pos: this.x_pos,
+      y_pos: this.y_pos,
+      z_pos: this.z_pos
+    }).catch( (e) => {
+      this.modelMatrix = rollbackMatrix;
+      this.x_pos = rollbackPositionX;
+      this.y_pos = rollbackPositionY;
+      this.z_pos = rollbackPositionZ;
+      console.error("Failed to translate feature on remote.", e);
+    });
+   }
 }
 
 // This is the household class. It is meant to be the primary way to store and access the currently rendered house model
@@ -1122,6 +1509,28 @@ export class RenderableHousehold extends Household {
    // Active renderer
    rdr: Renderer;
 
+  // Scale a particular feature by a certain amount
+  scaleSelectedFeature(scaleAmt: number) {
+    // Ensure we have a feature selected
+    if (!this.rdr.selectedEditFeature) {
+      console.error("Attempting to scale null feature.");
+      return;
+    }
+
+    this.rdr.selectedEditFeature.scaleFeature(scaleAmt);
+  }
+
+  // Rotate a particular feature by a certain amount around the Y axis
+  rotateSelectedFeatureY(rotAmt: number) {
+    // Ensure we have a feature selected
+    if (!this.rdr.selectedEditFeature) {
+      console.error("Attempting to scale null feature.");
+      return;
+    }
+
+    this.rdr.selectedEditFeature.rotateFeatureY(rotAmt);
+  }
+
    // change the size of the floor feature to match the grid
    resizeFloorFeature() {
     // floor feature is always the first feature in the features array
@@ -1134,7 +1543,7 @@ export class RenderableHousehold extends Household {
    }
    
    // Moves the selected edit feature one cell over based on the input direction
-   moveSelectedFeatureByOne(dir: MoveDirection) {
+   translateSelectedFeature(translationAmt: number, dir: MoveDirection) {
     // Ensure we have a feature selected
     if (!this.rdr.selectedEditFeature) {
       console.error("Attempting to move null feature.");
@@ -1144,27 +1553,23 @@ export class RenderableHousehold extends Household {
     // Apply movement. First, check if the proposed move would be within bounds. Then, apply updates to the model matrices and XYZ values.
     switch (dir) {
       case MoveDirection.POS_X:
-        if (this.rdr.checkValidCell(this.rdr.selectedEditFeature.x_pos + 1, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos)) {
-          this.rdr.selectedEditFeature.x_pos += 1;
-          GLM.mat4.translate(this.rdr.selectedEditFeature.modelMatrix, this.rdr.selectedEditFeature.modelMatrix, [1, 0, 0]);
+        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, translationAmt, MoveDirection.POS_X)) {
+          this.rdr.selectedEditFeature.translateFeature(translationAmt, MoveDirection.POS_X);
         }
         break;
       case MoveDirection.NEG_X:
-        if (this.rdr.checkValidCell(this.rdr.selectedEditFeature.x_pos - 1, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos)) {
-          this.rdr.selectedEditFeature.x_pos -= 1;
-          GLM.mat4.translate(this.rdr.selectedEditFeature.modelMatrix, this.rdr.selectedEditFeature.modelMatrix, [-1, 0, 0]);
+        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, translationAmt,  MoveDirection.NEG_X)) {
+          this.rdr.selectedEditFeature.translateFeature(translationAmt, MoveDirection.NEG_X);
         }
         break;
       case MoveDirection.POS_Z:
-        if (this.rdr.checkValidCell(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos + 1)) {
-          this.rdr.selectedEditFeature.z_pos += 1;
-          GLM.mat4.translate(this.rdr.selectedEditFeature.modelMatrix, this.rdr.selectedEditFeature.modelMatrix, [0, 0, 1]);
+        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, translationAmt, MoveDirection.POS_Z)) {
+          this.rdr.selectedEditFeature.translateFeature(translationAmt, MoveDirection.POS_Z);
         }
         break;
       case MoveDirection.NEG_Z:
-        if (this.rdr.checkValidCell(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos - 1)) {
-          this.rdr.selectedEditFeature.z_pos -= 1;
-          GLM.mat4.translate(this.rdr.selectedEditFeature.modelMatrix, this.rdr.selectedEditFeature.modelMatrix, [0, 0, -1]);
+        if (this.rdr.checkValidMove(this.rdr.selectedEditFeature.x_pos, this.rdr.selectedEditFeature.y_pos, this.rdr.selectedEditFeature.z_pos, translationAmt, MoveDirection.NEG_Z)) {
+          this.rdr.selectedEditFeature.translateFeature(translationAmt, MoveDirection.NEG_Z);
         }
         break;
       default:

@@ -8,6 +8,7 @@ Revision date:
   - 3/1/26: Add AsyncStorage save/load helpers, task/location icon sets,
              frequency presets, and task preset templates (NL)
   - 3/8/26: Use server classes for consistency
+  - 4/1/2026: Update ui to display information about due dates
 Preconditions: @react-native-async-storage/async-storage must be installed
 Postconditions: Exports types, helpers, presets, and storage utilities
 Errors: loadLocations returns null on parse failure so callers can fall back to mock data
@@ -43,6 +44,26 @@ export function healthPercent(task: Task): number {
   const windowMs = task.frequency_days * 24 * 60 * 60 * 1000; // convert frequency to ms
   const elapsed = now - last.getTime(); // how long since it was last done
   return Math.max(0, Math.min(1, 1 - elapsed / windowMs)); // clamp between 0 and 1
+}
+
+export function daysUntilNextDue(task: Task): number {
+  const now = Date.now();
+  const rawLast = task.last_completed;
+
+  if (!rawLast )
+      return task.frequency_days;
+
+  const last = rawLast instanceof Date ? rawLast : new Date(rawLast);
+  const lastMs = last.getTime();
+
+  const msInADay = 1000 * 60 * 60 * 24;
+  const frequencyMs = task.frequency_days * msInADay;
+  const nextDueMs = lastMs + frequencyMs;
+
+  const remainingMs = nextDueMs - now;
+
+  // Use Math.ceil so that 0.5 days remaining shows as "1 day" 
+  return Math.ceil(remainingMs / msInADay);
 }
 
 // Pick a color based on the health percentage

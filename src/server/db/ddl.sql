@@ -7,6 +7,7 @@ Revision date:
     - 3/19/26: Added Household Relation
     - 3/29/26: Added icon columns to Feature and Task tables
     - 4/1/26: Added the Environmental Data relation for Enviro+ sensor data
+    - 4/13/26: Added Room table and Feature.room_id for list-view grouping
 Preconditions: N/A
 Postconditions: Create the base structure of the database with the tables, attributes, and data types
 Errors: None
@@ -17,6 +18,8 @@ Known faults: None.
 The tables that will need to be created are
     Household
     Account
+    HouseholdMember
+    Room
     Feature
     Task
 */
@@ -94,6 +97,20 @@ CREATE TABLE IF NOT EXISTS HouseholdMember (
 );
 
 /*
+Rooms: logical grouping for features in the list view (optional accent_color hex for UI).
+*/
+CREATE TABLE IF NOT EXISTS Room (
+    room_id SERIAL PRIMARY KEY CHECK (room_id > 0),
+    household_id INTEGER NOT NULL
+        REFERENCES Household(household_id) ON DELETE CASCADE,
+    room_name VARCHAR(80) NOT NULL,
+    accent_color VARCHAR(20),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_room_household ON Room (household_id);
+
+/*
 Create a table for cleanable features
     Attributes:
         Feature id (Primary Key)
@@ -122,8 +139,11 @@ CREATE TABLE IF NOT EXISTS Feature (
     z_pos FLOAT NOT NULL,
     /* MaterialCommunityIcons name shown in the list view for this feature/room
         Defaults to the generic home icon if not specified */
-    icon VARCHAR(50) DEFAULT 'home-outline'
+    icon VARCHAR(50) DEFAULT 'home-outline',
+    room_id INTEGER REFERENCES Room(room_id) ON DELETE SET NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_feature_room ON Feature (room_id);
 
 /*
 Create a feature for the individual tasks

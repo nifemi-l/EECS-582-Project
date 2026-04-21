@@ -14,7 +14,7 @@ Invariants: None
 Known faults: None
 */
 
-import Feature from "./feature"
+import { completeTask as apiCompleteTask, updateTask as apiUpdateTask } from "./api"
 
 export enum TaskVisibility {
     Private = 'private',
@@ -43,7 +43,7 @@ export default class Task {
         icon: string = "clipboard-text-outline",
         visibility: TaskVisibility = TaskVisibility.Household,
         created_by_account_id: number | null = null,
-        task_id: number = 0
+        task_id: number = 0,
     ) {
         this.task_name = task_name;
         this.name = task_name;
@@ -59,8 +59,20 @@ export default class Task {
 
     // Change the frequency this task should be completed
     changeFrequency(frequency_days: number) {
+        const rollbackFreq = this.frequency_days;
         this.frequency_days = frequency_days;
-        this.finishTask();
+
+        apiUpdateTask(this.id, {
+            task_name: this.task_name,
+            frequency_days: this.frequency_days,
+            visibility: this.visibility,
+            icon: this.icon,
+        }).then(() => {
+            this.finishTask();
+        }).catch((e) => {
+            this.frequency_days = rollbackFreq;
+            console.error("Failed to change task frequency on remote.", e);
+        });
     }
 
     // Updates and returns healthpercent for a task (0 to 1)
@@ -87,8 +99,17 @@ export default class Task {
     }
 
     finishTask() { 
+        const rollbackDate = this.last_completed;
+        const rollbackPercent = this.healthPercent;
+
         this.last_completed = new Date();
         this.healthPercent = 1;
+        
+        apiCompleteTask(this.id).catch((e) => {
+            this.last_completed = rollbackDate;
+            this.healthPercent = rollbackPercent;
+            console.error("Failed to complete task on remote.", e);
+        });
     }
     
     decayTask() {

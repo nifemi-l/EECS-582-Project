@@ -45,8 +45,8 @@
         {
           "assets": [
             "./app/assets/shaders/main.vert", "./app/assets/shaders/main.frag", "./app/assets/shaders/billboard.vert", "./app/assets/shaders/billboard.frag",
-            "./app/assets/models/monkey.obj", "./app/assets/models/table.obj",  "./app/assets/models/bed.obj", "./app/assets/models/frame.obj"
-
+            "./app/assets/models/monkey.obj", "./app/assets/models/table.obj",  "./app/assets/models/bed.obj", "./app/assets/models/frame.obj", "../assets/models/flower_pot.obj",
+           "../assets/models/couch.obj", "../assets/models/Fridge.obj"
           ]
         }
       ],

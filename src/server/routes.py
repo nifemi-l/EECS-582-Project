@@ -2,10 +2,12 @@
 PROLOGUE
 File name: routes.py
 Description: Flask blueprint for task, household, and account CRUD operations.
-Programmers: Delroy Wright, some code from Nifemi Lawal
+Programmers: Delroy Wright, some code from Nifemi Lawal, some from Jack Bauer
 Creation date: 3/11/26
 Revision date: 3/29/26
     - Added error handling and validation for all routes.
+    - 4/16/26: Add 3D scale, rotation support
+    - 4/20/26: Add route to clear feature position data
 Preconditions: db_commands.py contains necessary CRUD functions.
 Postconditions: Flask routes are available for managing tasks, households, and users.
 """
@@ -17,7 +19,9 @@ from db.db_commands import (
     add_account, update_account, delete_account, get_account_by_id,
     add_feature, update_feature, delete_feature, get_feature_by_id,
     get_features_with_tasks, update_task_last_comp_time,
-    is_account_in_household, get_household_id_for_task
+    is_account_in_household, get_household_id_for_task,
+    add_room, get_rooms_for_household, get_room_by_id, update_room, delete_room,
+    set_null_feature_position,
 )
 from db.auth.auth_utils import get_current_account_id
 
@@ -35,14 +39,20 @@ def create_feature():
     if not is_account_in_household(account_id, household_id):
         return jsonify({"error": "Access denied"}), 403
     try:
+        room_id = data.get("room_id")
+        if room_id is not None:
+            rm = get_room_by_id(room_id)
+            if not rm or rm[1] != household_id:
+                return jsonify({"error": "Invalid room_id"}), 400
         feature_id = add_feature(
             household_id,
             data["feature_name"],
             data.get("feature_type", ""),
-            data.get("x_pos", 0),
-            data.get("y_pos", 0),
-            data.get("z_pos", 0),
-            data.get("icon", "home-outline")
+            data.get("x_pos", None),
+            data.get("y_pos", None),
+            data.get("z_pos", None),
+            data.get("icon", "home-outline"),
+            room_id,
         )
         return jsonify({"feature_id": feature_id}), 201
     except Exception as e:
@@ -58,18 +68,42 @@ def edit_feature(feature_id):
     feature = get_feature_by_id(feature_id)
     if not feature or not is_account_in_household(account_id, feature[1]):
         return jsonify({"error": "Access denied"}), 403
-    data = request.get_json()
+    data = request.get_json() or {}
     try:
-        update_feature(
-            feature_id,
+        uf_kwargs = dict(
             feature_name=data.get("feature_name"),
             feature_type=data.get("feature_type"),
             x_pos=data.get("x_pos"),
             y_pos=data.get("y_pos"),
             z_pos=data.get("z_pos"),
-            icon=data.get("icon")
+            icon=data.get("icon"),
+            scale=data.get("scale"),
+            rotation_y=data.get("rotation_y"),
         )
+        if "room_id" in data:
+            rid = data.get("room_id")
+            if rid is not None:
+                rm = get_room_by_id(rid)
+                if not rm or rm[1] != feature[1]:
+                    return jsonify({"error": "Invalid room_id"}), 400
+            uf_kwargs["room_id"] = rid
+        update_feature(feature_id, **uf_kwargs)
         return jsonify({"message": "Feature updated successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
+# Clear a feature's position data so that is becomes NULL in the database
+@routes_bp.route("/feature/position/<int:feature_id>", methods=["DELETE"])
+def clear_feature_position(feature_id):
+    account_id, error = get_current_account_id()
+    if error:
+        return error
+    feature = get_feature_by_id(feature_id)
+    if not feature or not is_account_in_household(account_id, feature[1]):
+        return jsonify({"error": "Access denied"}), 403
+    try:
+        set_null_feature_position(feature_id)
+        return jsonify({"message": "Feature position data cleared successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -103,6 +137,76 @@ def get_household_features_route(household_id):
         return jsonify(features), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+
+@routes_bp.route("/household/<int:household_id>/rooms", methods=["GET"])
+def list_household_rooms(household_id):
+    account_id, error = get_current_account_id()
+    if error:
+        return error
+    if not is_account_in_household(account_id, household_id):
+        return jsonify({"error": "Access denied"}), 403
+    try:
+        rooms = get_rooms_for_household(household_id)
+        return jsonify(rooms), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@routes_bp.route("/household/<int:household_id>/rooms", methods=["POST"])
+def create_household_room(household_id):
+    account_id, error = get_current_account_id()
+    if error:
+        return error
+    if not is_account_in_household(account_id, household_id):
+        return jsonify({"error": "Access denied"}), 403
+    data = request.get_json() or {}
+    if not data.get("room_name"):
+        return jsonify({"error": "room_name is required"}), 400
+    try:
+        room_id = add_room(household_id, data["room_name"], data.get("accent_color"))
+        return jsonify({"room_id": room_id}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@routes_bp.route("/room/<int:room_id>", methods=["PUT"])
+def edit_room_route(room_id):
+    account_id, error = get_current_account_id()
+    if error:
+        return error
+    row = get_room_by_id(room_id)
+    if not row or not is_account_in_household(account_id, row[1]):
+        return jsonify({"error": "Access denied"}), 403
+    data = request.get_json() or {}
+    try:
+        kwargs = {}
+        if "room_name" in data:
+            kwargs["room_name"] = data["room_name"]
+        if "accent_color" in data:
+            kwargs["accent_color"] = data["accent_color"]
+        if not kwargs:
+            return jsonify({"error": "No fields to update"}), 400
+        update_room(room_id, **kwargs)
+        return jsonify({"message": "Room updated successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@routes_bp.route("/room/<int:room_id>", methods=["DELETE"])
+def remove_room_route(room_id):
+    account_id, error = get_current_account_id()
+    if error:
+        return error
+    row = get_room_by_id(room_id)
+    if not row or not is_account_in_household(account_id, row[1]):
+        return jsonify({"error": "Access denied"}), 403
+    try:
+        delete_room(room_id)
+        return jsonify({"message": "Room deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 
 # --- Task Routes ---
 # icon defaults to clipboard if not sent --> list view always sends one though

@@ -5,6 +5,7 @@ Programmer: Jack Bauer
 Creation date: 3/29/26
 Revision date: 
   - 4/6/26: Support mesh loading
+  - 4/18/26: Highlight selected task and health bar
 Preconditions: Shader paths must also be added to app.json, VAOs must be bound properly outside drawMesh()
 Postconditions: None
 Errors: None
@@ -23,7 +24,6 @@ import { readAsStringAsync } from 'expo-file-system/legacy';
 import { ExpoWebGLRenderingContext } from 'expo-gl';
 import { Platform } from 'react-native';
 import * as OBJ from 'webgl-obj-loader';
-import { FeatureType } from './feature';
 import * as GLM from 'gl-matrix';
 
 
@@ -53,6 +53,9 @@ export const MESH_PATH_MAP: MeshPathMap = {
   "bed": require("../assets/models/bed.obj"),
   "table": require("../assets/models/table.obj"),
   "frame": require("../assets/models/frame.obj"),
+  "flower_pot": require("../assets/models/flower_pot.obj"),
+  "couch": require("../assets/models/couch.obj"),
+  "fridge": require("../assets/models/Fridge.obj"),
 };
 
 // ***********************************************************
@@ -121,6 +124,15 @@ export enum Tool {
   TOOL_EDIT_FEATURE
 }
 
+export interface InventoryProps {
+  tool: Tool,
+}
+
+export interface EditMenuProps {
+  tool: Tool,
+  updateToolCallback: (tool: Tool) => void
+}
+
 // Interfaces for WebGL shader locations
 // Attributes
 export interface ShaderAttributebLocations {
@@ -162,6 +174,10 @@ export interface ShaderBillboardUniformLocations {
     projection: WebGLUniformLocation | null,
     heightOffset: WebGLUniformLocation | null,
     healthPercent: WebGLUniformLocation | null,
+    fillColor: WebGLUniformLocation | null,
+    backgroundColor: WebGLUniformLocation | null,
+    highlightColor: WebGLUniformLocation | null,
+    selected: WebGLUniformLocation | null,
 }
 // Pick objects
 export interface ShaderPickLocations {
@@ -606,20 +622,6 @@ export class MeshManager {
     this.gl = gl;
     this.meshVaoMap = {};
     this.vaoManager = vaoManager;
-  }
-}
-
-// Return the correct mesh for a specific type given
-export function getMeshFromType(ft: FeatureType) {
-  switch (ft) {
-    case FeatureType.BED:
-      return "bed";
-    case FeatureType.TABLE:
-      return "table";
-    case FeatureType.MONKEY:
-      return "monkey";
-    case FeatureType.FRAME:
-      return "frame";
   }
 }
 
