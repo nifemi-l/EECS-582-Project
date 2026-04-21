@@ -19,6 +19,7 @@ Revision date:
   - 4/15/26: Add edit window buttons for feature rotation, scaling, and translation. Other tweaks. Also rooms
   - 4/16/26: Add 3D scale, rotation database support
   - 4/18/26: Highlight selected task and health bar
+  - 4/20/26: Add inventory bar to manage adding features to the graphical view
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -50,7 +51,6 @@ import tinycolor from "tinycolor2";
 // Import graphics utilities
 import {
   MoveDirection, Tool,
-  FEATURE_ORANGE, FEATURE_BLUE, FEATURE_GREEN, FEATURE_RED,
   RenderPass,getPixelFromRaw, getPickedObjectFromPointOnScreen,
   setPixelFrustrum,
 } from "../../../data/graphicsUtils"
@@ -137,6 +137,33 @@ function getXAxisAngle() {
   return xAxisAngle;
 }
 
+// setter for the unplaced feature list
+function setUnplacedFeatures(features: Feature[]) {
+  rdr.unplacedFeatures = features;
+  reactListeners.forEach((cb) => cb(rdr.unplacedFeatures));
+}
+
+// getter for the unplaced feature list
+function getUnplacedFeatures() {
+  return rdr.unplacedFeatures;
+}
+
+// setter for the feature we're waiting to place
+function setSelectedPlaceFeature(feature: Feature | null) {
+    rdr.selectedPlaceFeature = feature;
+    reactListeners.forEach((cb) => cb(rdr.selectedPlaceFeature));
+}
+
+// getter for the feature we're waiting to place
+function getSelectedPlaceFeature() {
+  return rdr.selectedPlaceFeature;
+}
+
+// clear out selected place feature
+function clearSelectedPlaceFeature() {
+  setSelectedPlaceFeature(null);
+}
+
 // ***********************************************************
 //                  UI / Interface Utilities
 // ***********************************************************
@@ -207,21 +234,24 @@ const handlePan = Gesture.Pan()
 //                      JSX And UI
 // ***********************************************************
 
-// The color selection buttons at the bottom of the screen
-function ColorButtons() {
-  // Store the current color so we can show it in the UI
-  const [drawingColor, setDrawingColor] = useState(FEATURE_ORANGE);
+// An inventory system for unplaced features that we can draw from to put on the screen
+function Inventory() {
+  // Get a list of unplaced features
+  const unplacedFeatureList: Feature[] = useSyncExternalStore(subListener, getUnplacedFeatures);
+  // Selected feature that we are going to place on click. Null most of the time
+  const selectedPlaceFeature = useSyncExternalStore(subListener, getSelectedPlaceFeature);
 
-  // Ensure sync between gl and react
-  if (drawingColor !== rdr.currentDrawingColor) {
-    setDrawingColor(rdr.currentDrawingColor);
-  }
+  // Renderer ref
+  const rdrRef = useRef(rdr);
+  useEffect(() => {
+    rdrRef.current = rdr;
+  }, [rdr]);
 
-  /* Buttons for selecting type */
-  return (
+  // Create a dynamic list of the features that we have created in the list view but do not yet have graphical positions
+  return (unplacedFeatureList.length > 0 ?
     <View
       style={{
-        flexDirection: "column",
+        flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
         position: "absolute",
@@ -230,76 +260,18 @@ function ColorButtons() {
         gap: 10,
       }}
     >
-      <View 
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 10,
-          gap: 10,
-        }}
-      >
-        {/* Red Button */}
+      {unplacedFeatureList.map((feature, index, featureArray) => {
+        return feature.room_id === rdrRef.current.currentViewingRoom ? (
         <Pressable
-          onPress={() => {rdr.currentDrawingColor = FEATURE_RED; setDrawingColor(FEATURE_RED)}}
+          onPress={() => {setSelectedPlaceFeature(feature)}}
           hitSlop={8}
+          key={feature.id}
         >
-          <MaterialCommunityIcons name={drawingColor !== FEATURE_RED ? 'circle-outline' : 'circle'} size={20} color="#de3737" />
-        </Pressable>
-        {/* Green Button */}
-        <Pressable
-          onPress={() => {rdr.currentDrawingColor = FEATURE_GREEN; setDrawingColor(FEATURE_GREEN)}}
-          hitSlop={8}
-        >
-          <MaterialCommunityIcons name={drawingColor !== FEATURE_GREEN ? 'circle-outline' : 'circle'} size={20} color="#53de37" />
-        </Pressable>
-        {/* Blue Button */}
-        <Pressable
-          onPress={() => {rdr.currentDrawingColor = FEATURE_BLUE; setDrawingColor(FEATURE_BLUE)}}
-          hitSlop={8}
-        >
-          <MaterialCommunityIcons name={drawingColor !== FEATURE_BLUE ? 'circle-outline' : 'circle'} size={20} color="#3764de" />
-        </Pressable>
-        {/* Orange Button */}
-        <Pressable
-          onPress={() => {rdr.currentDrawingColor = FEATURE_ORANGE; setDrawingColor(FEATURE_ORANGE)}}
-          hitSlop={8}
-        >
-          <MaterialCommunityIcons name={drawingColor !== FEATURE_ORANGE ? 'circle-outline' : 'circle'} size={20} color="#de8537" />
-        </Pressable>
-      </View>
-
-      <View 
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 10,
-          gap: 10,
-        }}
-      >
-        {/* Edit grid size buttons - DISABLED for now */}
-        {/* <Pressable
-          onPress={() => {rdr.grid.resize(rdr.grid.width + 2, rdr.grid.height); rdr.house.resizeFloorFeature()}}>
-          <MaterialCommunityIcons name='arrow-right' color="#abcd" />
-        </Pressable>
-
-        <Pressable
-          onPress={() => {rdr.grid.resize(rdr.grid.width, rdr.grid.height + 2); rdr.house.resizeFloorFeature()}}>
-          <MaterialCommunityIcons name='arrow-up' color="#abcd" />
-        </Pressable>
-
-        <Pressable
-          onPress={() => {rdr.grid.resize(rdr.grid.width - 2, rdr.grid.height); rdr.house.resizeFloorFeature()}}>
-          <MaterialCommunityIcons name='arrow-left' color="#abcd" />
-        </Pressable>
-
-        <Pressable
-          onPress={() => {rdr.grid.resize(rdr.grid.width, rdr.grid.height - 2); rdr.house.resizeFloorFeature()}}>
-          <MaterialCommunityIcons name='arrow-down' color="#abcd" />
-        </Pressable> */}
-      </View>
-    </View>
+          <MaterialCommunityIcons name={feature.icon as any} color={feature === selectedPlaceFeature ? tinycolor("gold").toHexString() : tinycolor("red").darken().toHexString()} size={20}/>
+        </Pressable>) : null;
+      })}
+    </View> 
+    : null
   );
 }
 
@@ -615,11 +587,11 @@ function AuthenticatedGraphicsScreen() {
             return; // do nothing if we have not found a valid point
           } else {
             // If we did find a valid point, add the feature. 
-            rdrRef.current.placeFeature(point[0], point[1], point[2]);
+            rdrRef.current.placeSelectedFeature(point[0], point[1], point[2]);
           }
         } else {
           // 1: We are highlighting a feature, so we just delete it.
-          rdrRef.current.deleteFeature(highlightedObjectID);
+          rdrRef.current.removeFeature(highlightedObjectID);
           rdrRef.current.setHighlightedFeature(-1); // -1 effectively sets to null
         }
       }
@@ -765,6 +737,7 @@ function AuthenticatedGraphicsScreen() {
               setCurrentViewingRoom(rdrRef.current.goPrevRoom());
               rdrRef.current.selectedEditFeature = null;
               rdrRef.current.selectedEditTask = null;
+              clearSelectedPlaceFeature();
             }}
             // @ts-ignore web-only pointer hover
             onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowLeft(true)}
@@ -809,6 +782,7 @@ function AuthenticatedGraphicsScreen() {
               setCurrentViewingRoom(rdrRef.current.goNextRoom());
               rdrRef.current.selectedEditFeature = null;
               rdrRef.current.selectedEditTask = null;
+              clearSelectedPlaceFeature();
             }}
             // @ts-ignore web-only pointer hover
             onMouseEnter={() => Platform.OS === "web" && setHoverRoomArrowRight(true)}
@@ -832,7 +806,7 @@ function AuthenticatedGraphicsScreen() {
         </View>
 
         <EditWindow />
-        <ColorButtons />
+        <Inventory /> 
       </View>
     </PaperProvider>
     ) : (
@@ -851,7 +825,12 @@ function AuthenticatedGraphicsScreen() {
 // This is the function called to create the WebGL context, setup extensions if needed, read and compile shaders, and do all
 // other prep work which is neccessary to initialize our renderer. 
 async function onContextCreate(gl: ExpoWebGLRenderingContext) {
+  // Initialize the renderer and WebGL context
   await rdr.init(gl);
+
+  // Setup callback functions so that we can update the UI from the renderer later
+  rdr.setUnplacedFeatureCallback(setUnplacedFeatures);
+  rdr.setClearSelectedPlaceFeatureCallback(clearSelectedPlaceFeature);
 
   // Start drawing frames. This is a recursive animation function
   drawFrame(rdr.lastFrameTime);
