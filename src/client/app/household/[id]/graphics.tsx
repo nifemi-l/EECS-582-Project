@@ -245,6 +245,10 @@ function Inventory(props: InventoryProps) {
     return f.room_id === rdrRef.current.currentViewingRoom  || (f.room_id == null && rdrRef.current.currentViewingRoom === UNASSIGNED_ROOM_ID);
   }).length;
 
+  const numPlacedInRoom = rdrRef.current.features.filter((pf) => {
+    return (pf.room_id === rdrRef.current.currentViewingRoom) || (pf.room_id === null && rdrRef.current.currentViewingRoom === UNASSIGNED_ROOM_ID)
+  }).length
+
   // Create a dynamic list of the features that we have created in the list view but do not yet have graphical positions
   return (numUnplacedInRoom > 0 ? (
     <View
@@ -288,8 +292,24 @@ function Inventory(props: InventoryProps) {
         </Fragment>
       )}
     </View>)
-    : null
-  );
+    : numPlacedInRoom <= 0 ? (
+        <View
+          style={{
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "absolute",
+            bottom: 40,
+            zIndex: 10,
+            gap: 5,
+            padding: 0,
+            margin: 0,
+          }}
+        >
+          {/* Display a message if we have no unplaced features AND no placed features (thus none at all) */}
+          <Text style={{color: "#FFFFFF"}}>This room has no features. Add or delete them in the List view</Text>
+        </View>
+      ) : null);
 }
 
 // A window that will appear to edit feature info
