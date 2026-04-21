@@ -21,6 +21,8 @@ import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { getToken, clearToken } from "../utils/authStorage";
+import { createHousehold } from "@/data/encryptedApi";
+import { decryptData } from "../utils/encryptionUtils"
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -133,13 +135,13 @@ export default function HomeScreen() {
 
         // Map the returned household data into the local HouseholdSummary shape
         if (Array.isArray(data.households)) {
-          const fetched: HouseholdSummary[] = data.households.map((h: any) => ({
+          const fetched: HouseholdSummary[] = await Promise.all(data.households.map((h: any) => ({
             id: String(h.household_id),
-            name: h.household_name,
-            joinCode: h.join_code || "",
+            name: decryptData(h.household_name),
+            joinCode: decryptData(h.join_code) || "",
             role: h.role || "member",
             adminName: h.admin_name || "Unknown",
-          }));
+          })));
 
           const savedOrder = await loadHouseholdOrder();
           if (savedOrder && savedOrder.length > 0) {
@@ -228,31 +230,24 @@ export default function HomeScreen() {
 
     try {
       // Send the create household request to the backend
-      const response = await fetch(`${API_URL}/household/create`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
+      const data = await createHousehold(token, trimmed)
 
-        // Parse the backend response body
-        body: JSON.stringify({ name: trimmed }),
-      });
+      const res = await data.response.json();
 
-      const data = await response.json();
+      const join_code = data.join_code;
 
       // If server returns an error, keep UI state unchanged and show the message
-      if (!response.ok) {
-        Alert.alert("Create failed", data.error || "Could not create household.");
+      if (!res.response.ok) {
+        Alert.alert("Create failed", res.error || "Could not create household.");
         return;
       }
 
       // Build the newly created household object in the local UI shape
-      const household = data.household;
+      const household = res.household;
       const created: HouseholdSummary = {
         id: String(household.household_id),
-        name: household.household_name,
-        joinCode: household.join_code || "",
+        name: trimmed,
+        joinCode: join_code || "",
         role: "admin",
         adminName: household.admin_name || "Unknown",
       };

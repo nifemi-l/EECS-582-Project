@@ -603,24 +603,25 @@ export default function ListScreen() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   // Fetch all features + tasks from the server and map them into our local class instances
-  const loadFromApi = useCallback(() => {
+  // Inside list.tsx
+const loadFromApi = useCallback(() => {
     setError(null);
     fetchHouseholdFeatures(householdId)
-      .then((data: any[]) => {
-        // Convert the raw JSON objects into Feature/Task class instances
-        // so the health bar math and other methods still work
-        const mapped = data.map((f: any) => {
+      .then((decryptedData) => { // This is now an array of PLAIN TEXT objects
+        const mapped = decryptedData.map((f: any) => {
+          // No more decryption here! It was done in the API layer.
           const feat = new Feature(
             f.feature_name,
             f.household_id,
-            f.feature_type || "",
+            f.feature_type || "", // Use the already decrypted string
             f.x_pos, f.y_pos, f.z_pos,
             f.feature_id,
             f.icon || "home-outline"
           );
+
           feat.tasks = (f.tasks || []).map((t: any) => {
             const task = new Task(
-              t.task_name,
+              t.task_name, // Already decrypted
               t.feature_id,
               t.frequency_days,
               t.icon || "clipboard-text-outline",
@@ -628,7 +629,6 @@ export default function ListScreen() {
               t.created_by_account_id,
               t.task_id
             );
-            // Parse the ISO date string back into a Date object for health calculations
             task.last_completed = t.last_completed ? new Date(t.last_completed) : null;
             return task;
           });
@@ -642,7 +642,7 @@ export default function ListScreen() {
         setError("Could not load data from server.");
         setLoaded(true);
       });
-  }, [householdId]);
+}, [householdId]);
 
   // Load data from the API when the component mounts (or if householdId changes)
   useEffect(() => {
@@ -711,7 +711,6 @@ export default function ListScreen() {
         frequency_days: freqDays,
         icon,
         visibility: "household",
-        last_completed: now.toISOString(),
       })
         .then(({ task_id }) => {
           const newTask = new Task(name, featureId, freqDays, icon);
@@ -759,7 +758,11 @@ export default function ListScreen() {
       apiCreateFeature({
         household_id: householdId,
         feature_name: name,
-        icon,
+        feature_type:"", 
+        icon: icon     ,
+        x_pos: 0,
+        y_pos: 0,
+        z_pos: 0,
       })
         .then(({ feature_id }) => {
           const newLoc = new Feature(name, householdId, FeatureType.UNDEFINED, 0, 0, 0, feature_id, icon);

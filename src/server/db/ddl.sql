@@ -233,7 +233,7 @@ CREATE TABLE IF NOT EXISTS Feature_Encrypted (
     /* Household id should link the feature to a specific household 
         Is cascade needed here?
     */
-    household_id INTEGER REFERENCES Household(household_id) ON DELETE CASCADE,
+    household_id INTEGER REFERENCES Household_Encrypted(household_id) ON DELETE CASCADE,
     /* Name and types of the feature */
     feature_name BYTEA NOT NULL,
     feature_type BYTEA,
@@ -260,7 +260,7 @@ CREATE TABLE IF NOT EXISTS Task_Encrypted (
     /* Use feature id to link each task to a particular feature 
         Is cascade needed here?
     */
-    feature_id INTEGER REFERENCES Feature(feature_id) ON DELETE CASCADE,
+    feature_id INTEGER REFERENCES Feature_Encrypted(feature_id) ON DELETE CASCADE,
     /* Name of the task */
     task_name BYTEA NOT NULL,
     /* # of days for how often the task needs to be done */
@@ -292,7 +292,7 @@ Create a relation for storing the sensor data. "Environmentaldata"
 /* Update temperature and relative humidity from floats to ints? */
 CREATE TABLE IF NOT EXISTS EnvironmentalData_Encrypted (
     data_id SERIAL PRIMARY KEY,
-    household_id INTEGER REFERENCES Household(household_id) ON DELETE CASCADE,
+    household_id INTEGER REFERENCES Household_Encrypted(household_id) ON DELETE CASCADE,
     temperature_C INTEGER,
     relative_humidity INTEGER,
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

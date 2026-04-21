@@ -48,13 +48,27 @@ export const encryptData = async (plainText: string) => {
 };
 
 export const decryptData = async (ciphertextB64: string) => {
+  if (!ciphertextB64) return "";
 
-  const ciphertext = Uint8Array.from(atob(ciphertextB64), c => c.charCodeAt(0));
-  const iv = DEFAULT_SALT;
+  try {
+    // DEBUG: Look at the console to see what the Pi is actually sending
+    console.log("Attempting decrypt on:", ciphertextB64.substring(0, 15));
 
-  const key = await getKey();
-  const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv}, key, ciphertext);
-  
-  return new TextDecoder().decode(decrypted);
+    const ciphertext = Uint8Array.from(atob(ciphertextB64), c => c.charCodeAt(0));
+    const key = await getKey();
+    
+    if (!key) throw new Error("Key missing from storage");
+
+    const decrypted = await window.crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: DEFAULT_IV }, 
+      key, 
+      ciphertext
+    );
+    
+    return new TextDecoder().decode(decrypted);
+  } catch (e) {
+    // This will tell us if it's an IV mismatch, a bad key, or bad Base64
+    console.error("DECRYPTION CRASH:", e, "| Payload:", ciphertextB64);
+    return `[DECRYPT_ERROR]`; 
+  }
 };
-

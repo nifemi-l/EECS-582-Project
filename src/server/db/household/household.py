@@ -35,6 +35,7 @@ def create_household_route():
 
     # Extract the household name from the request
     household_name = data.get("name", "").strip()
+    household_join_code = data.get("join_code","").strip()
 
     # Make sure a household name was provided
     if not household_name:
@@ -42,7 +43,7 @@ def create_household_route():
 
     try:
         # Create the household and receive its generated id and join code
-        household = create_household(household_name, account_id)
+        household = create_household(household_name, household_join_code, account_id)
 
         # The creator is automatically inserted into the membership table as an admin
         add_account_to_household(account_id, household["household_id"], "admin")
