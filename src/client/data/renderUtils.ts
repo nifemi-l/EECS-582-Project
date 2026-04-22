@@ -892,7 +892,12 @@ export class Renderer {
 
   // Just make sure we're using a valid room, set to the 1st in the room list index
   setValidRoom(): number {
-    this.currentViewingRoom = this.roomList[0].room_id;
+    if (this.roomList.length > 0) {
+      this.currentViewingRoom = this.roomList[0].room_id;
+    } else {
+      this.enableUnassignedRoom(); // enable the unassigned room if there are no rooms
+      this.currentViewingRoom = UNASSIGNED_ROOM_ID;
+    }
     console.log("Rooms updated.");
     return this.currentViewingRoom;
   }
@@ -1412,23 +1417,24 @@ export class RenderableFeature extends Feature {
     const rollbackMatrix = this.modelMatrix;
     const rollbackRotation = this.rotation_y;
 
+    // Convert to radians
+    const rotFactor = rotAmt * Math.PI / 180;
+
     // Apply the rotation
-    GLM.mat4.rotateY(this.modelMatrix, this.modelMatrix, rotAmt);
+    GLM.mat4.rotateY(this.modelMatrix, this.modelMatrix, rotFactor);
 
-    // Save off our new rotation angle
-    const rotQuat = GLM.quat.create();
-    GLM.mat4.getRotation(rotQuat, this.modelMatrix);
+    // Save to feature data
+    this.rotation_y = this.rotation_y += rotAmt;
 
-    // Convert the rotation value to a quaternion 
-    // See the following stack overflow atricle for how to get the current rotation angle
-    // https://stackoverflow.com/questions/15955358/javascript-gl-matrix-lib-how-to-get-euler-angles-from-quat-and-quat-from-angles
-    // First, get wxyz components. We use a quaternion specifically because it avoids gimbal lock and is typical for 3D rotation engines
-    const w = rotQuat[0];
-    const x = rotQuat[1];
-    const y = rotQuat[2];
-    const z = rotQuat[3];
-    const yRot = Math.asin(2 * (x * z + w * y));
-    this.rotation_y = yRot * 180 / Math.PI; // convert to degrees
+    // Clamp positive range to 0 to 360
+    if (this.rotation_y > 360.0) {
+      this.rotation_y -= 360.0;
+    }
+
+    // Clamp negative range to -360 to 0
+    if (this.rotation_y < -360.0) {
+      this.rotation_y += 360.0;
+    }
 
     // Now, update the DB
     apiUpdateFeature(this.id, {rotation_y: this.rotation_y}).catch( (e) => {
