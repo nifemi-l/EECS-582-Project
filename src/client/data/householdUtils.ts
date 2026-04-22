@@ -123,18 +123,19 @@ export const TASK_ICONS: string[] = [
 
 // icons you can pick when creating a section/room
 export const LOCATION_ICONS: string[] = [
-  "home-outline",
-  "silverware-fork-knife",
-  "shower",
   "bed",
   "sofa",
   "desk",
-  "garage",
+  "rug",
+  "table-chair",
   "tree",
-  "car-outline",
-  "stairs",
+  "flower",
+  "faucet",
+  "fridge",
   "washing-machine",
-  "door",
+  "bathtub",
+  "toilet",
+  "car-outline",
 ];
 
 // Frequency preset options shown as selectable pills

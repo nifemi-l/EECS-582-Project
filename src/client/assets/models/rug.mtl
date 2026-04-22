@@ -1,0 +1,14 @@
+# Blender 5.1.0 MTL File: 'rug.blend'
+# www.blender.org
+
+newmtl 02_Carpet_01
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd 02_Carpet_01_BaseColor.png
+map_Ns 02_Carpet_01_Roughness.png
+map_refl 02_Carpet_01_Metallic.png
+map_Bump -bm 1.000000 02_Carpet_01_Normal.png

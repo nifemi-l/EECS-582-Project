@@ -46,7 +46,9 @@
           "assets": [
             "./app/assets/shaders/main.vert", "./app/assets/shaders/main.frag", "./app/assets/shaders/billboard.vert", "./app/assets/shaders/billboard.frag",
             "./app/assets/models/monkey.obj", "./app/assets/models/table.obj",  "./app/assets/models/bed.obj", "./app/assets/models/frame.obj", "../assets/models/flower_pot.obj",
-           "../assets/models/couch.obj", "../assets/models/Fridge.obj", "../assets/models/car.obj", "../assets/models/washing_machine.obj"
+           "../assets/models/couch.obj", "../assets/models/Fridge.obj", "../assets/models/car.obj", "../assets/models/washing_machine.obj", "../assets/models/tall_plant.obj",
+           "../assets/models/desk.obj", "../assets/models/bathtub.obj", "../assets/models/sink.obj", "../assets/models/toilet.obj", "../assets/models/wood_chair.obj",
+           "../assets/models/rug.obj"
           ]
         }
       ],

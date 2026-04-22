@@ -59,6 +59,13 @@ export const MESH_PATH_MAP: MeshPathMap = {
   "fridge": require("../assets/models/Fridge.obj"),
   "car": require("../assets/models/car.obj"),
   "washing_machine": require("../assets/models/washing_machine.obj"),
+  "tall_plant": require("../assets/models/tall_plant.obj"),
+  "desk": require("../assets/models/desk.obj"),
+  "bathtub": require("../assets/models/bathtub.obj"),
+  "sink": require("../assets/models/sink.obj"),
+  "toilet": require("../assets/models/toilet.obj"),
+  "wood_chair": require("../assets/models/wood_chair.obj"),
+  "square_rug": require("../assets/models/rug.obj"),
 };
 
 // ***********************************************************
@@ -670,30 +677,32 @@ export function getFeatureTypeFromIcon(icon: string): FeatureType {
 
     // Otherwise, convert to a FeatureType
     switch (icon) {
-        case "home-outline":
-            return FeatureType.UNDEFINED;
-        case "silverware-fork-knife":
-            return FeatureType.UNDEFINED;
-        case "shower":
-            return FeatureType.UNDEFINED;
+        case "bathtub":
+            return FeatureType.BATHTUB;
         case "bed":
             return FeatureType.BED;
         case "sofa":
             return FeatureType.COUCH;
         case "desk":
-            return FeatureType.UNDEFINED;
-        case "garage":
-            return FeatureType.UNDEFINED;
+            return FeatureType.DESK;
         case "tree":
-            return FeatureType.UNDEFINED;
+            return FeatureType.TALL_PLANT;
         case "car-outline":
             return FeatureType.CAR;
-        case "stairs":
-            return FeatureType.UNDEFINED;
         case "washing-machine":
             return FeatureType.WASHING_MACHINE;
-        case "door":
-            return FeatureType.UNDEFINED;  
+        case "fridge":
+            return FeatureType.FRIDGE;  
+        case "flower":
+          return FeatureType.FLOWER_POT;  
+        case "faucet":
+          return FeatureType.SINK;
+        case "toilet":
+          return FeatureType.TOILET;
+        case "table-chair":
+          return FeatureType.WOOD_CHAIR;
+        case "rug":
+          return FeatureType.SQUARE_RUG;
         case "":
         default:
             // Note: I think this should never be reached since "" is not in LOCATION_ICONS
