@@ -28,6 +28,15 @@ export enum FeatureType {
     FLOWER_POT = "flower_pot",
     COUCH = "couch",
     FRIDGE = "fridge",
+    CAR = "car",
+    WASHING_MACHINE = "washing_machine",
+    TALL_PLANT = "tall_plant",
+    DESK = "desk",
+    BATHTUB = "bathtub",
+    SINK = "sink",
+    TOILET = "toilet",
+    WOOD_CHAIR = "wood_chair",
+    SQUARE_RUG = "square_rug",
 }
 
 // Translate from a string feature type (as we often see in our app) to the correct enum value

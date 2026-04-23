@@ -1,0 +1,14 @@
+# Blender 5.1.0 MTL File: 'desk.blend'
+# www.blender.org
+
+newmtl Stylized_Desk_01
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd /Users/jbau/Downloads/4096/Stylized_Desk_Var_01_BaseColor.tga
+map_Ns /Users/jbau/Downloads/4096/Stylized_Desk_Roughness.tga
+map_refl /Users/jbau/Downloads/4096/Stylized_Desk_Metallic.tga
+map_Bump -bm 1.500000 /Users/jbau/Downloads/4096/Stylized_Desk_Normal.tga
