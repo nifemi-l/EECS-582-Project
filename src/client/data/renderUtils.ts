@@ -48,7 +48,6 @@ import {
 
 // Import API utilities
 import { 
-  deleteFeature as apiDeleteFeature,
  deleteFeature as apiDeleteFeature,
   updateFeature as apiUpdateFeature,
   clearFeaturePosition as apiClearFeaturePosition,

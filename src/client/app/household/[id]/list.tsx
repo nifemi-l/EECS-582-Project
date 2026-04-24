@@ -79,8 +79,6 @@ import {
 // API functions for talking to the Flask backend
 // Aliased with "api" prefix so they don't clash with handler names in this file
 import {
-
-
   deleteHouseholdRoom as apiDeleteHouseholdRoom,
   deleteFeature as apiDeleteFeature,
   deleteTask as apiDeleteTask,
@@ -98,8 +96,10 @@ import {
 } from "../../../theme/colors";
 
 import {
-  fetchHouseholdFeatures,
   createFeature as apiCreateFeature,
+    fetchMyHouseholds,
+    fetchHouseholdRooms,
+  fetchHouseholdFeatures,
   updateFeature as apiUpdateFeature,
   createTask as apiCreateTask,
   createHouseholdRoom as apiCreateHouseholdRoom,
@@ -1202,56 +1202,63 @@ const loadFromApi = useCallback(() => {
 
   // 1. Fetch both features (decrypted via API layer) and rooms in parallel
   Promise.all([
-    fetchHouseholdFeatures(householdId),
-    fetchHouseholdRooms(householdId).catch((e) => {
-      console.warn("Rooms unavailable (migrate DB or update server):", e);
-      return [];
-    }),
-  ])
-    .then(([decryptedData, roomsData]) => {
-      // 2. Set the rooms state for the UI
-      setRooms(Array.isArray(roomsData) ? roomsData : []);
+  fetchHouseholdFeatures(householdId),
+  fetchHouseholdRooms(householdId).catch((e) => {
+    console.warn("Rooms unavailable (migrate DB or update server):", e);
+    return [];
+  }),
+])
+  .then(([decryptedData, roomsData]) => {
+    // 1. Safety Check: Ensure decryptedData is an array
+    // If your API returns { features: [...] }, use decryptedData.features
+    const featuresArray = Array.isArray(decryptedData) 
+      ? decryptedData 
+      : (decryptedData?.features || []); 
 
-      // 3. Map the decrypted data into Feature/Task class instances
-      const mapped = decryptedData.map((f: any) => {
-        // Feature name and type are already decrypted by fetchHouseholdFeatures
-        const feat = new Feature(
-          f.feature_name,
-          f.household_id,
-          f.feature_type || "", 
-          f.x_pos,
-          f.y_pos,
-          f.z_pos,
-          f.feature_id,
-          f.icon || "home-outline",
-          f.room_id != null ? Number(f.room_id) : null // Merged from encryption branch
+    // 2. Set the rooms state
+    setRooms(Array.isArray(roomsData) ? roomsData : []);
+    console.log(featuresArray)
+
+    // 3. Map into Class instances
+    const mapped = featuresArray.map((f: any) => {
+      const feat = new Feature(
+        f.feature_name,
+        f.household_id,
+        f.feature_type || "", 
+        f.x_pos,
+        f.y_pos,
+        f.z_pos,
+        f.feature_id,
+        f.icon || "home-outline",
+        f.room_id != null ? Number(f.room_id) : null
+      );
+
+      feat.tasks = (f.tasks || []).map((t: any) => {
+        const task = new Task(
+          t.task_name,
+          t.feature_id,
+          t.frequency_days,
+          t.icon || "clipboard-text-outline",
+          t.visibility || "household",
+          t.created_by_account_id,
+          t.task_id
         );
-
-        feat.tasks = (f.tasks || []).map((t: any) => {
-          const task = new Task(
-            t.task_name, // Already decrypted
-            t.feature_id,
-            t.frequency_days,
-            t.icon || "clipboard-text-outline",
-            t.visibility || "household",
-            t.created_by_account_id,
-            t.task_id
-          );
-          task.last_completed = t.last_completed ? new Date(t.last_completed) : null;
-          return task;
-        });
-
-        return feat;
+        task.last_completed = t.last_completed ? new Date(t.last_completed) : null;
+        return task;
       });
 
-      setFeatures(mapped);
-      setLoaded(true);
-    })
-    .catch((e) => {
-      console.error("Failed to load features:", e);
-      setError("Could not load data from server.");
-      setLoaded(true);
+      return feat;
     });
+    console.log("MAPPED ", mapped)
+
+    setFeatures(mapped);
+    setLoaded(true);
+  })
+  .catch((e) => {
+    console.error("Failed to load features:", e);
+    setError("Could not load data from server.");
+    setLoaded(true);
+  });
 }, [householdId]);
 
   // Load data from the API when the component mounts (or if householdId changes)

@@ -4,61 +4,89 @@ Description: Encrypted wrappers for Feature and Task management.
              Handles client-side encryption before sending data to the Pi.
 */
 
+import { authHeaders } from "./api"
 import { getToken } from "../utils/authStorage";
-import { encryptData, decryptData } from "../utils/encryptionUtils";
+import { encryptData, decryptData, decryptFromJson } from "../utils/encryptionUtils";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const API_BASE = `${API_URL}/api`;
 
-async function authHeaders(withBody = false): Promise<Record<string, string>> {
-    const token = await getToken();
-    if (!token) throw new Error("Not authenticated");
-    const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
-    if (withBody) headers["Content-Type"] = "application/json";
-    return headers;
+export async function fetchMyHouseholds(): Promise<{
+  households: Array<{ household_id: number; household_name: string }>;
+}> {
+  const res = await fetch(`${API_URL}/household/mine`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch households: ${res.status}`);
+  return await decryptFromJson(await res.json());
 }
 
-// Inside encryptedApi.ts
+
+
+// Get all features for a household, with each feature's tasks nested inside
+// This is the main data-loading call the list view makes on mount
 export async function fetchHouseholdFeatures(householdId: number) {
-    const res = await fetch(`${API_BASE}/household/${householdId}/features`, {
-        headers: await authHeaders(),
-    });
-    if (!res.ok) throw new Error(`Failed to fetch features: ${res.status}`);
-
-    const features = await res.json();
-
-    // Correctly await the entire mapping process
-    return Promise.all(
-        features.map(async (f: any) => {
-            const decryptedFeatureName = await decryptData(f.feature_name);
-            
-            // Only decrypt type if it exists and looks like ciphertext
-            const decryptedFeatureType = (f.feature_type && f.feature_type.length > 10) 
-                ? await decryptData(f.feature_type) 
-                : "";
-
-            const decryptedTasks = await Promise.all(
-                (f.tasks || []).map(async (t: any) => ({
-                    ...t,
-                    task_name: await decryptData(t.task_name),
-                })),
-            );
-
-            return {
-                ...f,
-                feature_name: decryptedFeatureName,
-                feature_type: decryptedFeatureType,
-                tasks: decryptedTasks,
-            };
-        }),
-    );
+  const res = await fetch(`${API_BASE}/household/${householdId}/features`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch features: ${res.status}`);
+  return await decryptFromJson(await res.json())
 }
 
-export async function makeHouseholdJoinCodeSimple = (length: number = 8): string => {
-    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    return Array.from({ length }, () =>
-        alphabet.charAt(Math.floor(Math.random() * alphabet.length)),
-    ).join("");
+export async function fetchHouseholdRooms(householdId: number): Promise<HouseholdRoom[]> {
+  const res = await fetch(`${API_BASE}/household/${householdId}/rooms`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch rooms: ${res.status}`);
+  return await decryptFromJson(await res.json());
+}
+
+// // Inside encryptedApi.ts
+// export async function fetchHouseholdFeatures(householdId: number) {
+//     const res = await fetch(`${API_BASE}/household/${householdId}/features`, {
+//         headers: await authHeaders(),
+//     });
+//     if (!res.ok) throw new Error(`Failed to fetch features: ${res.status}`);
+//
+//     const features = await res.json();
+//
+//     // Correctly await the entire mapping process
+//     return Promise.all(
+//         features.map(async (f: any) => {
+//             const decryptedFeatureName = await decryptData(f.feature_name);
+//
+//             // Only decrypt type if it exists and looks like ciphertext
+//             const decryptedFeatureType = (f.feature_type && f.feature_type.length > 10) 
+//                 ? await decryptData(f.feature_type) 
+//                 : "";
+//
+//             const decryptedTasks = await Promise.all(
+//                 (f.tasks || []).map(async (t: any) => ({
+//                     ...t,
+//                     task_name: await decryptData(t.task_name),
+//                 })),
+//             );
+//
+//             return {
+//                 ...f,
+//                 feature_name: decryptedFeatureName,
+//                 feature_type: decryptedFeatureType,
+//                 tasks: decryptedTasks,
+//             };
+//         }),
+//     );
+// }
+
+export async function makeHouseholdJoinCodeSimple (length: number = 8): string {
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Removed ambiguous O, 0, I, 1
+  const bytes = new Uint32Array(length);
+  
+  // Fills the array with cryptographically strong random numbers
+  window.crypto.getRandomValues(bytes);
+
+  return Array.from(bytes, (byte) => 
+    alphabet.charAt(byte % alphabet.length)
+  ).join("");
 };
 
 export async function createHousehold(
@@ -67,7 +95,7 @@ export async function createHousehold(
 ) {
 
     const encrypted_name = await encryptData(name);
-    const join_code = makeHouseholdJoinCodeSimple();
+    const join_code = await makeHouseholdJoinCodeSimple();
     const join_code_enc = await encryptData(join_code);
 
     console.log(encrypted_name)
@@ -81,8 +109,15 @@ export async function createHousehold(
         // Parse the backend response body
         body: JSON.stringify({ name: encrypted_name.ciphertext, join_code: join_code_enc.ciphertext }),
       });
-      return {response, join_code};
-}
+
+      const body = await response.json();
+
+    return {
+        ok: response.ok,
+        status: response.status,
+        data: body,
+        join_code: join_code // The cleartext code for the UI
+    };}
 
 // --- FEATURE FUNCTIONS ---
 
@@ -90,14 +125,16 @@ export async function createFeature(data: {
     household_id: number;
     feature_name: string;
     feature_type: string;
-    x_pos: number;
-    y_pos: number;
-    z_pos: number;
+    x_pos?: number;
+    y_pos?: number;
+    z_pos?: number;
     icon?: string;
+    room_id?: number | null;
 }) {
     const encName = await encryptData(data.feature_name);
     console.log("CREATNIG FEATURE");
     const encType = await encryptData(data.feature_type);
+    console.log(data.room_id)
 
     const res = await fetch(`${API_BASE}/feature`, {
         method: "POST",
@@ -110,6 +147,7 @@ export async function createFeature(data: {
             y_pos: data.y_pos,
             z_pos: data.z_pos,
             icon: data.icon,
+            room_id: data.room_id,
         }),
     });
     return res.json();

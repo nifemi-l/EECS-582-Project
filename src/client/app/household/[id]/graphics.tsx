@@ -666,12 +666,20 @@ function AuthenticatedGraphicsScreen() {
         console.error("Failed to fetch rooms for household", householdId, e);
       });
 
+
     // Get household feature data
     fetchHouseholdFeatures(householdId)
       .then((data: any[]) => {
               // Convert the raw JSON objects into Feature/Task class instances
               // so the health bar math and other methods still work
-              const mapped = data.map((f: any) => {
+                  const rawFeatures = Array.isArray(data) ? data : (data?.features || []);
+                console.log(data)
+
+                if (!Array.isArray(rawFeatures)) {
+                    console.error("Expected array for features, got: ", typeof rawFeatures)
+                    return;
+                }
+              const mapped = rawFeatures.map((f: any) => {
                 const feat = new Feature(
                   f.feature_name,
                   f.household_id,

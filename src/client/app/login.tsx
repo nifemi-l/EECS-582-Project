@@ -18,18 +18,8 @@ Known faults: None.
 */
 
 // Imports
-import {
-    View,
-    Text,
-    TextInput,
-    Pressable,
-    StyleSheet,
-    Alert,
-} from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
-import { useState, useEffect } from "react";
-import { saveToken, saveKey } from "../utils/authStorage";
-import { deriveKey } from "../utils/encryptionUtils";
+import {  deriveKey } from "../utils/encryptionUtils";
+import { saveKey } from "../utils/authStorage"
 import { View, Text, TextInput, Pressable, StyleSheet, Alert, Image, Platform, useWindowDimensions } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState, useEffect, useRef } from "react";

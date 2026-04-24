@@ -309,7 +309,7 @@ Create a relation for storing the sensor data. "Environmentaldata"
         recorded_at : The timestamp that the sensor readings took place at
 */
 
-/* Update temperature and relative humidity from floats to ints? */
+/* Update temperature and relative humidity from floats to inCREATE INDEX IF NOT EXISTS idx_room_encrypted_household_encrypted ON Room_Encrypted (household_id);ts? */
 CREATE TABLE IF NOT EXISTS EnvironmentalData_Encrypted (
     data_id SERIAL PRIMARY KEY,
     household_id INTEGER REFERENCES Household_Encrypted(household_id) ON DELETE CASCADE,
@@ -326,9 +326,25 @@ CREATE TABLE IF NOT EXISTS Room_Encrypted (
     room_id SERIAL PRIMARY KEY CHECK (room_id > 0),
     household_id INTEGER NOT NULL
         REFERENCES Household_Encrypted(household_id) ON DELETE CASCADE,
-    room_name VARCHAR(80) NOT NULL,
+    room_name BYTEA NOT NULL,
     accent_color VARCHAR(20),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_room_encrypted_household_encrypted ON Room_Encrypted (household_id);
+
+/* Create a table for household membership / roles
+    Each account could have a different role in each household
+    The roles are either "admin" and "member"
+*/
+CREATE TABLE IF NOT EXISTS HouseholdMember_Encrypted (
+    account_id INTEGER NOT NULL
+        REFERENCES Account(account_id) ON DELETE CASCADE,
+    household_id INTEGER NOT NULL
+        REFERENCES Household_Encrypted(household_id) ON DELETE CASCADE,
+    role VARCHAR(10) NOT NULL
+        CHECK (role IN ('admin', 'member')),
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (account_id, household_id)
+);
+

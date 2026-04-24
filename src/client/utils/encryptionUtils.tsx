@@ -72,3 +72,59 @@ export const decryptData = async (ciphertextB64: string) => {
     return `[DECRYPT_ERROR]`; 
   }
 };
+
+export const decryptFromJson = async (json: any): Promise<any> => {
+  const encryptedFields = [
+    "household_name", 
+    "join_code", 
+    "feature_name", 
+    "feature_type", 
+    "room_name", 
+    "task_name"
+  ];
+
+  console.log("INPUT TO DECRYPT:", json)
+  // 1. Handle Nulls/Primitives
+  if (json === null || typeof json !== 'object') {
+    return json;
+  }
+
+  // 2. Handle Arrays (recurse into each element)
+  if (Array.isArray(json)) {
+    return await Promise.all(json.map(item => decryptFromJson(item)));
+  }
+
+  // 3. Handle Objects
+  const decryptedObj: any = {};
+
+  for (const key in json) {
+    if (Object.prototype.hasOwnProperty.call(json, key)) {
+      const value = json[key];
+
+      // If the key matches our list and it's a non-empty string
+      if (encryptedFields.includes(key) && typeof value === 'string' && value.length > 0) {
+        try {
+          // Attempt decryption
+          const clearText = await decryptData(value);
+          decryptedObj[key] = clearText;
+          
+          console.log(`Decrypted ${key}:`, clearText);
+        } catch (err) {
+          console.error(`Failed to decrypt field [${key}]:`, err);
+          decryptedObj[key] = "[DECRYPT_ERROR]";
+        }
+      } 
+      // If it's a nested object or array (like the 'households' array)
+      else if (value !== null && typeof value === 'object') {
+        decryptedObj[key] = await decryptFromJson(value);
+      } 
+      // Plain values (IDs, dates, roles)
+      else {
+        decryptedObj[key] = value;
+      }
+    }
+  }
+
+  return decryptedObj;
+  console.log(decryptedObj)
+};

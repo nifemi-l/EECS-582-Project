@@ -362,27 +362,30 @@ function AuthenticatedHomeScreen() {
 
     try {
       // Send the create household request to the backend
-      const data = await createHousehold(token, trimmed)
+      const result = await createHousehold(token, trimmed)
 
-      const res = await data.response.json();
-
-      const join_code = data.join_code;
 
       // If server returns an error, keep UI state unchanged and show the message
-      if (!res.response.ok) {
+      if (!result.ok) {
+          const errorMsg = result.status === 409
+          ? "Join code already taken."
+          : (result.data.error || "Could not create household")
+
         Alert.alert("Create failed", res.error || "Could not create household.");
         return;
       }
 
       // Build the newly created household object in the local UI shape
-      const household = res.household;
+      const household = result.data.household;
+
       const created: HouseholdSummary = {
         id: String(household.household_id),
         name: trimmed,
-        joinCode: join_code || "",
+        joinCode: result.join_code,
         role: "admin",
         adminName: household.admin_name || "Unknown",
       };
+      console.log(household)
       
       // Add the new household to the top of the list
       setHouseholds((prev) => [created, ...prev]);

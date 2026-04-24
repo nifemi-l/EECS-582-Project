@@ -20,24 +20,17 @@ Known faults: None
 */
 
 import { getToken } from "../utils/authStorage";
+import { decryptFromJson } from "../utils/encryptionUtils"
 import type { HouseholdRoom } from "./room";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const API_BASE = `${API_URL}/api`;
 
-// Added to get the household name for the header
-export async function fetchMyHouseholds(): Promise<{
-  households: Array<{ household_id: number; household_name: string }>;
-}> {
-  const res = await fetch(`${API_URL}/household/mine`, {
-    headers: await authHeaders(),
-  });
-  if (!res.ok) throw new Error(`Failed to fetch households: ${res.status}`);
-  return res.json();
-}
+// TODO: Update all fetch functions to use decryption
 
+// Added to get the household name for the header
 // Build headers with the stored JWT token attached; throws if no token is found
-async function authHeaders(withBody = false): Promise<Record<string, string>> {
+export async function authHeaders(withBody = false): Promise<Record<string, string>> {
   const token = await getToken();
   if (!token) throw new Error("Not authenticated");
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
@@ -45,52 +38,6 @@ async function authHeaders(withBody = false): Promise<Record<string, string>> {
   return headers;
 }
 
-// Get all features for a household, with each feature's tasks nested inside
-// This is the main data-loading call the list view makes on mount
-export async function fetchHouseholdFeatures(householdId: number) {
-  const res = await fetch(`${API_BASE}/household/${householdId}/features`, {
-    headers: await authHeaders(),
-  });
-  if (!res.ok) throw new Error(`Failed to fetch features: ${res.status}`);
-  return res.json();
-}
-
-export async function fetchHouseholdRooms(householdId: number): Promise<HouseholdRoom[]> {
-  const res = await fetch(`${API_BASE}/household/${householdId}/rooms`, {
-    headers: await authHeaders(),
-  });
-  if (!res.ok) throw new Error(`Failed to fetch rooms: ${res.status}`);
-  return res.json();
-}
-
-export async function createHouseholdRoom(data: {
-  household_id: number;
-  room_name: string;
-  accent_color?: string | null;
-}): Promise<{ room_id: number }> {
-  const res = await fetch(`${API_BASE}/household/${data.household_id}/rooms`, {
-    method: "POST",
-    headers: await authHeaders(true),
-    body: JSON.stringify({
-      room_name: data.room_name,
-      accent_color: data.accent_color,
-    }),
-  });
-  if (!res.ok) throw new Error(`Failed to create room: ${res.status}`);
-  return res.json();
-}
-
-export async function updateHouseholdRoom(
-  roomId: number,
-  data: { room_name?: string; accent_color?: string | null }
-): Promise<void> {
-  const res = await fetch(`${API_BASE}/room/${roomId}`, {
-    method: "PUT",
-    headers: await authHeaders(true),
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error(`Failed to update room: ${res.status}`);
-}
 
 export async function deleteHouseholdRoom(roomId: number): Promise<void> {
   const res = await fetch(`${API_BASE}/room/${roomId}`, {

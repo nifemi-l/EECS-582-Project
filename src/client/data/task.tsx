@@ -78,8 +78,8 @@ export default class Task {
     // Updates and returns healthpercent for a task (0 to 1)
     getAndSetHealthPercent() {
         if (!this.last_completed) {
-            this.healthPercent = 0;
-            return 0;
+            this.healthPercent = 1;
+            return 1;
         }
         
         const now = Date.now();

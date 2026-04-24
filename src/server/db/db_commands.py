@@ -115,7 +115,7 @@ def add_feature(household_id, feature_name, feature_type, x_pos, y_pos, z_pos,ro
 
         cursor.execute("""
             INSERT INTO Feature_Encrypted (household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon, room_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING feature_id
         """, (household_id, psycopg2.Binary(feature_name_bytes), psycopg2.Binary(feature_type_bytes), x_pos, y_pos, z_pos, icon, room_id))
         feature_id = cursor.fetchone()[0]
@@ -124,6 +124,7 @@ def add_feature(household_id, feature_name, feature_type, x_pos, y_pos, z_pos,ro
 
 
 def add_room(household_id, room_name, accent_color=None):
+    room_name_bytes = base64.b64decode(room_name.strip())
     name = (room_name or "").strip()
     if not name:
         raise ValueError("room_name is required")
@@ -132,7 +133,7 @@ def add_room(household_id, room_name, accent_color=None):
             INSERT INTO Room_Encrypted (household_id, room_name, accent_color)
             VALUES (%s, %s, %s)
             RETURNING room_id
-        """, (household_id, name, accent_color))
+        """, (household_id, psycopg2.Binary(room_name_bytes), accent_color))
         room_id = cursor.fetchone()[0]
     conn.commit()
     return room_id
@@ -161,7 +162,7 @@ def get_rooms_for_household(household_id):
         {
             "room_id": r[0],
             "household_id": r[1],
-            "room_name": r[2],
+            "room_name": to_b64_string(r[2]),
             "accent_color": r[3],
         }
         for r in rows
@@ -217,41 +218,39 @@ def add_task(feature_id, task_name, frequency_days, last_completed, visibility, 
 def add_account_role(account_id, household_id, role):
     with conn.cursor() as cursor:
         cursor.execute("""
-            INSERT INTO HouseholdMember (account_id, household_id, role)
+            INSERT INTO HouseholdMember_Encrypted (account_id, household_id, role)
             VALUES (%s, %s, %s)
         """, (account_id, household_id, role,))
     conn.commit()
 
 
-# Create a new household and store the join code, maker included
+# Create a new household and store the join code, maker included  /
 def create_household(household_name, join_code, creator_account_id=None):
-
     household_name_bytes = base64.b64decode(household_name)
     join_code_bytes = base64.b64decode(join_code)
 
     with conn.cursor() as cursor:
-        while True:
-            try:
-                cursor.execute("""
-                    INSERT INTO Household_Encrypted (household_name, join_code, created_by_account_id)
-                    VALUES (%s, %s, %s)
-                    RETURNING household_id, household_name, join_code, created_by_account_id, created_at, updated_at
-                """, (psycopg2.Binary(household_name_bytes), psycopg2.Binary(join_code_bytes), creator_account_id))
-                row = cursor.fetchone()
-                break
-            except psycopg2.errors.UniqueViolation:
-                conn.rollback()
-                continue
-
-    conn.commit()
-    return {
-        "household_id": row[0],
-        "household_name": base64.b64encode(row[1]).decode('utf-8'),
-        "join_code": base64.b64encode(row[2]).decode('utf-8'),
-        "created_by_account_id": row[3],
-        "created_at": row[4],
-        "updated_at": row[5],
-    }
+        try:
+            cursor.execute("""
+                INSERT INTO Household_Encrypted (household_name, join_code, created_by_account_id)
+                VALUES (%s, %s, %s)
+                RETURNING household_id, household_name, join_code, created_by_account_id, created_at, updated_at
+            """, (psycopg2.Binary(household_name_bytes), psycopg2.Binary(join_code_bytes), creator_account_id))
+            row = cursor.fetchone()
+            conn.commit()
+            
+            return {
+                "household_id": row[0],
+                "household_name": base64.b64encode(row[1]).decode('utf-8'),
+                "join_code": base64.b64encode(row[2]).decode('utf-8'),
+                "created_by_account_id": row[3],
+                "created_at": row[4],
+                "updated_at": row[5],
+            }
+        except psycopg2.errors.UniqueViolation:
+            conn.rollback()
+            # Raise a specific error that the route can catch
+            raise ValueError("Join code already exists. Please try again.")
 
 # Add the account to the household membership table
 def add_account_to_household(account_id, household_id, role):
@@ -265,9 +264,9 @@ def get_household_by_join_code(join_code):
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT household_id, household_name, join_code, created_by_account_id, created_at, updated_at
-            FROM Household
+            FROM Household_Encrypted
             WHERE join_code = %s
-        """, (psycopg2.Binary(join_code_bytes),))
+        """, (to_b64_string(join_code_bytes),))
         row = cursor.fetchone()
 
     if not row:
@@ -285,18 +284,22 @@ def get_household_by_join_code(join_code):
 # Check membership existence to avoid duplicate enrollments
 def is_account_in_household(account_id, household_id):
     with conn.cursor() as cursor:
-        cursor.execute("""
-            SELECT 1 FROM HouseholdMember
-            WHERE account_id = %s AND household_id = %s
-        """, (account_id, household_id))
-        result = cursor.fetchone()
-    return bool(result)
+        try:
+            cursor.execute("""
+                SELECT 1 FROM HouseholdMember_Encrypted
+                WHERE account_id = %s AND household_id = %s
+            """, (account_id, household_id))
+            return cursor.fetchone()
+        except Exception as e:
+            conn.rollback()
+            print(f"Database error: {e}")
+            raise e
 
 # Return the role an account holds in a specific household, or None if not a member
 def get_account_role_in_household(account_id, household_id):
     with conn.cursor() as cursor:
         cursor.execute("""
-            SELECT role FROM HouseholdMember
+            SELECT role FROM HouseholdMember_Encrypted
             WHERE account_id = %s AND household_id = %s
         """, (account_id, household_id))
         row = cursor.fetchone()
@@ -306,7 +309,7 @@ def get_account_role_in_household(account_id, household_id):
 def remove_account_from_household(account_id, household_id):
     with conn.cursor() as cursor:
         cursor.execute("""
-            DELETE FROM HouseholdMember
+            DELETE FROM HouseholdMember_Encrypted
             WHERE account_id = %s AND household_id = %s
         """, (account_id, household_id))
     conn.commit()
@@ -315,11 +318,11 @@ def remove_account_from_household(account_id, household_id):
 def transfer_admin_in_household(new_admin_account_id, household_id):
     with conn.cursor() as cursor:
         cursor.execute("""
-            UPDATE HouseholdMember SET role = 'member'
+            UPDATE HouseholdMember_Encrypted SET role = 'member'
             WHERE household_id = %s AND role = 'admin'
         """, (household_id,))
         cursor.execute("""
-            UPDATE HouseholdMember SET role = 'admin'
+            UPDATE HouseholdMember_Encrypted SET role = 'admin'
             WHERE account_id = %s AND household_id = %s
         """, (new_admin_account_id, household_id))
     conn.commit()
@@ -329,7 +332,7 @@ def get_members_for_household(household_id):
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT a.account_id, a.account_name, hm.role, hm.joined_at
-            FROM HouseholdMember hm
+            FROM HouseholdMember_Encrypted hm
             JOIN Account a ON hm.account_id = a.account_id
             WHERE hm.household_id = %s
             ORDER BY
@@ -373,9 +376,9 @@ def get_households_for_account(account_id):
                 h.created_at,
                 h.updated_at
             FROM Household_Encrypted AS h
-            JOIN HouseholdMember AS hm_current
+            JOIN HouseholdMember_Encrypted AS hm_current
                 ON h.household_id = hm_current.household_id
-            LEFT JOIN HouseholdMember AS hm_admin
+            LEFT JOIN HouseholdMember_Encrypted AS hm_admin
                 ON h.household_id = hm_admin.household_id AND hm_admin.role = 'admin'
             LEFT JOIN Account AS admin_account
                 ON hm_admin.account_id = admin_account.account_id
@@ -471,7 +474,7 @@ def get_account_roles_by_account_id(account_id):
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT household_id, role
-            FROM HouseholdMember
+            FROM HouseholdMember_Encrypted
             WHERE account_id = %s
         """, (account_id,))
         roles = cursor.fetchall()
@@ -482,7 +485,7 @@ def get_account_roles_by_household_id(household_id):
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT account_id, role
-            FROM HouseholdMember
+            FROM HouseholdMember_Encrypted
             WHERE household_id = %s
         """, (household_id,))
         roles = cursor.fetchall()
@@ -504,7 +507,7 @@ def get_household_tasks(household_id):
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT *
-            FROM Task
+            FROM Task_Encrypted
             JOIN Feature_Encrypted ON Task_Encrypted.feature_id = Feature_Encrypted.feature_id
             WHERE Feature_Encrypted.household_id = %s
         """, (household_id,))
@@ -717,7 +720,7 @@ def update_household(household_id, household_name):
             SET household_name = %s, updated_at = NOW()
             WHERE household_id = %s
             RETURNING household_id, household_name, join_code, updated_at
-        """, (household_name, household_id,))
+        """, (psycopg2.Binary(house_name_bytes), household_id,))
         row = cursor.fetchone()
     conn.commit()
     if not row:

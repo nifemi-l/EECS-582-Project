@@ -27,7 +27,6 @@ export default class Household {
     features: Set<Feature>;
 
     constructor(household_name: string, household_id: number = 0) {
-        //TODO: get id from database
         this.household_name = household_name;
         this.name = household_name;
         this.household_id = household_id;

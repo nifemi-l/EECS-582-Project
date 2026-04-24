@@ -47,9 +47,11 @@ def create_household_route():
 
         # The creator is automatically inserted into the membership table as an admin
         add_account_to_household(account_id, household["household_id"], "admin")
+        print("housheold created", household)
 
         # Include the admin's username so the client always shows it by name
         payload, _ = decode_bearer_token()
+        print("payload", payload)
         if payload:
             household["admin_name"] = payload.get("username")
 
@@ -58,6 +60,8 @@ def create_household_route():
             "household": household
         }), 201
 
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
