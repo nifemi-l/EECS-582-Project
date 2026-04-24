@@ -319,3 +319,16 @@ CREATE TABLE IF NOT EXISTS EnvironmentalData_Encrypted (
 );
 
 
+/*
+Rooms: logical grouping for features in the list view (optional accent_color hex for UI).
+*/
+CREATE TABLE IF NOT EXISTS Room_Encrypted (
+    room_id SERIAL PRIMARY KEY CHECK (room_id > 0),
+    household_id INTEGER NOT NULL
+        REFERENCES Household_Encrypted(household_id) ON DELETE CASCADE,
+    room_name VARCHAR(80) NOT NULL,
+    accent_color VARCHAR(20),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_room_encrypted_household_encrypted ON Room_Encrypted (household_id);

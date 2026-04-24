@@ -26,7 +26,7 @@ import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { getToken, clearToken } from "../utils/authStorage";
-import { createHousehold } from "@/data/encryptedApi";
+import { createHousehold, makeHouseholdJoinCodeSimple } from "@/data/encryptedApi";
 import { decryptData } from "../utils/encryptionUtils"
 import {
   border,
@@ -659,11 +659,17 @@ function AuthenticatedHomeScreen() {
     try {
       // Get the saved auth token so the request can be authorized
       const token = await getToken() as string;
+      const joinCode = await makeHouseholdJoinCodeSimple();
 
       // Send the regenerate join code request to the backend
       const response = await fetch(`${API_URL}/household/${settingsId}/regenerate_code`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
+        body: {
+            join_code: joinCode,
+        }
+        
+
       });
 
       // Parse the JSON response body

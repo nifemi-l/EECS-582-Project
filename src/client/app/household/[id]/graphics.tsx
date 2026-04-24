@@ -20,6 +20,7 @@ Revision date:
   - 4/16/26: Add 3D scale, rotation database support
   - 4/18/26: Highlight selected task and health bar
   - 4/20/26: Add inventory bar to manage adding features to the graphical view
+  - 4/24/26: Update to use encrypted api
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -61,8 +62,7 @@ import {
 } from "../../../data/renderUtils"
 
 // Import local api utilities
-import { fetchHouseholdFeatures } from "../../../data/encryptedApi";
-import { fetchHouseholdRooms } from "../../../data/api";
+import { fetchHouseholdRooms, fetchHouseholdFeatures } from "../../../data/encryptedApi";
 import Feature, { getFeatureTypeFromString } from "../../../data/feature";
 import Task from "../../../data/task";
 

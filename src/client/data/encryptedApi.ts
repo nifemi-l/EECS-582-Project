@@ -54,7 +54,7 @@ export async function fetchHouseholdFeatures(householdId: number) {
     );
 }
 
-export const makeHouseholdJoinCodeSimple = (length: number = 8): string => {
+export async function makeHouseholdJoinCodeSimple = (length: number = 8): string => {
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     return Array.from({ length }, () =>
         alphabet.charAt(Math.floor(Math.random() * alphabet.length)),
@@ -176,4 +176,42 @@ export async function updateTask(
         body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error("Update failed");
+}
+
+export async function createHouseholdRoom(data: {
+  household_id: number;
+  room_name: string;
+  accent_color?: string | null;
+}): Promise<{ room_id: number }> {
+    const room_name_encrypted = await encryptData(data.room_name);
+
+  const res = await fetch(`${API_BASE}/household/${data.household_id}/rooms`, {
+    method: "POST",
+    headers: await authHeaders(true),
+    body: JSON.stringify({
+      room_name: room_name_encrypted.ciphertext,
+      accent_color: data.accent_color,
+    }),
+  });
+  if (!res.ok) throw new Error(`Failed to create room: ${res.status}`);
+  return res.json();
+}
+
+export async function updateHouseholdRoom(
+  roomId: number,
+  data: { room_name?: string; accent_color?: string | null }
+): Promise<void> {
+    let payload : any = {...data}
+
+    if (data.room_name){
+        const room_name_encrypted = await encryptData(data.room_name)
+        payload.room_name = room_name_encrypted.ciphertext;
+    }
+
+  const res = await fetch(`${API_BASE}/room/${roomId}`, {
+    method: "PUT",
+    headers: await authHeaders(true),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Failed to update room: ${res.status}`);
 }

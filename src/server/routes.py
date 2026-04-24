@@ -51,8 +51,8 @@ def create_feature():
             data.get("x_pos", None),
             data.get("y_pos", None),
             data.get("z_pos", None),
-            data.get("icon", "home-outline"),
             room_id,
+            data.get("icon", "home-outline"),
         )
         return jsonify({"feature_id": feature_id}), 201
     except Exception as e:

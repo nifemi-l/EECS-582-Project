@@ -103,7 +103,7 @@ def add_account(account_name: str, hashed_password: str, email: str):
 
     # Ex: add_feature(1, "Kitchen", "room", 0, 0, 0, "silverware-fork-knife")
     # icon param is optional, defaults to the generic home icon
-def add_feature(household_id, feature_name, feature_type, x_pos, y_pos, z_pos, icon='home-outline', room_id):
+def add_feature(household_id, feature_name, feature_type, x_pos, y_pos, z_pos,room_id, icon='home-outline' ):
 
     feature_name_bytes = base64.b64decode(feature_name)
     if feature_type:
@@ -129,7 +129,7 @@ def add_room(household_id, room_name, accent_color=None):
         raise ValueError("room_name is required")
     with conn.cursor() as cursor:
         cursor.execute("""
-            INSERT INTO Room (household_id, room_name, accent_color)
+            INSERT INTO Room_Encrypted (household_id, room_name, accent_color)
             VALUES (%s, %s, %s)
             RETURNING room_id
         """, (household_id, name, accent_color))
@@ -142,7 +142,7 @@ def get_room_by_id(room_id):
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT room_id, household_id, room_name, accent_color
-            FROM Room
+            FROM Room_Encrypted
             WHERE room_id = %s
         """, (room_id,))
         return cursor.fetchone()
@@ -152,7 +152,7 @@ def get_rooms_for_household(household_id):
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT room_id, household_id, room_name, accent_color
-            FROM Room
+            FROM Room_Encrypted
             WHERE household_id = %s
             ORDER BY room_id ASC
         """, (household_id,))
@@ -182,7 +182,7 @@ def update_room(room_id, room_name=_ROOM_FIELD_UNSET, accent_color=_ROOM_FIELD_U
     params.append(room_id)
     with conn.cursor() as cursor:
         cursor.execute(
-            f"UPDATE Room SET {', '.join(sets)} WHERE room_id = %s",
+            f"UPDATE Room_Encrypted SET {', '.join(sets)} WHERE room_id = %s",
             tuple(params),
         )
     conn.commit()
@@ -190,7 +190,7 @@ def update_room(room_id, room_name=_ROOM_FIELD_UNSET, accent_color=_ROOM_FIELD_U
 
 def delete_room(room_id):
     with conn.cursor() as cursor:
-        cursor.execute("DELETE FROM Room WHERE room_id = %s", (room_id,))
+        cursor.execute("DELETE FROM Room_Encrypted WHERE room_id = %s", (room_id,))
     conn.commit()
 
 
@@ -447,7 +447,6 @@ def get_feature_by_id(feature_id):
     return feature
 
 # Retrieve data for a task by its task id
-# TODO: get working with task_encrypted
 def get_task_by_id(task_id):
     with conn.cursor() as cursor:
         cursor.execute("""
@@ -458,7 +457,6 @@ def get_task_by_id(task_id):
     return task
 
 # Get all tasks associated with a specific feature by its id.
-# TODO: get working with task_encrypted
 def get_tasks_by_feature_id(feature_id):
     with conn.cursor() as cursor:
         cursor.execute("""
@@ -530,7 +528,7 @@ def get_features_with_tasks(household_id):
         cursor.execute("""
             SELECT feature_id, household_id, feature_name, feature_type,
                    x_pos, y_pos, z_pos, icon, room_id, scale, rotation_y
-            FROM Feature
+            FROM Feature_Encrypted
             WHERE household_id = %s
             ORDER BY feature_id ASC
         """, (household_id,))
@@ -726,17 +724,16 @@ def update_household(household_id, household_name):
         return None
     return {"household_id": row[0], "household_name": row[1], "join_code": row[2], "updated_at": row[3]}
 
-def regenerate_join_code(household_id):
+def regenerate_join_code(household_id, encrypted_code):
     with conn.cursor() as cursor:
         while True:
-            new_code = make_household_join_code(8)
             try:
                 cursor.execute("""
-                    UPDATE Household
+                    UPDATE Household_Encrypted
                     SET join_code = %s, updated_at = NOW()
                     WHERE household_id = %s
                     RETURNING household_id, household_name, join_code, updated_at
-                """, (new_code, household_id,))
+                """, (encrypted_code, household_id,))
                 row = cursor.fetchone()
                 conn.commit()
                 break

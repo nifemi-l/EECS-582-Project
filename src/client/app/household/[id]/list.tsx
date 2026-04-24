@@ -81,10 +81,7 @@ import {
 import {
 
 
-  createHouseholdRoom as apiCreateHouseholdRoom,
   deleteHouseholdRoom as apiDeleteHouseholdRoom,
-  updateHouseholdRoom as apiUpdateHouseholdRoom,
-  updateFeature as apiUpdateFeature,
   deleteFeature as apiDeleteFeature,
   deleteTask as apiDeleteTask,
   completeTask as apiCompleteTask,
@@ -105,6 +102,8 @@ import {
   createFeature as apiCreateFeature,
   updateFeature as apiUpdateFeature,
   createTask as apiCreateTask,
+  createHouseholdRoom as apiCreateHouseholdRoom,
+  updateHouseholdRoom as apiUpdateHouseholdRoom,
 } from "../../../data/encryptedApi";
 
 const ACCENT = "#4169E1";

@@ -242,8 +242,11 @@ def regenerate_code_route(household_id):
     if role != "admin":
         return jsonify({"error": "Only admins can regenerate the join code"}), 403
 
+    data = request.get_json() or {}
+    encrypted_join_code = data["join_code"]
+
     try:
-        household = regenerate_join_code(household_id)
+        household = regenerate_join_code(household_id, encrypted_join_code)
         return jsonify({"message": "Join code regenerated", "household": household}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
