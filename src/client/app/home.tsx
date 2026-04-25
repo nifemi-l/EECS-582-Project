@@ -364,7 +364,6 @@ function AuthenticatedHomeScreen() {
       // Send the create household request to the backend
       const result = await createHousehold(token, trimmed)
 
-
       // If server returns an error, keep UI state unchanged and show the message
       if (!result.ok) {
           const errorMsg = result.status === 409
