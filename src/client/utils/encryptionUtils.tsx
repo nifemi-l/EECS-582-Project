@@ -24,7 +24,7 @@ const DEFAULT_IV = new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110,
 // Turns password + salt into a 256-bit AES key
 export const deriveKey = async (password: string ) => {
   const passwordKey = await window.crypto.subtle.importKey(
-    "raw", encoder.encode(password), { name: "PBKDF2" }, true, ["deriveKey"]
+    "raw", encoder.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
   );
 
   return window.crypto.subtle.deriveKey(

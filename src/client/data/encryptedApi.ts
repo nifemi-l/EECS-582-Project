@@ -95,10 +95,7 @@ export async function createHousehold(
 ) {
 
     const encrypted_name = await encryptData(name);
-    const join_code = await makeHouseholdJoinCodeSimple();
-    const join_code_enc = await encryptData(join_code);
 
-    console.log(encrypted_name)
       const response = await fetch(`${API_URL}/household/create`, {
         method: "POST",
         headers: {
@@ -107,7 +104,7 @@ export async function createHousehold(
         },
 
         // Parse the backend response body
-        body: JSON.stringify({ name: encrypted_name.ciphertext, join_code: join_code_enc.ciphertext }),
+        body: JSON.stringify({ name: encrypted_name.ciphertext}),
       });
 
       const body = await response.json();

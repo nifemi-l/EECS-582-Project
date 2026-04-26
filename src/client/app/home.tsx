@@ -27,7 +27,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { getToken, clearToken } from "../utils/authStorage";
 import { createHousehold, makeHouseholdJoinCodeSimple } from "@/data/encryptedApi";
-import { decryptData } from "../utils/encryptionUtils"
+import { decryptData, encryptData } from "../utils/encryptionUtils"
 import {
   border,
   brand,
@@ -229,7 +229,7 @@ function AuthenticatedHomeScreen() {
           const fetched: HouseholdSummary[] = await Promise.all(data.households.map((h: any) => ({
             id: String(h.household_id),
             name: decryptData(h.household_name),
-            joinCode: decryptData(h.join_code) || "",
+            joinCode: h.join_code || "",
             role: h.role || "member",
             adminName: h.admin_name || "Unknown",
           })));
@@ -650,7 +650,7 @@ function AuthenticatedHomeScreen() {
     }
   }
 
-  // Generate a new join code for the selected household and update it in local state
+   // Generate a new join code for the selected household and update it in local state
   async function handleRegenerateCode() {
     // // Stop if no household settings are currently open
     if (!settingsId) return;
@@ -661,17 +661,11 @@ function AuthenticatedHomeScreen() {
     try {
       // Get the saved auth token so the request can be authorized
       const token = await getToken() as string;
-      const joinCode = await makeHouseholdJoinCodeSimple();
 
       // Send the regenerate join code request to the backend
       const response = await fetch(`${API_URL}/household/${settingsId}/regenerate_code`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
-        body: {
-            join_code: joinCode,
-        }
-        
-
       });
 
       // Parse the JSON response body
@@ -701,6 +695,7 @@ function AuthenticatedHomeScreen() {
       setSettingsCodeRegenerating(false);
     }
   }
+
 
   // Delete the selected household through the backend and remove it from local state
   async function handleDeleteHousehold() {

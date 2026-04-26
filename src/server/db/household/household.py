@@ -35,7 +35,6 @@ def create_household_route():
 
     # Extract the household name from the request
     household_name = data.get("name", "").strip()
-    household_join_code = data.get("join_code","").strip()
 
     # Make sure a household name was provided
     if not household_name:
@@ -43,7 +42,7 @@ def create_household_route():
 
     try:
         # Create the household and receive its generated id and join code
-        household = create_household(household_name, household_join_code, account_id)
+        household = create_household(household_name, account_id)
 
         # The creator is automatically inserted into the membership table as an admin
         add_account_to_household(account_id, household["household_id"], "admin")
@@ -86,6 +85,7 @@ def join_household_route():
     try:
         # Look up the target household using the shareable join code
         household = get_household_by_join_code(join_code)
+        print(household)
 
         # Reject invalid codes
         if not household:
@@ -235,7 +235,6 @@ def update_household_name_route(household_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @household_bp.route("/<int:household_id>/regenerate_code", methods=["POST"])
 def regenerate_code_route(household_id):
     account_id, error = get_current_account_id()
@@ -246,15 +245,11 @@ def regenerate_code_route(household_id):
     if role != "admin":
         return jsonify({"error": "Only admins can regenerate the join code"}), 403
 
-    data = request.get_json() or {}
-    encrypted_join_code = data["join_code"]
-
     try:
-        household = regenerate_join_code(household_id, encrypted_join_code)
+        household = regenerate_join_code(household_id)
         return jsonify({"message": "Join code regenerated", "household": household}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 @household_bp.route("/<int:household_id>", methods=["DELETE"])
 def delete_household_route(household_id):

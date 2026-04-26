@@ -67,7 +67,6 @@ Functions for adding data to the database
 def add_household(household_name_b64, join_code):
     try:
         household_name_bytes = base64.b64decode(household_name_b64)
-        join_code_bytes = base64.b64decode(join_code)
         
         with conn.cursor() as cursor:
             cursor.execute("""
@@ -76,7 +75,7 @@ def add_household(household_name_b64, join_code):
                 RETURNING household_id
             """, (
                 psycopg2.Binary(household_name_bytes), 
-                psycopg2.Binary(join_code_bytes)
+                join_code
             ))
             household_id = cursor.fetchone()[0]
         
@@ -224,33 +223,39 @@ def add_account_role(account_id, household_id, role):
     conn.commit()
 
 
+# Generate a unique join code for households
+def make_household_join_code(length=8):
+    alphabet = string.ascii_uppercase + string.digits
+    return "".join(random.choices(alphabet, k=length))
+
 # Create a new household and store the join code, maker included  /
-def create_household(household_name, join_code, creator_account_id=None):
+def create_household(household_name, creator_account_id=None):
     household_name_bytes = base64.b64decode(household_name)
-    join_code_bytes = base64.b64decode(join_code)
 
     with conn.cursor() as cursor:
-        try:
-            cursor.execute("""
-                INSERT INTO Household_Encrypted (household_name, join_code, created_by_account_id)
-                VALUES (%s, %s, %s)
-                RETURNING household_id, household_name, join_code, created_by_account_id, created_at, updated_at
-            """, (psycopg2.Binary(household_name_bytes), psycopg2.Binary(join_code_bytes), creator_account_id))
-            row = cursor.fetchone()
-            conn.commit()
-            
-            return {
-                "household_id": row[0],
-                "household_name": base64.b64encode(row[1]).decode('utf-8'),
-                "join_code": base64.b64encode(row[2]).decode('utf-8'),
-                "created_by_account_id": row[3],
-                "created_at": row[4],
-                "updated_at": row[5],
-            }
-        except psycopg2.errors.UniqueViolation:
-            conn.rollback()
-            # Raise a specific error that the route can catch
-            raise ValueError("Join code already exists. Please try again.")
+        while True:
+            join_code = make_household_join_code(8)
+            try:
+                cursor.execute("""
+                    INSERT INTO Household_Encrypted (household_name, join_code, created_by_account_id)
+                    VALUES (%s, %s, %s)
+                    RETURNING household_id, household_name, join_code, created_by_account_id, created_at, updated_at
+                """, (psycopg2.Binary(household_name_bytes),join_code, creator_account_id))
+                row = cursor.fetchone()
+                conn.commit()
+                
+                return {
+                    "household_id": row[0],
+                    "household_name": base64.b64encode(row[1]).decode('utf-8'),
+                    "join_code": join_code,
+                    "created_by_account_id": row[3],
+                    "created_at": row[4],
+                    "updated_at": row[5],
+                }
+            except psycopg2.errors.UniqueViolation:
+                conn.rollback()
+                # Raise a specific error that the route can catch
+                raise ValueError("Join code already exists. Please try again.")
 
 # Add the account to the household membership table
 def add_account_to_household(account_id, household_id, role):
@@ -259,14 +264,13 @@ def add_account_to_household(account_id, household_id, role):
 # Retrieve a household row by its join code
 def get_household_by_join_code(join_code):
 
-    join_code_bytes = base64.b64decode(join_code)
 
     with conn.cursor() as cursor:
         cursor.execute("""
             SELECT household_id, household_name, join_code, created_by_account_id, created_at, updated_at
             FROM Household_Encrypted
             WHERE join_code = %s
-        """, (to_b64_string(join_code_bytes),))
+        """, (join_code,),)
         row = cursor.fetchone()
 
     if not row:
@@ -275,7 +279,7 @@ def get_household_by_join_code(join_code):
     return {
         "household_id": row[0],
         "household_name": base64.b64encode(row[1]).decode('utf-8'),
-        "join_code": base64.b64encode(row[2]).decode('utf-8'),
+        "join_code": row[2],
         "created_by_account_id": row[3],
         "created_at": row[4],
         "updated_at": row[5],
@@ -394,7 +398,7 @@ def get_households_for_account(account_id):
         household = {
             "household_id": row[0],
             "household_name": base64.b64encode(row[1]).decode('utf-8'),
-            "join_code": base64.b64encode(row[2]).decode('utf-8'),
+            "join_code": row[2],
             "role": row[3],
             "admin_name": row[4],
             "created_at": row[5],
@@ -727,16 +731,17 @@ def update_household(household_id, household_name):
         return None
     return {"household_id": row[0], "household_name": row[1], "join_code": row[2], "updated_at": row[3]}
 
-def regenerate_join_code(household_id, encrypted_code):
+def regenerate_join_code(household_id):
     with conn.cursor() as cursor:
         while True:
+            new_code = make_household_join_code(8)
             try:
                 cursor.execute("""
-                    UPDATE Household_Encrypted
+                    UPDATE Household
                     SET join_code = %s, updated_at = NOW()
                     WHERE household_id = %s
                     RETURNING household_id, household_name, join_code, updated_at
-                """, (encrypted_code, household_id,))
+                """, (new_code, household_id,))
                 row = cursor.fetchone()
                 conn.commit()
                 break
