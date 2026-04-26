@@ -439,32 +439,32 @@ function EditWindow(props: EditMenuProps) {
           >
             <Card.Title title={selectedFeature.feature_name}/>
             <Card.Actions>
-              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.POS_X)}}>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.25, MoveDirection.POS_X)}}>
                 <View style={{transform: [{rotate: `${xAxisAngle}rad`}]}}>
                   <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
                 </View>
               </Button>
-              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.NEG_X)}}>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.25, MoveDirection.NEG_X)}}>
                 <View style={{transform: [{rotate: `${xAxisAngle + Math.PI}rad`}]}}>
                   <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
                 </View>
               </Button>
-              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.POS_Z)}}>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.25, MoveDirection.POS_Z)}}>
                 <View style={{transform: [{rotate: `${xAxisAngle + Math.PI / 2}rad`}]}}>
                   <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
                 </View>
               </Button>
-              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.5, MoveDirection.NEG_Z)}}>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.translateSelectedFeature(0.25, MoveDirection.NEG_Z)}}>
                 <View style={{transform: [{rotate: `${xAxisAngle + 3 * Math.PI / 2}rad`}]}}>
                   <MaterialCommunityIcons name="arrow-up" size={18} color="#FFFFFF"/>
                 </View>
               </Button>
             </Card.Actions>
             <Card.Actions>
-              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.rotateSelectedFeatureY(25)}}>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.rotateSelectedFeatureY(-15)}}>
                 <MaterialCommunityIcons name="axis-z-rotate-clockwise" size={18} color="#FFFFFF"/>
               </Button>
-              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.rotateSelectedFeatureY(-25)}}>
+              <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.rotateSelectedFeatureY(15)}}>
                 <MaterialCommunityIcons name="axis-z-rotate-counterclockwise" size={18} color="#FFFFFF"/>
               </Button>
               <Button mode="contained" buttonColor={listBrand} textColor="#FFFFFF" onPress={() => {rdr.house.scaleSelectedFeature(0.25)}}>

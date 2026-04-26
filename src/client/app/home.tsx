@@ -872,6 +872,7 @@ function AuthenticatedHomeScreen() {
 
   const logoIconSize = isNavCompact ? 22 : 28;
   const navHomeIconSize = isNavCompact ? 17 : 20;
+  const isCompact = windowWidth < 480;
 
   return (
     <View style={styles.screen}>
@@ -882,14 +883,17 @@ function AuthenticatedHomeScreen() {
             <MaterialCommunityIcons name="home" size={logoIconSize} color="#FFFFFF" />
           </View>
           <View style={styles.navBrandWrap}>
-            <Text
-              style={[styles.navBrand, isNavCompact && styles.navBrandCompact]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              HomeSeeHome
-            </Text>
-          </View>
+            <Text>
+            <Text style={[styles.navBrand, isCompact && styles.navBrandCompact, { cursor: "pointer" }]} onPress={() => router.push("/home")}>
+                        HomeSeeHome
+                      </Text>
+                      <Text style={[styles.navBrand, isCompact && styles.navBrandCompact]}> | </Text>
+                      <Text style={[styles.navBrand, isCompact && styles.navBrandCompact, { cursor: "pointer" }]} onPress={() => router.push("/userguide")}>
+                        User Guide
+                      </Text>
+                      </Text>
+                    </View>
+          
         </View>
         <View style={[styles.navRight, isNavCompact && styles.navRightCompact]}>
           <View
@@ -899,6 +903,7 @@ function AuthenticatedHomeScreen() {
           >
             <MaterialCommunityIcons name="home" size={navHomeIconSize} color="#FFFFFF" />
             <Text style={[styles.navLinkText, isNavCompact && styles.navLinkTextCompact]}>Home</Text>
+          </View>
           </View>
           <Pressable
             style={[
@@ -928,7 +933,7 @@ function AuthenticatedHomeScreen() {
             </Text>
           </Pressable>
         </View>
-      </View>
+
 
       {/* --- Hero Banner with curved bottom --- */}
       <View>
@@ -1632,8 +1637,17 @@ function AuthenticatedHomeScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: pageBg },
-  navbar: { height: 68, backgroundColor: navy, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20 },
-  navbarCompact: { height: 56, paddingHorizontal: 12 },
+  navbar: {
+    height: 68,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    backgroundColor: navy,
+  },
+    navbarCompact: {
+    height: 56,
+    paddingHorizontal: 16,
+  },
   navLeft: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center" },
   logoBox: {
     width: 40,
@@ -1653,7 +1667,9 @@ const styles = StyleSheet.create({
   logoBoxCompact: { width: 32, height: 32, borderRadius: 8, marginRight: 6 },
   navBrandWrap: { flex: 1, minWidth: 0 },
   navBrand: { color: "#FFFFFF", fontSize: 18, fontWeight: "700", letterSpacing: 0.3, flexShrink: 1 },
-  navBrandCompact: { fontSize: 14 },
+  navBrandCompact: {
+    fontSize: 17,
+  },
   navRight: { flexDirection: "row", alignItems: "center", gap: 20, flexShrink: 0 },
   navRightCompact: { gap: 8 },
   navLink: { flexDirection: "row", alignItems: "center", gap: 5 },
