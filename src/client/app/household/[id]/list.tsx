@@ -79,16 +79,8 @@ import {
 // API functions for talking to the Flask backend
 // Aliased with "api" prefix so they don't clash with handler names in this file
 import {
-  fetchHouseholdFeatures,
-  fetchHouseholdRooms,
-  fetchMyHouseholds,
-  createFeature as apiCreateFeature,
-  createHouseholdRoom as apiCreateHouseholdRoom,
   deleteHouseholdRoom as apiDeleteHouseholdRoom,
-  updateHouseholdRoom as apiUpdateHouseholdRoom,
-  updateFeature as apiUpdateFeature,
   deleteFeature as apiDeleteFeature,
-  createTask as apiCreateTask,
   deleteTask as apiDeleteTask,
   completeTask as apiCompleteTask,
 } from "../../../data/api";
@@ -102,6 +94,20 @@ import {
   textPrimary,
   textSecondary,
 } from "../../../theme/colors";
+
+import {
+  createFeature as apiCreateFeature,
+    fetchMyHouseholds,
+    fetchHouseholdRooms,
+  fetchHouseholdFeatures,
+  updateFeature as apiUpdateFeature,
+  createTask as apiCreateTask,
+  createHouseholdRoom as apiCreateHouseholdRoom,
+  updateHouseholdRoom as apiUpdateHouseholdRoom,
+} from "../../../data/encryptedApi";
+
+const ACCENT = "#4169E1";
+const BG = "#f0f2f5";
 
 /** Web-only pointer hover; handlers are no-ops on native */
 function useWebHover(): readonly [
@@ -1190,53 +1196,70 @@ function AuthenticatedListScreen() {
   const [hoverRetry, hoverRetryHandlers] = useWebHover();
 
   // Fetch all features + tasks from the server and map them into our local class instances
-  const loadFromApi = useCallback(() => {
-    setError(null);
-    Promise.all([
-      fetchHouseholdFeatures(householdId),
-      fetchHouseholdRooms(householdId).catch((e) => {
-        console.warn("Rooms unavailable (migrate DB or update server):", e);
-        return [] as HouseholdRoom[];
-      }),
-    ])
-      .then(([data, roomsData]) => {
-        setRooms(Array.isArray(roomsData) ? roomsData : []);
-        const mapped = data.map((f: any) => {
-          const feat = new Feature(
-            f.feature_name,
-            f.household_id,
-            f.feature_type || "",
-            f.x_pos,
-            f.y_pos,
-            f.z_pos,
-            f.feature_id,
-            f.icon || "home-outline",
-            f.room_id != null ? Number(f.room_id) : null
-          );
-          feat.tasks = (f.tasks || []).map((t: any) => {
-            const task = new Task(
-              t.task_name,
-              t.feature_id,
-              t.frequency_days,
-              t.icon || "clipboard-text-outline",
-              t.visibility || "household",
-              t.created_by_account_id,
-              t.task_id
-            );
-            task.last_completed = t.last_completed ? new Date(t.last_completed) : null;
-            return task;
-          });
-          return feat;
-        });
-        setFeatures(mapped);
-        setLoaded(true);
-      })
-      .catch((e) => {
-        console.error("Failed to load features:", e);
-        setError("Could not load data from server.");
-        setLoaded(true);
+  // Inside list.tsx
+const loadFromApi = useCallback(() => {
+  setError(null);
+
+  // 1. Fetch both features (decrypted via API layer) and rooms in parallel
+  Promise.all([
+  fetchHouseholdFeatures(householdId),
+  fetchHouseholdRooms(householdId).catch((e) => {
+    console.warn("Rooms unavailable (migrate DB or update server):", e);
+    return [];
+  }),
+])
+  .then(([decryptedData, roomsData]) => {
+    // 1. Safety Check: Ensure decryptedData is an array
+    // If your API returns { features: [...] }, use decryptedData.features
+    const featuresArray = Array.isArray(decryptedData) 
+      ? decryptedData 
+      : (decryptedData?.features || []); 
+
+    // 2. Set the rooms state
+    setRooms(Array.isArray(roomsData) ? roomsData : []);
+    console.log(featuresArray)
+
+    // 3. Map into Class instances
+    const mapped = featuresArray.map((f: any) => {
+      const feat = new Feature(
+        f.feature_name,
+        f.household_id,
+        f.feature_type || "", 
+        f.x_pos,
+        f.y_pos,
+        f.z_pos,
+        f.feature_id,
+        f.icon || "home-outline",
+        f.room_id != null ? Number(f.room_id) : null
+      );
+
+      feat.tasks = (f.tasks || []).map((t: any) => {
+        const task = new Task(
+          t.task_name,
+          t.feature_id,
+          t.frequency_days,
+          t.icon || "clipboard-text-outline",
+          t.visibility || "household",
+          t.created_by_account_id,
+          t.task_id
+        );
+        task.last_completed = t.last_completed ? new Date(t.last_completed) : null;
+        return task;
       });
-  }, [householdId]);
+
+      return feat;
+    });
+    console.log("MAPPED ", mapped)
+
+    setFeatures(mapped);
+    setLoaded(true);
+  })
+  .catch((e) => {
+    console.error("Failed to load features:", e);
+    setError("Could not load data from server.");
+    setLoaded(true);
+  });
+}, [householdId]);
 
   // Load data from the API when the component mounts (or if householdId changes)
   useEffect(() => {
@@ -1340,7 +1363,6 @@ function AuthenticatedListScreen() {
         frequency_days: freqDays,
         icon,
         visibility: "household",
-        last_completed: now.toISOString(),
       })
         .then(({ task_id }) => {
           const newTask = new Task(name, featureId, freqDays, icon);
@@ -1475,6 +1497,10 @@ function AuthenticatedListScreen() {
       apiCreateFeature({
         household_id: householdId,
         feature_name: name,
+        feature_type:"", 
+        x_pos: 0,
+        y_pos: 0,
+        z_pos: 0,
         icon,
         room_id: roomId ?? undefined,
       })

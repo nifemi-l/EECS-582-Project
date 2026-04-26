@@ -46,9 +46,11 @@ def create_household_route():
 
         # The creator is automatically inserted into the membership table as an admin
         add_account_to_household(account_id, household["household_id"], "admin")
+        print("housheold created", household)
 
         # Include the admin's username so the client always shows it by name
         payload, _ = decode_bearer_token()
+        print("payload", payload)
         if payload:
             household["admin_name"] = payload.get("username")
 
@@ -57,6 +59,8 @@ def create_household_route():
             "household": household
         }), 201
 
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -81,6 +85,7 @@ def join_household_route():
     try:
         # Look up the target household using the shareable join code
         household = get_household_by_join_code(join_code)
+        print(household)
 
         # Reject invalid codes
         if not household:
@@ -230,7 +235,6 @@ def update_household_name_route(household_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @household_bp.route("/<int:household_id>/regenerate_code", methods=["POST"])
 def regenerate_code_route(household_id):
     account_id, error = get_current_account_id()
@@ -246,7 +250,6 @@ def regenerate_code_route(household_id):
         return jsonify({"message": "Join code regenerated", "household": household}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 @household_bp.route("/<int:household_id>", methods=["DELETE"])
 def delete_household_route(household_id):

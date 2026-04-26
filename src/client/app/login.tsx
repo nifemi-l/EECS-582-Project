@@ -18,6 +18,8 @@ Known faults: None.
 */
 
 // Imports
+import {  deriveKey } from "../utils/encryptionUtils";
+import { saveKey } from "../utils/authStorage"
 import { View, Text, TextInput, Pressable, StyleSheet, Alert, Image, Platform, useWindowDimensions } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState, useEffect, useRef } from "react";
@@ -120,6 +122,16 @@ export default function LoginScreen() {
         return;
       }
 
+       try {
+            const key = deriveKey(password);
+            await saveKey(key);
+            Alert.alert("Debug", "Token saved! Redirecting to home...");
+            console.log("success")
+        } catch (e) {
+            console.log("fail", e)
+            Alert.alert("Error", "Failed to store authentication token.");
+            return;
+        }
       // Successful login
       router.replace("/home");
 
@@ -642,5 +654,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#9CA3AF",
   },
+
   logoBoxCompact: { width: 32, height: 32, borderRadius: 8, marginRight: 6 },
 });

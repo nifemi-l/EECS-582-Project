@@ -48,11 +48,16 @@ import {
 
 // Import API utilities
 import { 
-  createFeature as apiCreateFeature, deleteFeature as apiDeleteFeature,
-  createTask as apiCreateTask, updateFeature as apiUpdateFeature,
+ deleteFeature as apiDeleteFeature,
+  updateFeature as apiUpdateFeature,
   clearFeaturePosition as apiClearFeaturePosition,
 } from "./api";
 import { HouseholdRoom } from './room';
+
+import {
+createFeature as apiCreateFeature,
+  createTask as apiCreateTask
+} from "./encryptedApi";
 
 // ***********************************************************
 //                      Constants

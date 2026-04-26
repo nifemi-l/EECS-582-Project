@@ -51,8 +51,8 @@ def create_feature():
             data.get("x_pos", None),
             data.get("y_pos", None),
             data.get("z_pos", None),
-            data.get("icon", "home-outline"),
             room_id,
+            data.get("icon", "home-outline"),
         )
         return jsonify({"feature_id": feature_id}), 201
     except Exception as e:
@@ -120,6 +120,7 @@ def remove_feature(feature_id):
         return jsonify({"message": "Feature deleted successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
 
 # Fetch all features (with their tasks nested inside) for a given household
 # This is the main endpoint the list view hits when it loads
@@ -290,7 +291,7 @@ def create_household():
         return error
     data = request.get_json()
     try:
-        household_id = add_household(data["household_name"])
+        household_id = add_household(data["household_name"], data["join_code"])
         return jsonify({"household_id": household_id}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 400

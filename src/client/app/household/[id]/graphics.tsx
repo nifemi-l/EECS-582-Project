@@ -20,6 +20,7 @@ Revision date:
   - 4/16/26: Add 3D scale, rotation database support
   - 4/18/26: Highlight selected task and health bar
   - 4/20/26: Add inventory bar to manage adding features to the graphical view
+  - 4/24/26: Update to use encrypted api
 Preconditions: A React application asking for the home page
 Postconditions: A home page component ready for rendering
 Errors: The home page will always be delivered successfully. 
@@ -61,7 +62,7 @@ import {
 } from "../../../data/renderUtils"
 
 // Import local api utilities
-import { fetchHouseholdFeatures, fetchHouseholdRooms } from "../../../data/api";
+import { fetchHouseholdRooms, fetchHouseholdFeatures } from "../../../data/encryptedApi";
 import Feature, { getFeatureTypeFromString } from "../../../data/feature";
 import Task from "../../../data/task";
 
@@ -665,12 +666,20 @@ function AuthenticatedGraphicsScreen() {
         console.error("Failed to fetch rooms for household", householdId, e);
       });
 
+
     // Get household feature data
     fetchHouseholdFeatures(householdId)
       .then((data: any[]) => {
               // Convert the raw JSON objects into Feature/Task class instances
               // so the health bar math and other methods still work
-              const mapped = data.map((f: any) => {
+                  const rawFeatures = Array.isArray(data) ? data : (data?.features || []);
+                console.log(data)
+
+                if (!Array.isArray(rawFeatures)) {
+                    console.error("Expected array for features, got: ", typeof rawFeatures)
+                    return;
+                }
+              const mapped = rawFeatures.map((f: any) => {
                 const feat = new Feature(
                   f.feature_name,
                   f.household_id,

@@ -26,6 +26,8 @@ import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { getToken, clearToken } from "../utils/authStorage";
+import { createHousehold, makeHouseholdJoinCodeSimple } from "@/data/encryptedApi";
+import { decryptData, encryptData } from "../utils/encryptionUtils"
 import {
   border,
   brand,
@@ -223,14 +225,19 @@ function AuthenticatedHomeScreen() {
         }
 
         // Convert the returned household data into the local HouseholdSummary format
+
         if (Array.isArray(data.households)) {
-          const fetched: HouseholdSummary[] = data.households.map((h: any) => ({
-            id: String(h.household_id),
-            name: h.household_name,
-            joinCode: h.join_code || "",
-            role: h.role || "member",
-            adminName: h.admin_name || "Unknown",
-          }));
+        const fetched: HouseholdSummary[] = await Promise.all(
+        data.households.map(async (h: any) => ({
+          id: String(h.household_id),
+          // CRITICAL: await the decryption here
+          name: await decryptData(h.household_name), 
+          // If joinCode is also encrypted in your DB, await it too:
+          joinCode: h.join_code ,
+          role: h.role || "member",
+          adminName: h.admin_name || "Unknown",
+        }))
+      );
 
           // Load the user's saved household order from local storage
           const savedOrder = await loadHouseholdOrder();
@@ -346,6 +353,7 @@ function AuthenticatedHomeScreen() {
    * On success, adds the new household to the top of the list and shows a success message.
    */
   async function handleCreateHousehold() {
+      console.log("HANDLIONG")
     // Remove extra spaces from the entered household name
     const trimmed = newHouseholdName.trim();
     
@@ -360,33 +368,30 @@ function AuthenticatedHomeScreen() {
 
     try {
       // Send the create household request to the backend
-      const response = await fetch(`${API_URL}/household/create`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({ name: trimmed }),
-      });
-      
-      // Parse the JSON body returned by the backend
-      const data = await response.json();
-      
-      // Show an error message and stop if the request failed
-      if (!response.ok) {
-        Alert.alert("Create failed", data.error || "Could not create household.");
+      const result = await createHousehold(token, trimmed)
+
+      // If server returns an error, keep UI state unchanged and show the message
+      if (!result.ok) {
+          const errorMsg = result.status === 409
+          ? "Join code already taken."
+          : (result.data.error || "Could not create household")
+
+        Alert.alert("Create failed", res.error || "Could not create household.");
         return;
       }
-      
-      // Convert the returned household data into the local HouseholdSummary format
-      const household = data.household;
+
+
+      // Build the newly created household object in the local UI shape
+      const household = result.data.household;
+
       const created: HouseholdSummary = {
         id: String(household.household_id),
-        name: household.household_name,
-        joinCode: household.join_code || "",
+        name: trimmed,
+        joinCode: household.join_code,
         role: "admin",
         adminName: household.admin_name || "Unknown",
       };
+      console.log(household)
       
       // Add the new household to the top of the list
       setHouseholds((prev) => [created, ...prev]);
@@ -399,6 +404,7 @@ function AuthenticatedHomeScreen() {
       Alert.alert("Household created", `${created.name} was created. Invite code: ${created.joinCode}`);
     } catch (error: any) {
       // Show an error message if the request fails before a response is returned
+      console.log("ERROR: ", error);
       Alert.alert("Network Error", error?.message || "Unable to create household.");
     }
   }
@@ -652,7 +658,7 @@ function AuthenticatedHomeScreen() {
     }
   }
 
-  // Generate a new join code for the selected household and update it in local state
+   // Generate a new join code for the selected household and update it in local state
   async function handleRegenerateCode() {
     // // Stop if no household settings are currently open
     if (!settingsId) return;
@@ -697,6 +703,7 @@ function AuthenticatedHomeScreen() {
       setSettingsCodeRegenerating(false);
     }
   }
+
 
   // Delete the selected household through the backend and remove it from local state
   async function handleDeleteHousehold() {

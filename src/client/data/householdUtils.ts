@@ -33,7 +33,7 @@ export function healthPercent(task: Task): number {
   const now = Date.now(); // current time in ms
   const rawLast = task.last_completed; // last completion in ms
 
-  if (!rawLast) return 0;
+  if (!rawLast) return 1;
 
   const last =
     rawLast instanceof Date ? rawLast : new Date(rawLast as string);

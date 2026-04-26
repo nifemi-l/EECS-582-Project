@@ -196,4 +196,155 @@ CREATE TABLE IF NOT EXISTS EnvironmentalData (
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+/* ENCRYPTED TABLES */
+
+CREATE TABLE IF NOT EXISTS Household_Encrypted (
+    /* Household has an id as the primary key */
+    household_id SERIAL PRIMARY KEY CHECK (household_id > 0),
+    /* The name of the household */
+    household_name BYTEA NOT NULL,
+    /* Shareable code used for joining a household; should be unique */
+    join_code BYTEA NOT NULL UNIQUE,
+    /* Track which account originally created the household */
+    created_by_account_id INTEGER,
+    /* Store time the household is created */
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    /* Store time the household was last updated */
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+/* Constraint on created_by_account_id to ensure it is an active account and is replaced by NULL if deleted */
+ALTER TABLE Household_Encrypted
+ADD CONSTRAINT fk_household_created_by_encrypted
+FOREIGN KEY (created_by_account_id)
+REFERENCES Account(account_id)
+ON DELETE SET NULL;
+
+/* Create a table for household membership / roles
+    Each account could have a different role in each household
+    The roles are either "admin" and "member"
+*/
+CREATE TABLE IF NOT EXISTS HouseholdMember(
+    account_id INTEGER NOT NULL
+        REFERENCES Account(account_id) ON DELETE CASCADE,
+    household_id INTEGER NOT NULL
+        REFERENCES Household(household_id) ON DELETE CASCADE,
+    role VARCHAR(10) NOT NULL
+        CHECK (role IN ('admin', 'member')),
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (account_id, household_id)
+);
+
+/*
+Create a table for cleanable features
+    Attributes:
+        Feature id (Primary Key)
+        Feature name
+        Feature Type
+        Position
+            X
+            Y
+            Z
+    Linked to household by household_id
+*/
+CREATE TABLE IF NOT EXISTS Feature_Encrypted (
+    /* Positive id for features as the primary key */
+    feature_id SERIAL PRIMARY KEY CHECK (feature_id > 0),
+    /* Household id should link the feature to a specific household 
+        Is cascade needed here?
+    */
+    household_id INTEGER REFERENCES Household_Encrypted(household_id) ON DELETE CASCADE,
+    /* Name and types of the feature */
+    feature_name BYTEA NOT NULL,
+    feature_type BYTEA,
+    /* Do I have x, y, and z as separate or one position with all 3?
+        Make floats */
+    x_pos FLOAT NOT NULL,
+    y_pos FLOAT NOT NULL,
+    z_pos FLOAT NOT NULL,
+    /* MaterialCommunityIcons name shown in the list view for this feature/room
+        Defaults to the generic home icon if not specified */
+    icon VARCHAR(50) DEFAULT 'home-outline'
+);
+
+/*
+Create a feature for the individual tasks
+    Attributes:
+        Name (Primary key)
+        Frequency
+        Last_Completed
+*/
+CREATE TABLE IF NOT EXISTS Task_Encrypted (
+    /* Id for each individual task which is used as a primary key */
+    task_id SERIAL PRIMARY KEY,
+    /* Use feature id to link each task to a particular feature 
+        Is cascade needed here?
+    */
+    feature_id INTEGER REFERENCES Feature_Encrypted(feature_id) ON DELETE CASCADE,
+    /* Name of the task */
+    task_name BYTEA NOT NULL,
+    /* # of days for how often the task needs to be done */
+    frequency_days INTEGER NOT NULL,
+    /* Last completed is stored as a time stamp. timestamptz includes timezone as well converting to UTC */
+    last_completed TIMESTAMPTZ,
+    /* Temporary implementation of privacy settings for tasks 
+        The visibility options will be "private" and "household" or something to that effect
+            Ex: doing my personal laundry shouldn't be public to everyone in the house
+    */
+    visibility VARCHAR(20) CHECK (visibility IN ('private', 'household')) NOT NULL,
+    /* Account id for the account that created the task */
+    created_by_account_id INTEGER REFERENCES Account(account_id) ON DELETE SET NULL,
+    /* MaterialCommunityIcons name shown next to the task in the list view
+        Defaults to the clipboard icon if not specified */
+    icon VARCHAR(50) DEFAULT 'clipboard-text-outline'
+);
+
+/*
+Create a relation for storing the sensor data. "Environmentaldata"
+    Attributes:
+        data_id : Primary key for identifying a data sample
+        household_id : Links a data sample to the household it is a measurement for
+        temperature_C : The temperature reading from the Enviro+ sensor, in degrees Celcius (rounded to nearest int)
+        relative_humidity : The relative humidity reading from the Enviro+ sensor (rounded to nearest whole percent)
+        recorded_at : The timestamp that the sensor readings took place at
+*/
+
+/* Update temperature and relative humidity from floats to inCREATE INDEX IF NOT EXISTS idx_room_encrypted_household_encrypted ON Room_Encrypted (household_id);ts? */
+CREATE TABLE IF NOT EXISTS EnvironmentalData_Encrypted (
+    data_id SERIAL PRIMARY KEY,
+    household_id INTEGER REFERENCES Household_Encrypted(household_id) ON DELETE CASCADE,
+    temperature_C INTEGER,
+    relative_humidity INTEGER,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+/*
+Rooms: logical grouping for features in the list view (optional accent_color hex for UI).
+*/
+CREATE TABLE IF NOT EXISTS Room_Encrypted (
+    room_id SERIAL PRIMARY KEY CHECK (room_id > 0),
+    household_id INTEGER NOT NULL
+        REFERENCES Household_Encrypted(household_id) ON DELETE CASCADE,
+    room_name BYTEA NOT NULL,
+    accent_color VARCHAR(20),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_room_encrypted_household_encrypted ON Room_Encrypted (household_id);
+
+/* Create a table for household membership / roles
+    Each account could have a different role in each household
+    The roles are either "admin" and "member"
+*/
+CREATE TABLE IF NOT EXISTS HouseholdMember_Encrypted (
+    account_id INTEGER NOT NULL
+        REFERENCES Account(account_id) ON DELETE CASCADE,
+    household_id INTEGER NOT NULL
+        REFERENCES Household_Encrypted(household_id) ON DELETE CASCADE,
+    role VARCHAR(10) NOT NULL
+        CHECK (role IN ('admin', 'member')),
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (account_id, household_id)
+);
 
