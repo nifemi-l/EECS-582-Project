@@ -24,7 +24,7 @@ import { useState, useEffect, useRef } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { saveToken } from "../utils/authStorage";
-import { navy } from "../theme/colors";
+import { heroGradient, navy } from "../theme/colors";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -49,6 +49,9 @@ export default function LoginScreen() {
   // Responsive breakpoints matching home.tsx patterns
   const isWide = windowWidth > 860;
   const isCompact = windowWidth < 480;
+
+  const logoIconSize = isCompact ? 22 : 28;
+  const navHomeIconSize = isCompact ? 17 : 20;
 
   // Show success message if redirected from registration
   useEffect(() => {
@@ -131,9 +134,9 @@ export default function LoginScreen() {
     <View style={[styles.formCardWrapper, !isWide && styles.formCardWrapperNarrow]}>
       <View style={[styles.card, isCompact && styles.cardCompact]}>
         {/* House icon badge */}
-        <View style={styles.iconBadge}>
-          <MaterialCommunityIcons name="home" size={28} color="#FFFFFF" />
-        </View>
+        <View style={[styles.logoBox, isCompact && { width: 48, height: 48, borderRadius: 12 }]}>
+                    <MaterialCommunityIcons name="home" size={logoIconSize} color="#FFFFFF" />
+                  </View>
 
         <Text style={styles.title}>Welcome back</Text>
         <Text style={styles.subtitle}>
@@ -249,12 +252,20 @@ export default function LoginScreen() {
       {/* Navbar */}
       <View style={[styles.navbar, isCompact && styles.navbarCompact]}>
         <View style={styles.navLeft}>
-          <View style={styles.logoBox}>
-            <MaterialCommunityIcons name="home" size={isCompact ? 18 : 22} color="#FFFFFF" />
+          <View style={[styles.logoBox, isCompact && styles.logoBoxCompact]}>
+            <MaterialCommunityIcons name="home" size={logoIconSize} color="#FFFFFF" />
           </View>
-          <Text style={[styles.navBrand, isCompact && styles.navBrandCompact]}>HomeSeeHome</Text>
+          <Text style={[styles.navBrand, isCompact && styles.navBrandCompact, { cursor: "pointer" }]} onPress={() => router.push("/home")}>
+            HomeSeeHome
+          </Text>
+          <Text style={[styles.navBrand, isCompact && styles.navBrandCompact]}> | </Text>
         </View>
+          <Text style={[styles.navBrand, isCompact && styles.navBrandCompact && styles.navRight, { cursor: "pointer" }]} onPress={() => router.push("/userguide")}>
+          User Guide
+        </Text>
       </View>
+
+
 
       {/* Main content area */}
       {isWide ? (
@@ -352,22 +363,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logoBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 10,
-  },
-  navBrand: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
+      width: 40,
+      height: 40,
+      borderRadius: 10,
+      backgroundColor: heroGradient[0],
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 8,
+      flexShrink: 0,
+      shadowColor: "#1A2B4D",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.12,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+  navBrand: { color: "#FFFFFF", fontSize: 18, fontWeight: "700", letterSpacing: 0.3, flexShrink: 1 },
   navBrandCompact: {
     fontSize: 17,
+  },
+  navRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  navRightCompact: {
+    gap: 12,
   },
 
   // -- Wide full-background layout --
@@ -622,4 +642,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#9CA3AF",
   },
+  logoBoxCompact: { width: 32, height: 32, borderRadius: 8, marginRight: 6 },
 });
