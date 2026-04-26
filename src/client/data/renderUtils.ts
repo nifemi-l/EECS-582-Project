@@ -144,6 +144,7 @@ export class Renderer {
   highlightedFeatureID: number | null; // which feature the user's mouse is hovering over
   currentViewingRoom: number; // which room of the household we're currently viewing
   roomList: HouseholdRoom[]; // the list of current rooms for the household
+  removalInProgress: boolean; // are we waiting on an API deletion?
 
   // UI managed state variables
   selectedEditFeature: RenderableFeature | null; // The current feature being edited in the edit window
@@ -472,6 +473,7 @@ export class Renderer {
     this.roomList = [];
     this.selectedEditTask = null;
     this.selectedPlaceFeature = null;
+    this.removalInProgress = false;
 
     // Set callbacks
     this.syncUnplacedFeatures = () => {};
@@ -1043,6 +1045,15 @@ export class Renderer {
       return;
     }
 
+    // Ensure we don't duplicate effort
+    if (this.removalInProgress) {
+      console.warn("Cannot remove while another removal is occurring.");
+      return;
+    }
+
+    // Store state for removal
+    this.removalInProgress = true;
+
     // Remove it's position data on the server
     apiClearFeaturePosition(featureID)
     .then(() => {
@@ -1051,6 +1062,7 @@ export class Renderer {
       this.features = this.features.filter((f) => {return f.id !== featureID}); // remove the deleted feature here too
       this.unplacedFeatures = [...this.unplacedFeatures, feature];
       this.syncUnplacedFeatures(this.unplacedFeatures); // trigger a sync in the React UI
+      this.removalInProgress = false;
     }).catch((e) => {
       console.error(`Failed to remove feature. Canceling removal for feature ${featureID} in household ${this.house.household_id}.`, e);
     });
