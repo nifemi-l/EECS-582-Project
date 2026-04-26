@@ -233,7 +233,7 @@ function AuthenticatedHomeScreen() {
           // CRITICAL: await the decryption here
           name: await decryptData(h.household_name), 
           // If joinCode is also encrypted in your DB, await it too:
-          joinCode: h.join_code ? await decryptData(h.join_code) : "",
+          joinCode: h.join_code ,
           role: h.role || "member",
           adminName: h.admin_name || "Unknown",
         }))
