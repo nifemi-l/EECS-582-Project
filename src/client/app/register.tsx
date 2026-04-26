@@ -21,7 +21,7 @@ import { useRef, useState } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { saveToken } from "../utils/authStorage";
-import { navy } from "../theme/colors";
+import { heroGradient, navy } from "../theme/colors";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -51,6 +51,9 @@ export default function RegisterScreen() {
 
   const isWide = windowWidth > 860;
   const isCompact = windowWidth < 480;
+
+  const logoIconSize = isCompact ? 22 : 28;
+  const navHomeIconSize = isCompact ? 17 : 20;
 
   async function handleRegister() {
     setErrorMessage("");
@@ -281,15 +284,22 @@ export default function RegisterScreen() {
   );
 
   return (
-    <View style={styles.screen}>
-      <View style={[styles.navbar, isCompact && styles.navbarCompact]}>
-        <View style={styles.navLeft}>
-          <View style={styles.logoBox}>
-            <MaterialCommunityIcons name="home" size={isCompact ? 18 : 22} color="#FFFFFF" />
+      <View style={styles.screen}>
+        {/* Navbar */}
+        <View style={[styles.navbar, isCompact && styles.navbarCompact]}>
+          <View style={styles.navLeft}>
+            <View style={[styles.logoBox, isCompact && styles.logoBoxCompact]}>
+              <MaterialCommunityIcons name="home" size={logoIconSize} color="#FFFFFF" />
+            </View>
+            <Text style={[styles.navBrand, isCompact && styles.navBrandCompact, { cursor: "pointer" }]} onPress={() => router.push("/home")}>
+              HomeSeeHome
+            </Text>
+            <Text style={[styles.navBrand, isCompact && styles.navBrandCompact]}> | </Text>
           </View>
-          <Text style={[styles.navBrand, isCompact && styles.navBrandCompact]}>HomeSeeHome</Text>
+            <Text style={[styles.navBrand, isCompact && styles.navBrandCompact && styles.navRight, { cursor: "pointer" }]} onPress={() => router.push("/userguide")}>
+            User Guide
+          </Text>
         </View>
-      </View>
 
       {isWide ? (
         <View style={styles.fullBgContainer}>
@@ -379,20 +389,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logoBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 10,
-  },
-  navBrand: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
+      width: 40,
+      height: 40,
+      borderRadius: 10,
+      backgroundColor: heroGradient[0],
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 8,
+      flexShrink: 0,
+      shadowColor: "#1A2B4D",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.12,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+  navBrand: { color: "#FFFFFF", fontSize: 18, fontWeight: "700", letterSpacing: 0.3, flexShrink: 1 },
   navBrandCompact: {
     fontSize: 17,
   },
@@ -630,4 +641,10 @@ const styles = StyleSheet.create({
     color: "#445988",
     fontWeight: "700",
   },
+  navRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  logoBoxCompact: { width: 32, height: 32, borderRadius: 8, marginRight: 6 },
 });
