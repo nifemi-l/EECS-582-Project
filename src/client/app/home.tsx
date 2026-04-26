@@ -353,6 +353,7 @@ function AuthenticatedHomeScreen() {
    * On success, adds the new household to the top of the list and shows a success message.
    */
   async function handleCreateHousehold() {
+      console.log("HANDLIONG")
     // Remove extra spaces from the entered household name
     const trimmed = newHouseholdName.trim();
     
@@ -379,13 +380,14 @@ function AuthenticatedHomeScreen() {
         return;
       }
 
+
       // Build the newly created household object in the local UI shape
       const household = result.data.household;
 
       const created: HouseholdSummary = {
         id: String(household.household_id),
         name: trimmed,
-        joinCode: result.join_code,
+        joinCode: household.join_code,
         role: "admin",
         adminName: household.admin_name || "Unknown",
       };
@@ -402,6 +404,7 @@ function AuthenticatedHomeScreen() {
       Alert.alert("Household created", `${created.name} was created. Invite code: ${created.joinCode}`);
     } catch (error: any) {
       // Show an error message if the request fails before a response is returned
+      console.log("ERROR: ", error);
       Alert.alert("Network Error", error?.message || "Unable to create household.");
     }
   }

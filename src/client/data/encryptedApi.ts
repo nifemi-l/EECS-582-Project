@@ -113,7 +113,6 @@ export async function createHousehold(
         ok: response.ok,
         status: response.status,
         data: body,
-        join_code: join_code // The cleartext code for the UI
     };}
 
 // --- FEATURE FUNCTIONS ---
