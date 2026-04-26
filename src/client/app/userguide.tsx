@@ -316,6 +316,10 @@ return (
 
 
   { /* Final closing view here */}
+  <View>
+  <Text style={styles.videoSubtitle}>Created by: Nifemi Lawal, Dellie Wright, Blake Carlson, Jack Bauer, Logan Smith</Text>
+  </View>
+
   </View>
   );
 }
