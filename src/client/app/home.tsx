@@ -225,14 +225,19 @@ function AuthenticatedHomeScreen() {
         }
 
         // Convert the returned household data into the local HouseholdSummary format
+
         if (Array.isArray(data.households)) {
-          const fetched: HouseholdSummary[] = await Promise.all(data.households.map((h: any) => ({
-            id: String(h.household_id),
-            name: decryptData(h.household_name),
-            joinCode: h.join_code || "",
-            role: h.role || "member",
-            adminName: h.admin_name || "Unknown",
-          })));
+        const fetched: HouseholdSummary[] = await Promise.all(
+        data.households.map(async (h: any) => ({
+          id: String(h.household_id),
+          // CRITICAL: await the decryption here
+          name: await decryptData(h.household_name), 
+          // If joinCode is also encrypted in your DB, await it too:
+          joinCode: h.join_code ? await decryptData(h.join_code) : "",
+          role: h.role || "member",
+          adminName: h.admin_name || "Unknown",
+        }))
+      );
 
           // Load the user's saved household order from local storage
           const savedOrder = await loadHouseholdOrder();
