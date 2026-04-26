@@ -77,6 +77,7 @@ export default class Task {
 
     // Updates and returns healthpercent for a task (0 to 1)
     getAndSetHealthPercent() {
+        console.log("LAST completed", this.last_completed)
         if (!this.last_completed) {
             this.healthPercent = 1;
             return 1;
