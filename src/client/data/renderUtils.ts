@@ -1062,9 +1062,10 @@ export class Renderer {
       this.features = this.features.filter((f) => {return f.id !== featureID}); // remove the deleted feature here too
       this.unplacedFeatures = [...this.unplacedFeatures, feature];
       this.syncUnplacedFeatures(this.unplacedFeatures); // trigger a sync in the React UI
-      this.removalInProgress = false;
     }).catch((e) => {
       console.error(`Failed to remove feature. Canceling removal for feature ${featureID} in household ${this.house.household_id}.`, e);
+    }).finally(() => {
+      this.removalInProgress = false;
     });
   }
 
